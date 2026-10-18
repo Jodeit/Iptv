@@ -1,0 +1,13 @@
+{
+  "name": "o3xr-iptv",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "WebXR IPTV player with XR3D simulated 3D",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

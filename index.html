@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>o3XR IPTV</title>
+  <meta name="description" content="WebXR IPTV player with XR3D simulated 3D">
+  <link rel="stylesheet" href="css/style.css">
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@1.5.15/dist/hls.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mpegts.js@1.7.3/dist/mpegts.js"></script>
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <div id="stage"></div>
+
+  <!-- Side panel -->
+  <aside id="panel" class="panel">
+    <header class="panel-head">
+      <div class="brand"><span class="logo">o3</span><span>XR IPTV</span></div>
+      <button id="panelToggle" class="icon-btn" title="Hide panel (H)">⟨</button>
+    </header>
+
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="channels">Channels</button>
+      <button class="tab" data-tab="sources">Sources</button>
+      <button class="tab" data-tab="xr3d">XR3D</button>
+      <button class="tab" data-tab="theater">Theater</button>
+    </nav>
+
+    <!-- Channels -->
+    <section class="tab-body active" data-tab="channels">
+      <div class="row">
+        <input id="search" type="search" placeholder="Search channels…" autocomplete="off">
+      </div>
+      <div class="row">
+        <select id="groupFilter"><option value="">All groups</option></select>
+        <button id="favFilter" class="chip" title="Show favorites only">★</button>
+      </div>
+      <div id="listInfo" class="muted small"></div>
+      <ul id="channelList" class="channel-list"></ul>
+    </section>
+
+    <!-- Sources -->
+    <section class="tab-body" data-tab="sources">
+      <h3>M3U / Xtream playlist link</h3>
+      <div class="row">
+        <input id="m3uUrl" type="text" inputmode="url" placeholder="http://server/get.php?username=…&amp;password=…&amp;type=m3u_plus">
+        <button id="loadUrl" class="btn">Load</button>
+      </div>
+
+      <h3>Local file</h3>
+      <div class="row">
+        <input id="m3uFile" type="file" accept=".m3u,.m3u8,.txt,audio/x-mpegurl,application/vnd.apple.mpegurl">
+      </div>
+
+      <h3>Xtream Codes</h3>
+      <div class="stack">
+        <input id="xtServer" type="text" placeholder="http://server:port">
+        <div class="row">
+          <input id="xtUser" type="text" placeholder="Username" autocomplete="username">
+          <input id="xtPass" type="password" placeholder="Password" autocomplete="current-password">
+        </div>
+        <button id="xtLoad" class="btn">Connect</button>
+      </div>
+
+      <h3>Single stream</h3>
+      <div class="row">
+        <input id="directUrl" type="url" placeholder="https://…/stream.m3u8 or .ts / .mp4">
+        <button id="playDirect" class="btn">Play</button>
+      </div>
+
+      <h3>Quick sources</h3>
+      <div class="presets" id="presets"></div>
+
+      <h3>Proxy</h3>
+      <div class="seg" id="proxySeg">
+        <button data-proxy="auto">Auto</button>
+        <button data-proxy="always">Always</button>
+        <button data-proxy="off">Off</button>
+      </div>
+      <p id="proxyStatus" class="muted small proxy-status"></p>
+
+      <h3>Saved playlists</h3>
+      <ul id="savedList" class="saved-list"></ul>
+    </section>
+
+    <!-- XR3D -->
+    <section class="tab-body" data-tab="xr3d">
+      <h3>3D mode</h3>
+      <div class="seg" id="modeSeg">
+        <button data-mode="2d">2D</button>
+        <button data-mode="xr3d" class="active">XR3D</button>
+        <button data-mode="sbs">SBS</button>
+        <button data-mode="tab">TAB</button>
+      </div>
+      <p class="muted small" id="modeHelp"></p>
+
+      <div id="xr3dControls">
+        <label class="slider">Depth relief <output id="reliefOut"></output>
+          <input id="relief" type="range" min="0" max="0.6" step="0.01"></label>
+        <label class="slider">Stereo pop <output id="parallaxOut"></output>
+          <input id="parallax" type="range" min="0" max="2" step="0.01"></label>
+        <label class="slider">Convergence <output id="convergenceOut"></output>
+          <input id="convergence" type="range" min="0" max="1" step="0.01"></label>
+        <label class="slider">Depth contrast <output id="contrastOut"></output>
+          <input id="contrast" type="range" min="0.5" max="3" step="0.05"></label>
+        <label class="slider">Depth smoothing <output id="smoothOut"></output>
+          <input id="smooth" type="range" min="0.001" max="0.02" step="0.001"></label>
+        <label class="check"><input id="invertDepth" type="checkbox"> Invert depth</label>
+        <label class="check"><input id="showDepth" type="checkbox"> Show depth map</label>
+      </div>
+      <label class="check"><input id="swapEyes" type="checkbox"> Swap eyes</label>
+
+      <h3>Desktop 3D preview</h3>
+      <div class="seg" id="viewSeg">
+        <button data-view="mono" class="active">Mono</button>
+        <button data-view="anaglyph">Anaglyph</button>
+        <button data-view="sbs">Side-by-side</button>
+      </div>
+      <p class="muted small">Anaglyph needs red/cyan glasses. Side-by-side output works with 3D TVs and phone
+        viewers. Headsets get true per-eye 3D through Enter VR.</p>
+    </section>
+
+    <!-- Theater -->
+    <section class="tab-body" data-tab="theater">
+      <h3>Screen</h3>
+      <label class="slider">Width (m) <output id="sizeOut"></output>
+        <input id="size" type="range" min="2" max="16" step="0.1"></label>
+      <label class="slider">Distance (m) <output id="distanceOut"></output>
+        <input id="distance" type="range" min="1.5" max="14" step="0.1"></label>
+      <label class="slider">Height (m) <output id="heightOut"></output>
+        <input id="height" type="range" min="0.5" max="4" step="0.05"></label>
+      <label class="slider">Curvature <output id="curveOut"></output>
+        <input id="curve" type="range" min="0" max="1" step="0.01"></label>
+      <label class="slider">Brightness <output id="brightOut"></output>
+        <input id="bright" type="range" min="0.5" max="1.6" step="0.01"></label>
+
+      <h3>Environment</h3>
+      <div class="seg" id="envSeg">
+        <button data-env="cinema" class="active">Cinema</button>
+        <button data-env="void">Void</button>
+        <button data-env="stars">Stars</button>
+      </div>
+      <label class="check"><input id="ambient" type="checkbox" checked> Ambient light from video</label>
+      <button id="resetSettings" class="btn ghost">Reset settings</button>
+    </section>
+  </aside>
+
+  <button id="panelOpen" class="fab hidden" title="Show panel (H)">☰</button>
+
+  <!-- Now playing bar -->
+  <div id="bar" class="bar">
+    <img id="npLogo" class="np-logo" alt="">
+    <div class="np-text">
+      <div id="npName" class="np-name">No channel</div>
+      <div id="npStatus" class="np-status muted small">Pick a channel to start</div>
+    </div>
+    <div class="bar-controls">
+      <button id="prevCh" class="icon-btn" title="Previous channel (PgUp)">⏮</button>
+      <button id="playPause" class="icon-btn" title="Play/Pause (Space)">▶</button>
+      <button id="nextCh" class="icon-btn" title="Next channel (PgDn)">⏭</button>
+      <button id="mute" class="icon-btn" title="Mute (M)">🔊</button>
+      <input id="volume" type="range" min="0" max="1" step="0.01" value="1" title="Volume">
+      <button id="enterVR" class="btn xr" disabled>VR not available</button>
+      <button id="enterAR" class="btn xr ghost hidden">Passthrough</button>
+    </div>
+  </div>
+
+  <div id="toast" class="toast"></div>
+
+  <video id="video" playsinline crossorigin="anonymous" preload="auto" style="display:none"></video>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
