@@ -24,6 +24,22 @@ Browsers only allow WebXR on **HTTPS or localhost**, so for a headset:
 
 The proxy forwards to any URL it's given, so keep the server on your own network.
 
+## GitHub Pages
+
+Live at **https://jodeit.github.io/Iptv/**: Pages serves the repo root of `main` as-is, with no build step.
+Pages is HTTPS, so WebXR works on a headset without any certificate setup.
+
+Pages can't run `server.js`, so add a proxy for IPTV servers that block browsers. That covers most Xtream panels,
+and any `http://` provider, since an HTTPS page can't load `http://` streams.
+
+1. **Cloudflare Worker (free, recommended):** paste [`proxy/worker.js`](proxy/worker.js) into a new Worker
+   (dash.cloudflare.com → Workers & Pages → Create → Worker → Deploy). Set the variable
+   `ALLOWED_ORIGINS=https://jodeit.github.io` so only this app can use it.
+2. In the app, open **Sources → Proxy URL**, enter `https://<worker-name>.<account>.workers.dev`, then press Save.
+
+Or point Proxy URL at your own `server.js` running with HTTPS (`CERT=… KEY=… node server.js`).
+Some IPTV providers block datacenter IPs. If channels fail through the Worker but work through `server.js` at home, that's why.
+
 ## Xtream Codes links
 
 Paste a panel link straight into **Sources → M3U / Xtream playlist link**, for example:
@@ -108,6 +124,7 @@ Tuning (XR3D tab):
 
 ```
 server.js         Static server + CORS/HLS-rewriting proxy (zero dependencies)
+proxy/worker.js   Same proxy as a Cloudflare Worker, for the GitHub Pages build
 index.html        UI shell + CDN import map
 css/style.css     Panel / bar styling (phone layout included)
 js/main.js        App state, playlists, settings, UI + keyboard wiring

@@ -1,0 +1,80 @@
+// o3XR IPTV proxy for Cloudflare Workers: the same /proxy endpoint as server.js, on free HTTPS.
+// Lets the GitHub Pages build play IPTV servers that send no CORS headers or only speak http://.
+//
+// Deploy: dash.cloudflare.com → Workers & Pages → Create → Worker → paste this file → Deploy.
+// Then in the app: Sources → Proxy URL → https://<name>.<you>.workers.dev
+//
+// Optional variable ALLOWED_ORIGINS (Settings → Variables), e.g. "https://jodeit.github.io",
+// limits who can use the proxy. Leave unset to allow any site, which is not recommended.
+
+const UA = 'VLC/3.0.20 LibVLC/3.0.20';
+
+const CORS = {
+  'access-control-allow-origin': '*',
+  'access-control-allow-headers': 'range, content-type',
+  'access-control-expose-headers': 'content-length, content-range, content-type, x-final-url',
+};
+
+export default {
+  async fetch(request, env) {
+    const { pathname, searchParams, origin } = new URL(request.url);
+    if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: CORS });
+
+    const allowed = (env.ALLOWED_ORIGINS || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const caller = request.headers.get('origin');
+    if (allowed.length && caller && !allowed.includes(caller)) return text('Origin not allowed', 403);
+
+    if (pathname === '/proxy/health') return text('ok');
+    if (pathname !== '/proxy') return text('Not found', 404);
+
+    let target;
+    try { target = new URL(searchParams.get('url')); } catch { return text('Bad url', 400); }
+    if (!/^https?:$/.test(target.protocol)) return text('Only http(s) URLs', 400);
+
+    const headers = { 'user-agent': UA, accept: '*/*' };
+    const range = request.headers.get('range');
+    if (range) headers.range = range;
+
+    let up;
+    try {
+      up = await fetch(target, { headers, redirect: 'follow' });
+    } catch (err) {
+      return text(`Upstream error: ${err.message}`, 502);
+    }
+
+    const finalUrl = up.url || target.href;
+    const out = new Headers({ ...CORS, 'cache-control': 'no-store', 'x-final-url': finalUrl });
+    for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
+      const v = up.headers.get(h);
+      if (v) out.set(h, v);
+    }
+
+    // Rewrite HLS manifests so segment, variant and key requests come back through the proxy.
+    const type = up.headers.get('content-type') || '';
+    if (up.ok && (/mpegurl/i.test(type) || /\.m3u8(\?|$)/i.test(finalUrl))) {
+      const body = await up.text();
+      out.delete('content-length');
+      if (body.includes('#EXT-X-')) {
+        out.set('content-type', 'application/vnd.apple.mpegurl');
+        return new Response(rewriteHls(body, finalUrl, `${origin}/proxy`), { status: up.status, headers: out });
+      }
+      return new Response(body, { status: up.status, headers: out });
+    }
+
+    return new Response(up.body, { status: up.status, headers: out });
+  },
+};
+
+function rewriteHls(text, base, proxyBase) {
+  const wrap = (u) => `${proxyBase}?url=${encodeURIComponent(new URL(u, base).href)}`;
+  return text.split(/\r?\n/).map((line) => {
+    const t = line.trim();
+    if (!t) return line;
+    if (t.startsWith('#')) return line.replace(/URI="([^"]+)"/g, (_, u) => `URI="${wrap(u)}"`);
+    return wrap(t);
+  }).join('\n');
+}
+
+function text(body, status = 200) {
+  return new Response(body, { status, headers: { ...CORS, 'content-type': 'text/plain; charset=utf-8' } });
+}

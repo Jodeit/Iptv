@@ -20,7 +20,7 @@ const DEFAULTS = {
   mode: 'xr3d', relief: 0.18, parallax: 0.8, convergence: 0.5, contrast: 1.4, smooth: 0.006,
   invert: false, showDepth: false, swap: false, view: 'mono',
   size: 6, distance: 5, height: 1.8, curve: 0.15, bright: 1, env: 'cinema', ambient: true,
-  volume: 1, muted: false, proxy: 'auto',
+  volume: 1, muted: false, proxy: 'auto', proxyUrl: '',
 };
 const settings = { ...DEFAULTS, ...store.get('settings', {}) };
 const saveSettings = () => store.set('settings', settings);
@@ -87,13 +87,22 @@ function setStatus(s) {
 }
 
 // ---------- CORS proxy ----------
-// server.js exposes /proxy?url=… on the same origin. When it's running, sources the
+// server.js (same origin) or a remote proxy (server.js elsewhere, proxy/worker.js on
+// Cloudflare) exposes <base>?url=…. When one is reachable, sources the
 // browser can't reach directly (no CORS headers, or http:// on an https:// page) go through it.
-const proxy = { available: false, blockedHosts: new Set(store.get('blockedHosts', [])) };
+const proxy = { available: false, base: 'proxy', blockedHosts: new Set(store.get('blockedHosts', [])) };
+
+// A configured proxy URL wins; otherwise look for server.js on this origin.
+function proxyBase() {
+  const u = (settings.proxyUrl || '').trim().replace(/\/+$/, '');
+  if (!u) return 'proxy';
+  return /\/proxy$/.test(u) ? u : `${u}/proxy`;
+}
 
 async function detectProxy() {
+  proxy.base = proxyBase();
   try {
-    const r = await fetch('proxy/health', { cache: 'no-store' });
+    const r = await fetch(`${proxy.base}/health`, { cache: 'no-store' });
     proxy.available = r.ok && (await r.text()) === 'ok';
   } catch { proxy.available = false; }
   renderProxyStatus();
@@ -102,7 +111,7 @@ async function detectProxy() {
 const hostOf = (u) => { try { return new URL(u, location.href).host; } catch { return ''; } };
 const isCrossOrigin = (u) => { try { return new URL(u, location.href).origin !== location.origin; } catch { return false; } };
 const isMixed = (u) => location.protocol === 'https:' && /^http:/i.test(u);
-const proxied = (u) => `proxy?url=${encodeURIComponent(u)}`;
+const proxied = (u) => `${proxy.base}?url=${encodeURIComponent(u)}`;
 
 // 'direct' | 'proxy-first' | 'proxy-fallback'
 function proxyPlan(url) {
@@ -131,9 +140,12 @@ function streamCandidates(ch) {
 function renderProxyStatus() {
   const el = $('proxyStatus');
   if (!el) return;
+  const remote = !!settings.proxyUrl;
   el.textContent = proxy.available
-    ? 'Proxy online: playlists and streams that block browsers get routed through server.js.'
-    : 'Proxy offline. Start the app with “node server.js” to play IPTV servers that block browsers (most Xtream panels).';
+    ? `Proxy online${remote ? ` at ${new URL(proxy.base, location.href).host}` : ''}: sources that block browsers get routed through it.`
+    : remote
+      ? 'Can’t reach that proxy. Check the URL, and that it uses https:// if this page does.'
+      : 'No proxy. Run “node server.js”, or enter the URL of your own proxy above, to play IPTV servers that block browsers (most Xtream panels).';
   el.classList.toggle('ok', proxy.available);
   for (const b of $('proxySeg').children) {
     b.classList.toggle('active', b.dataset.proxy === settings.proxy);
@@ -308,7 +320,7 @@ async function play(ch) {
   vrPanel?.draw();
   const sources = streamCandidates(ch);
   if (!sources.length) {
-    const msg = 'This http:// stream can’t play on an https:// page without the proxy. Run “node server.js”.';
+    const msg = 'This http:// stream can’t play on an https:// page without a proxy. Set one under Sources → Proxy.';
     setStatus(msg); toast(msg, true);
     theater.setPlaceholder('Stream blocked', ch.name);
     return;
@@ -504,6 +516,15 @@ for (const p of PRESETS) {
 }
 
 for (const b of $('modeSeg').children) b.onclick = () => applyMode(b.dataset.mode);
+const saveProxyUrl = async () => {
+  settings.proxyUrl = $('proxyUrl').value.trim();
+  saveSettings();
+  await detectProxy();
+  toast(proxy.available ? 'Proxy connected' : 'Proxy not reachable', !proxy.available);
+};
+$('proxyUrl').value = settings.proxyUrl;
+$('proxyUrlSave').onclick = saveProxyUrl;
+$('proxyUrl').onkeydown = (e) => { if (e.key === 'Enter') saveProxyUrl(); };
 for (const b of $('proxySeg').children) b.onclick = () => { settings.proxy = b.dataset.proxy; saveSettings(); renderProxyStatus(); };
 for (const b of $('viewSeg').children) b.onclick = () => { setView(b.dataset.view); saveSettings(); };
 for (const b of $('envSeg').children) b.onclick = () => { setEnv(b.dataset.env); saveSettings(); };
