@@ -94,6 +94,8 @@ export class StreamPlayer {
           return this.video.play();
         }), 25000, 'no video within 25s');
         if (token !== this.token) return false;
+        await this.confirmPlaying(token);
+        if (token !== this.token) return false;
         // The MKV remuxer starts at resumeAt itself; other engines jump once they're playing.
         if (this.resumeAt > 0 && engine !== 'mkv' && Number.isFinite(this.video.duration) && this.resumeAt < this.video.duration - 5) {
           this.video.currentTime = this.resumeAt;
@@ -129,6 +131,21 @@ export class StreamPlayer {
     }
     if (token === this.token) this.onError(summarise(this.report), this.report, { refused });
     return false;
+  }
+
+  // play() can resolve while nothing is actually showing (a stalled connection, a codec the
+  // browser accepts but can't decode). Count the engine as working only once the clock moves.
+  async confirmPlaying(token, ms = 12000) {
+    const v = this.video;
+    const start = v.currentTime;
+    const t0 = Date.now();
+    while (token === this.token && Date.now() - t0 < ms) {
+      if (v.paused || v.currentTime - start >= 0.4) return;
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    if (token !== this.token) return;
+    const buf = this.bufferedAhead();
+    throw new Error(`no picture after ${ms / 1000}s (ready state ${v.readyState}, ${v.videoWidth}×${v.videoHeight}, ${buf.toFixed(1)}s buffered)`);
   }
 
   // Reconnects when playback freezes for 20s (or the engine reports a fatal error), up to
