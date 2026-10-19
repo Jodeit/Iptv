@@ -75,12 +75,14 @@ export class StreamPlayer {
     }
     let refused = false;
     let directRefused = false;
+    const refusedFormats = new Set();
     if (!plans.length) this.report.push(`✗ unsupported format: this browser can’t play ${list[0]?.hint?.split('?')[0].split('.').pop().toUpperCase() || 'this'} files`);
     const deadSources = new Set();
     for (const [i, { source, engine }] of plans.entries()) {
       const { src, hint, label } = source;
       if (token !== this.token) return false;
       if (deadSources.has(source) || (directRefused && !label)) continue;
+      if (label && refusedFormats.has(/\.m3u8(\?|$)/i.test(hint || src) ? 'hls' : 'other')) continue;
       this.step = `${ENGINE_NAMES[engine]}${label ? ' via proxy' : ''}${plans.length > 1 ? ` (try ${i + 1} of ${plans.length})` : ''}`;
       this.progress(token, reconnect ? 'Reconnecting' : 'Connecting');
       try {
@@ -118,6 +120,10 @@ export class StreamPlayer {
         // user agent), so skip the other direct tries but still give the proxy its turn.
         if (/HTTP (401|403|456|458)\b/.test(err.message)) {
           if (!label && plans.some((p) => p.source.label)) { directRefused = true; continue; }
+          // Some accounts may only use one format (e.g. .ts but not HLS): give each format one go.
+          const fmt = (u) => (/\.m3u8(\?|$)/i.test(u) ? 'hls' : 'other');
+          refusedFormats.add(fmt(hint || src));
+          if (plans.slice(i + 1).some((p) => p.source.label && !refusedFormats.has(fmt(p.source.hint || p.source.src)))) continue;
           refused = true; break;
         }
         // Not there at all: other engines would only ask again for the same missing file.
