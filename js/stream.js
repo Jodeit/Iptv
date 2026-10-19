@@ -207,6 +207,16 @@ export class StreamPlayer {
         liveSyncDurationCount: 5,
         liveMaxLatencyDurationCount: Infinity, // don't skip ahead after a stall
         startFragPrefetch: true,
+        // Segments through the proxy sometimes take a long time to first byte; the 10s default
+        // gave up and stalled playback even though the average download speed was fine.
+        fragLoadPolicy: {
+          default: {
+            maxTimeToFirstByteMs: 30000,
+            maxLoadTimeMs: 120000,
+            timeoutRetry: { maxNumRetry: 4, retryDelayMs: 0, maxRetryDelayMs: 0 },
+            errorRetry: { maxNumRetry: 6, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+          },
+        },
         // Fail fast on the playlist: other sources are waiting their turn.
         manifestLoadPolicy: {
           default: {

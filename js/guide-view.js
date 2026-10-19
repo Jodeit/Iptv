@@ -10,11 +10,12 @@ const PAGE = 60; // rows added each time the bottom comes into view
 const fmt = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
 export class GuideView {
-  constructor({ root, guide, channels, onPlay }) {
+  constructor({ root, guide, channels, onPlay, onToggle }) {
     this.root = root;
     this.guide = guide;
     this.channels = channels; // () => live channels to show
     this.onPlay = onPlay;
+    this.onToggle = onToggle || (() => {});
     this.scroll = root.querySelector('.guide-scroll');
     this.grid = root.querySelector('.guide-grid');
     this.detail = root.querySelector('.guide-detail');
@@ -54,6 +55,7 @@ export class GuideView {
     this.root.classList.remove('hidden');
     this.build();
     this.scrollToNow();
+    this.onToggle(true);
   }
 
   close() {
@@ -61,6 +63,7 @@ export class GuideView {
     this.observer.disconnect();
     this.more.disconnect();
     this.detail.classList.add('hidden');
+    this.onToggle(false);
   }
 
   // Region/topic menus list only what's present, with counts.
@@ -148,7 +151,7 @@ export class GuideView {
       const name = document.createElement('span');
       name.textContent = ch.name;
       label.append(name);
-      label.onclick = () => { this.onPlay(ch); this.close(); };
+      label.onclick = () => { this.onPlay(ch); };
       const track = document.createElement('div');
       track.className = 'guide-track';
       row.append(label, track);
@@ -202,7 +205,7 @@ export class GuideView {
     const watch = document.createElement('button');
     watch.className = 'btn';
     watch.textContent = airing ? 'Watch now' : 'Watch channel';
-    watch.onclick = () => { this.onPlay(ch); this.close(); };
+    watch.onclick = () => { this.onPlay(ch); };
     this.detail.append(watch);
     this.detail.classList.remove('hidden');
   }

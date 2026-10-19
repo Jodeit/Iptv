@@ -29,11 +29,18 @@
     </header>
     <p id="accountInfo" class="muted small account-info hidden"><span id="accountText"></span><button id="accountRefresh" class="icon-btn" title="Check again. The provider counts open connections, including ones it hasn’t released yet.">↻</button></p>
 
-    <nav class="tabs" role="tablist">
+    <div class="seg primary-nav hidden" id="kindSeg">
+      <button data-kind="" class="active">All</button>
+      <button data-kind="live">Live</button>
+      <button data-kind="movie">Movies</button>
+      <button data-kind="series">Shows</button>
+    </div>
+
+    <nav class="tabs secondary" role="tablist">
       <button class="tab active" data-tab="channels">Channels</button>
-      <button class="tab" data-tab="sources">Sources</button>
       <button class="tab" data-tab="xr3d">XR3D</button>
       <button class="tab" data-tab="theater">Theater</button>
+      <button class="tab" data-tab="sources">Sources</button>
       <button class="tab" data-tab="profile">Profile</button>
     </nav>
 
@@ -49,12 +56,6 @@
         <button id="cfToggle" class="chip" title="Content filter (set it up in Sources)">Filter</button>
         <button id="guideBtn" class="chip hidden" title="TV guide (G)">Guide</button>
         <button id="browseBtn" class="chip hidden" title="Poster gallery with ratings (B)">Browse</button>
-      </div>
-      <div class="seg hidden" id="kindSeg">
-        <button data-kind="" class="active">All</button>
-        <button data-kind="live">Live</button>
-        <button data-kind="movie">Movies</button>
-        <button data-kind="series">Series</button>
       </div>
       <div id="listInfo" class="muted small"></div>
       <ul id="channelList" class="channel-list"></ul>
@@ -287,6 +288,14 @@
 
   <!-- Movies & series gallery -->
   <div id="gallery" class="gallery hidden" role="dialog" aria-label="Movies and series"></div>
+
+  <!-- Pop-out player: floats over the guide so you can keep browsing while it plays -->
+  <div id="miniBar" class="mini-bar hidden">
+    <span id="miniTitle" class="mini-title"></span>
+    <button id="miniSize" class="icon-btn" title="Resize">⤡</button>
+    <button id="miniFull" class="icon-btn" title="Close the guide and watch full size">⛶</button>
+    <button id="miniClose" class="icon-btn" title="Hide player">✕</button>
+  </div>
 
   <button id="panelOpen" class="fab hidden" title="Show panel (H)">☰</button>
 

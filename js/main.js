@@ -111,8 +111,18 @@ const guideView = new GuideView({
   root: $('guideView'),
   guide,
   channels: () => state.filtered.filter((c) => kindOf(c) === 'live'),
-  onPlay: (ch) => play(ch),
+  // Playing from the guide keeps it open; the video pops out into a floating window.
+  onPlay: (ch) => { miniHidden = false; play(ch); syncMini(); },
+  onToggle: () => syncMini(),
 });
+
+let miniHidden = false;
+function syncMini() {
+  const on = guideView.isOpen() && !!state.current && !miniHidden;
+  document.body.classList.toggle('mini-on', on);
+  $('miniBar').classList.toggle('hidden', !on);
+  $('miniTitle').textContent = state.current?.name || '';
+}
 
 function updateNowPlayingEpg() {
   const ch = state.current;
@@ -1337,9 +1347,30 @@ for (const b of $('kindSeg').children) {
     state.kind = b.dataset.kind;
     for (const x of $('kindSeg').children) x.classList.toggle('active', x === b);
     rebuildGroups();
+    setTab('channels');
     if (galleryKind()) gallery.open(state.kind, state.group || undefined); // movies and series open as posters
   };
 }
+$('miniClose').onclick = () => { miniHidden = true; syncMini(); };
+$('miniFull').onclick = () => guideView.close();
+$('miniSize').onclick = () => {
+  const sizes = [280, 360, 520], root = document.documentElement.style;
+  const cur = parseInt(root.getPropertyValue('--mini-w')) || 360;
+  root.setProperty('--mini-w', `${sizes[(sizes.indexOf(cur) + 1) % sizes.length]}px`);
+};
+// Drag the pop-out by its title bar.
+$('miniBar').onpointerdown = (e) => {
+  if (e.target.closest('button')) return;
+  const root = document.documentElement.style, sx = e.clientX, sy = e.clientY;
+  const r0 = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--mini-r')) || 24;
+  const b0 = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--mini-b')) || 100;
+  const move = (m) => {
+    root.setProperty('--mini-r', `${Math.max(0, Math.min(innerWidth - 120, r0 - (m.clientX - sx)))}px`);
+    root.setProperty('--mini-b', `${Math.max(0, Math.min(innerHeight - 120, b0 - (m.clientY - sy)))}px`);
+  };
+  const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); };
+  addEventListener('pointermove', move); addEventListener('pointerup', up);
+};
 $('browseBtn').onclick = () => gallery.open(state.kind, state.group || undefined);
 
 // OMDb key for ratings: checked with one lookup before it's saved to the profile.
