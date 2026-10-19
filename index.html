@@ -279,6 +279,16 @@
 
   <div id="toast" class="toast"></div>
 
+  <!-- Shown when a stream can't play here: hand it to a player app -->
+  <div id="extSheet" class="ext-sheet hidden" role="dialog" aria-label="Play in another app">
+    <div class="ext-text">
+      <div class="np-name">Play in another app</div>
+      <div id="extWhy" class="muted small"></div>
+    </div>
+    <div id="extButtons" class="ext-buttons"></div>
+    <button id="extClose" class="icon-btn" title="Close">✕</button>
+  </div>
+
   <video id="video" playsinline crossorigin="anonymous" preload="auto" style="display:none"></video>
 
   <script type="module" src="js/main.js"></script>

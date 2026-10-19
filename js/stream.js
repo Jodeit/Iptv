@@ -50,9 +50,12 @@ export class StreamPlayer {
       if (i > 0) plans.unshift(...plans.splice(i, 1));
     }
     let refused = false;
+    if (!plans.length) this.report.push(`✗ unsupported format: this browser can’t play ${list[0]?.hint?.split('?')[0].split('.').pop().toUpperCase() || 'this'} files`);
+    const deadSources = new Set();
     for (const [i, { source, engine }] of plans.entries()) {
       const { src, hint, label } = source;
       if (token !== this.token) return false;
+      if (deadSources.has(source)) continue;
       this.step = `${ENGINE_NAMES[engine]}${label ? ' via proxy' : ''}${plans.length > 1 ? ` (try ${i + 1} of ${plans.length})` : ''}`;
       this.progress(token, reconnect ? 'Reconnecting' : 'Connecting');
       try {
@@ -79,6 +82,8 @@ export class StreamPlayer {
         // A refusal (bad login, connection limit) won't change with another variant, and
         // every extra try counts against the account.
         if (/HTTP (401|403|456|458)\b/.test(err.message)) { refused = true; break; }
+        // Not there at all: other engines would only ask again for the same missing file.
+        if (/HTTP (404|410)\b/.test(err.message)) deadSources.add(source);
       }
     }
     if (token !== this.token) return false;
@@ -233,6 +238,9 @@ export class StreamPlayer {
 // Turns the attempt/probe log into one actionable sentence.
 function summarise(report) {
   const text = report.join('\n');
+  if (/Matroska \(MKV\)[^\n]*⚠ this browser can’t play MKV/.test(text) || /✗ unsupported format/.test(text)) {
+    return 'This movie is an MKV file, which this browser can’t play. Use one of the player apps below instead.';
+  }
   if (/⚠ ([^\n·]+)/.test(text)) return `Stream found, but ${text.match(/⚠ ([^\n·]+)/)[1].trim()}`;
   if (/proxy error “socket-failed”/.test(text)) {
     return 'Cloudflare couldn’t open a direct connection to this provider’s stream server. '
@@ -261,6 +269,16 @@ function summarise(report) {
 }
 
 const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function canContainer(path) {
+  const v = document.createElement('video');
+  return path.endsWith('.mkv') ? !!(v.canPlayType('video/x-matroska') || v.canPlayType('video/webm')) && !IOS : false;
+}
+
+// True when no engine in this browser can even try the file (e.g. MKV in Safari).
+export function unsupportedFormat(url) {
+  return orderEngines(url).length === 0;
+}
+
 const ENGINE_NAMES = { hlsjs: 'HLS', mpegts: 'MPEG-TS', native: 'built-in player' };
 const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
 
@@ -279,7 +297,10 @@ function orderEngines(url) {
     return ['hlsjs', 'native', 'mpegts'];
   }
   if (path.endsWith('.ts') || path.endsWith('.flv')) return ['mpegts', 'native'];
-  if (/\.(mp4|webm|mkv|mov|ogv|avi)$/.test(path)) return ['native'];
+  // MKV/AVI only when the browser says it might cope (Chrome often can; Safari never does):
+  // a doomed attempt would still cost a connection against the account.
+  if (/\.(mkv|avi)$/.test(path)) return canContainer(path) ? ['native'] : [];
+  if (/\.(mp4|webm|mov|m4v|ogv)$/.test(path)) return ['native'];
   // Extension-less IPTV URLs (e.g. Xtream /user/pass/123) are usually raw MPEG-TS.
   return ['mpegts', 'hlsjs'];
 }

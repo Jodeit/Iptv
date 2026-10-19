@@ -82,9 +82,36 @@ function sniff(b) {
   }
   if (/^\s*[{[]/.test(text)) return { kind: 'JSON (not video)', message: text.slice(0, 160) };
   if (b[4] === 0x66 && b[5] === 0x74 && b[6] === 0x79 && b[7] === 0x70) return { kind: 'MP4' };
+  if (b[0] === 0x1a && b[1] === 0x45 && b[2] === 0xdf && b[3] === 0xa3) return matroska(b);
   if (b[0] === 0x46 && b[1] === 0x4c && b[2] === 0x56) return { kind: 'FLV' };
   if (/^[\x09\x0a\x0d\x20-\x7e]{8,}/.test(text)) return { kind: 'text (not video)', message: text.slice(0, 160) };
   return { kind: 'unrecognised binary' };
+}
+
+// Matroska/WebM: list the track codecs (CodecID elements sit near the start of the file).
+const MKV_CODECS = {
+  'V_MPEG4/ISO/AVC': 'H.264 video', 'V_MPEGH/ISO/HEVC': 'HEVC/H.265 video', 'V_VP9': 'VP9 video', 'V_VP8': 'VP8 video',
+  V_AV1: 'AV1 video', 'V_MPEG2': 'MPEG-2 video', A_AAC: 'AAC audio', A_AC3: 'AC-3 audio', A_EAC3: 'E-AC-3 audio',
+  A_DTS: 'DTS audio', A_OPUS: 'Opus audio', A_VORBIS: 'Vorbis audio', 'A_MPEG/L3': 'MP3 audio', A_TRUEHD: 'TrueHD audio',
+  A_FLAC: 'FLAC audio', 'S_TEXT/UTF8': 'subtitles', 'S_TEXT/ASS': 'subtitles', S_HDMV_PGS: 'subtitles', 'S_HDMV/PGS': 'subtitles',
+};
+
+function matroska(b) {
+  const ascii = (from, len) => String.fromCharCode(...b.subarray(from, from + len));
+  const webm = ascii(0, 64).includes('webm');
+  const ids = new Set();
+  // CodecID element: ID 0x86, a one-byte size, then an ASCII codec name like "V_MPEG4/ISO/AVC".
+  for (let i = 0; i + 2 < b.length; i++) {
+    if (b[i] !== 0x86 || b[i + 1] < 0x81 || b[i + 1] > 0xbf) continue;
+    const name = ascii(i + 2, b[i + 1] & 0x7f);
+    if (/^[VAS]_[A-Z0-9/_.]+$/.test(name)) ids.add(name);
+  }
+  const streams = [...new Set([...ids].map((id) => MKV_CODECS[id] || id))];
+  const problems = [];
+  const playable = canPlay(webm ? 'video/webm' : 'video/x-matroska') || document.createElement('video').canPlayType(webm ? 'video/webm' : 'video/x-matroska');
+  if (!playable) problems.push(`this browser can’t play ${webm ? 'WebM' : 'MKV'} files`);
+  if (streams.includes('DTS audio') || streams.includes('TrueHD audio')) problems.push('browsers can’t decode DTS/TrueHD audio');
+  return { kind: webm ? 'WebM' : 'Matroska (MKV)', streams, problems };
 }
 
 function findTsSync(b) {

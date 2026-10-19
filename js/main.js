@@ -1,4 +1,4 @@
-import { preferFlat } from './device.js';
+import { preferFlat, device } from './device.js';
 import { FlatStage } from './flat-stage.js';
 import { StreamPlayer } from './stream.js';
 import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, xtreamAccount, xtreamAlternates, readBody } from './m3u.js';
@@ -195,6 +195,7 @@ const player = new StreamPlayer(video, {
     theater.setPlaceholder('Stream unavailable', state.current?.name || '');
     if (report) renderPlaybackLog(report);
     if (refused) explainRefusal(report);
+    else if (state.current) offerExternal(state.current, e);
   },
 });
 
@@ -254,6 +255,50 @@ function setStatus(s) {
     vrPanel?.draw();
   }
 }
+
+// ---------- Play in another app ----------
+// Player apps fetch the stream themselves, from this device's own connection, so they need
+// neither the proxy nor a browser-friendly format (MKV, DTS audio…).
+function externalPlayers(url) {
+  const e = encodeURIComponent(url);
+  if (device.ios) {
+    return [
+      ['VLC', `vlc-x-callback://x-callback-url/stream?url=${e}`],
+      ['Infuse', `infuse://x-callback-url/play?url=${e}`],
+    ];
+  }
+  if (device.android) {
+    return [
+      ['Open with…', `intent:${url}#Intent;action=android.intent.action.VIEW;type=video/*;end`],
+      ['VLC', `vlc://${url}`],
+    ];
+  }
+  return [['VLC', `vlc://${url}`]];
+}
+
+function offerExternal(ch, why = '') {
+  const kind = kindOf(ch);
+  $('extWhy').textContent = `${why ? `${why} ` : ''}${kind === 'live' ? '' : 'Player apps handle every movie format.'}`.trim();
+  const box = $('extButtons');
+  box.innerHTML = '';
+  for (const [label, href] of externalPlayers(ch.url)) {
+    const a = document.createElement('a');
+    a.className = 'btn';
+    a.textContent = `Open in ${label}`.replace('Open in Open with…', 'Open with…');
+    a.href = href;
+    box.append(a);
+  }
+  const copy = document.createElement('button');
+  copy.className = 'btn ghost';
+  copy.textContent = 'Copy link';
+  copy.onclick = async () => {
+    try { await navigator.clipboard.writeText(ch.url); toast('Link copied. Paste it into your player app (it includes your login).'); }
+    catch { prompt('Copy this link:', ch.url); }
+  };
+  box.append(copy);
+  $('extSheet').classList.remove('hidden');
+}
+$('extClose').onclick = () => $('extSheet').classList.add('hidden');
 
 // ---------- Playback log ----------
 // Every failed attempt and stream probe, with Xtream passwords masked so it's safe to share.
@@ -351,7 +396,10 @@ function streamCandidates(ch) {
   // HLS first: it's what Xtream web players use, works with hls.js everywhere, and uses
   // short requests instead of one long TS connection that counts against account limits.
   const xt = state.source?.url && parseXtream(state.source.url);
-  const alts = ch.alts || (xt && kindOf(ch) === 'live' ? xtreamAlternates(ch.url, xt) : []);
+  const kind = kindOf(ch);
+  // Movies/episodes: some panels also serve an HLS version, which every browser can play.
+  const alts = ch.alts || (xt && kind === 'live' ? xtreamAlternates(ch.url, xt)
+    : xt && (kind === 'movie' || kind === 'episode') ? [ch.url.replace(/\.\w+$/, '.m3u8')].filter((u) => u !== ch.url) : []);
   const urls = [ch.url, ...alts].sort((a, b) => isHls(b) - isHls(a));
   const direct = urls.filter((u) => !isMixed(u)).map((u) => ({ src: u, hint: u }));
   const via = urls.map((u) => ({ src: proxied(u), hint: u, label: 'proxy' }));
@@ -868,6 +916,7 @@ function markPlaying() {
 
 // ---------- Playback ----------
 async function play(ch) {
+  $('extSheet').classList.add('hidden');
   state.current = ch;
   $('npName').textContent = ch.name;
   updateNowPlayingEpg();

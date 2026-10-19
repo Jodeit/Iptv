@@ -139,6 +139,10 @@ input[type=file] { font-size: 12px; color: var(--muted); }
   border: 1px solid var(--line); border-radius: 8px; color: var(--muted);
 }
 
+/* Group/category picker gets its own line; the chips wrap under it. */
+.row:has(#groupFilter) { flex-wrap: wrap; }
+.row #groupFilter { flex: 1 1 100%; }
+
 .field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 
 .progress {
@@ -156,6 +160,18 @@ input[type=file] { font-size: 12px; color: var(--muted); }
 .channel-list li.special { padding: 10px 10px; }
 .channel-list li.special .chev { color: var(--muted); font-size: 20px; }
 .channel-list li.back .ch-name { color: var(--accent); }
+
+/* ---------- Play in another app ---------- */
+.ext-sheet {
+  position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); z-index: 25;
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap; max-width: calc(100vw - 24px);
+  padding: 12px 14px; background: var(--panel-solid); border: 1px solid var(--accent); border-radius: var(--radius);
+}
+.ext-text { min-width: 180px; flex: 1; padding-right: 28px; }
+#extClose { position: absolute; top: 6px; right: 6px; }
+.ext-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.ext-buttons a.btn { text-decoration: none; display: inline-block; }
+@media (max-width: 720px) { .ext-sheet { bottom: 140px; width: calc(100vw - 16px); } }
 
 /* ---------- Flat player (phones/tablets) ---------- */
 body.flat #stage,
