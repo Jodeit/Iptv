@@ -1,6 +1,6 @@
 import { preferFlat, device } from './device.js';
 import { FlatStage } from './flat-stage.js';
-import { StreamPlayer, setHlsPreference } from './stream.js';
+import { StreamPlayer, setHlsPreference, setBufferLevel } from './stream.js';
 import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, xtreamAccount, xtreamAlternates, readBody } from './m3u.js';
 import { XtreamLibrary } from './xtream.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
@@ -75,6 +75,7 @@ const state = {
 let vrPanel = null;
 let logTimer = 0;
 setHlsPreference(settings.hlsEngine);
+setBufferLevel(settings.buffer);
 
 // ---------- Guide (EPG) ----------
 // Guide requests go direct when the server allows it, otherwise through the proxy.
@@ -1455,6 +1456,16 @@ for (const b of $('hlsSeg').children) {
     setHlsPreference(settings.hlsEngine);
     for (const x of $('hlsSeg').children) x.classList.toggle('active', x === b);
     toast('Applies from the next channel you open');
+  };
+}
+for (const b of $('bufferSeg').children) {
+  b.classList.toggle('active', b.dataset.buffer === (settings.buffer || 'normal'));
+  b.onclick = () => {
+    settings.buffer = b.dataset.buffer;
+    saveSettings();
+    setBufferLevel(settings.buffer);
+    for (const x of $('bufferSeg').children) x.classList.toggle('active', x === b);
+    toast('Applies from the next channel or movie you open');
   };
 }
 $('displayNote').textContent = flat

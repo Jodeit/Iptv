@@ -2,7 +2,7 @@
 // fragmented MP4 on the fly and feeding Media Source Extensions. Nothing is re-encoded.
 //
 // It streams the file with one HTTP request, a cluster (a few seconds) at a time, keeps
-// about 45 s buffered ahead and trims what's long behind, so a two-hour film never sits in
+// about 45 s (adjustable) buffered ahead and trims what's long behind, so a two-hour film never sits in
 // memory. Seeking uses the file's Cues index (fetched with a range request on first seek)
 // to restart the download at the right cluster.
 
@@ -10,13 +10,14 @@ import { ByteReader } from './ebml.js';
 import { MatroskaDemuxer, ID } from './demux.js';
 import { Remuxer } from './remux.js';
 
-const AHEAD = 45; // seconds buffered before pausing the download
 const BEHIND = 30; // seconds kept behind the playhead
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export class MkvPlayer {
-  constructor(video, url, { onWarn = () => {}, onFatal = () => {}, onLog = () => {}, startAt = 0 } = {}) {
+  constructor(video, url, { onWarn = () => {}, onFatal = () => {}, onLog = () => {}, startAt = 0, ahead = 45, preroll = 0 } = {}) {
+    this.maxAhead = ahead; // seconds buffered before pausing the download
+    this.preroll = preroll; // seconds to build up before playback may start
     this.video = video;
     this.url = url;
     this.onWarn = onWarn;
@@ -99,13 +100,17 @@ export class MkvPlayer {
     }
 
     this.loop().catch((err) => { if (!this.dead) this.onFatal(err); });
+
+    // Optional head start: let the cushion build before playback begins (capped at 60 s).
+    const until = Date.now() + 60000;
+    while (!this.dead && this.preroll > 0 && this.ahead() < this.preroll && Date.now() < until) await sleep(300);
   }
 
   // ---------- Feeding ----------
   async loop() {
     while (!this.dead) {
       if (this.seekTo !== null) { await this.doSeek(); continue; }
-      while (!this.dead && this.seekTo === null && this.ahead() > AHEAD) await sleep(400);
+      while (!this.dead && this.seekTo === null && this.ahead() > this.maxAhead) await sleep(400);
       if (this.dead || this.seekTo !== null) continue;
       let c;
       try {

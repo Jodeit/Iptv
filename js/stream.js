@@ -9,6 +9,12 @@ import { probe, describeProbe } from './diagnose.js';
 let hlsPreference = 'auto';
 export const setHlsPreference = (p) => { hlsPreference = p || 'auto'; };
 
+// Seconds to keep buffered ahead: a bigger cushion rides out slow providers and proxies.
+// preroll = seconds to build up before a movie file starts playing.
+const BUFFER_LEVELS = { normal: { ahead: 45, hls: 60, preroll: 0 }, large: { ahead: 150, hls: 180, preroll: 20 }, max: { ahead: 400, hls: 400, preroll: 45 } };
+let bufferLevel = BUFFER_LEVELS.normal;
+export const setBufferLevel = (k) => { bufferLevel = BUFFER_LEVELS[k] || BUFFER_LEVELS.normal; };
+
 export class StreamPlayer {
   constructor(video, { onStatus = () => {}, onError = () => {}, onWarn = () => {}, onLog = () => {} } = {}) {
     this.video = video;
@@ -178,8 +184,9 @@ export class StreamPlayer {
         // Buffer generously and sit further behind the live edge: every segment travels
         // provider → proxy → headset, so a deeper cushion absorbs slow ones.
         backBufferLength: 30,
-        maxBufferLength: 60,
-        maxMaxBufferLength: 120,
+        maxBufferLength: bufferLevel.hls,
+        maxMaxBufferLength: Math.max(120, bufferLevel.hls),
+        maxBufferSize: 200e6,
         liveSyncDurationCount: 5,
         liveMaxLatencyDurationCount: Infinity, // don't skip ahead after a stall
         startFragPrefetch: true,
@@ -230,6 +237,8 @@ export class StreamPlayer {
       onLog: (m) => this.log(m),
       onFatal: (err) => this.recover(token, `MKV: ${err.message}`),
       startAt: this.resumeAt || 0,
+      ahead: bufferLevel.ahead,
+      preroll: bufferLevel.preroll,
     });
     this.mkvp = p;
     await p.start();
