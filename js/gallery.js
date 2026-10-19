@@ -12,12 +12,19 @@ const SORTS = {
   title: { label: 'A–Z', fn: (a, b) => cleanName(a.name).localeCompare(cleanName(b.name)) },
 };
 
-// Age levels: the highest US film/TV certification each one allows.
+// Age levels on one scale for film (MPAA) and TV (TV Parental Guidelines) certifications.
 const AGE = {
-  G: 1, 'TV-Y': 1, 'TV-Y7': 1, 'TV-Y7-FV': 1, 'TV-G': 1,
-  PG: 2, 'TV-PG': 2,
-  'PG-13': 3, 'TV-14': 3,
-  R: 4, 'NC-17': 5, 'TV-MA': 4, NR: 5,
+  'TV-Y': 1,
+  G: 2, 'TV-Y7': 2, 'TV-Y7-FV': 2, 'TV-G': 2,
+  PG: 3, 'TV-PG': 3,
+  'PG-13': 4, 'TV-14': 4,
+  R: 5, 'TV-MA': 5,
+  'NC-17': 6, NR: 6,
+};
+// The Age menu speaks each system's own terms.
+const AGE_MENU = {
+  movie: [[2, 'Kids (G)'], [3, 'Up to PG'], [4, 'Up to PG-13'], [5, 'Up to R']],
+  series: [[1, 'Little kids (TV-Y)'], [2, 'Kids (TV-Y7, TV-G)'], [3, 'Up to TV-PG'], [4, 'Up to TV-14'], [5, 'Up to TV-MA']],
 };
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -47,7 +54,7 @@ export class GalleryView {
       </header>
       <div class="gallery-filters">
         <label>Rating <select class="gf-rating"><option value="0">Any</option><option value="5">5+</option><option value="6">6+</option><option value="7">7+</option><option value="8">8+</option><option value="9">9+</option></select></label>
-        <label>Age <select class="gf-age"><option value="0">Any</option><option value="1">Kids</option><option value="2">Up to PG</option><option value="3">Up to PG-13</option><option value="4">Up to R</option></select></label>
+        <label>Age <select class="gf-age"></select></label>
         <label>Year <select class="gf-year"><option value="">Any</option><option value="2020">2020s</option><option value="2010">2010s</option><option value="2000">2000s</option><option value="1990">1990s</option><option value="1980">1980s</option><option value="old">Before 1980</option></select></label>
         <label class="gf-genre-wrap hidden">Genre <select class="gf-genre"><option value="">Any</option></select></label>
         <label class="check"><input type="checkbox" class="gf-fav"> Favorites</label>
@@ -62,6 +69,10 @@ export class GalleryView {
     this.preview = root.querySelector('.gallery-preview');
     this.note = root.querySelector('.gallery-note');
     this.cards = new Map(); // item id → card element
+    this.counts = new Map(); // series id → { seasons, episodes }
+    this.countQueue = [];
+    this.countBusy = 0;
+    this.best = new Set(); // ids of the fullest listing among duplicates
     // Ratings cost a lookup each (1,000 a day on a free key), so only posters that stay on
     // screen for a moment ask; scrolling quickly past a hundred titles costs nothing.
     this.dwell = new Map(); // card → timer
@@ -69,7 +80,11 @@ export class GalleryView {
       for (const e of entries) {
         clearTimeout(this.dwell.get(e.target));
         if (e.isIntersecting) {
-          this.dwell.set(e.target, setTimeout(() => this.app.ratings.get(this.itemsById.get(e.target.dataset.id)), 500));
+          this.dwell.set(e.target, setTimeout(() => {
+            const item = this.itemsById.get(e.target.dataset.id);
+            this.app.ratings.get(item);
+            if (item?.kind === 'series') this.queueCounts(item);
+          }, 500));
         }
       }
     }, { root: root.querySelector('.gallery-scroll') });
@@ -107,6 +122,7 @@ export class GalleryView {
     this.closePreview();
     this.app.onToggle?.(true);
     for (const b of this.root.querySelectorAll('.gallery-kind button')) b.classList.toggle('active', b.dataset.kind === kind);
+    this.fillAgeMenu(kind);
     const cats = this.app.categories(kind);
     const sel = this.root.querySelector('.gallery-cat');
     sel.innerHTML = cats.map((c) => `<option value="${esc(c.id)}">${esc(c.name)}</option>`).join('');
@@ -169,6 +185,7 @@ export class GalleryView {
     for (const t of this.dwell.values()) clearTimeout(t);
     this.dwell.clear();
     this.app.ratings.clearQueue();
+    this.countQueue = [];
     this.cards.clear();
     const q = this.query;
     const everywhere = q.length >= 2 && this.pool?.[this.kind];
@@ -202,6 +219,17 @@ export class GalleryView {
       b.onclick = () => { this.limit += PAGE; this.render(); };
       this.more.append(b);
     }
+  }
+
+  // Rebuilds the Age menu for movies or series, keeping the closest level that still fits.
+  fillAgeMenu(kind) {
+    const sel = this.root.querySelector('.gf-age');
+    const menu = AGE_MENU[kind === 'series' ? 'series' : 'movie'];
+    sel.innerHTML = '<option value="0">Any</option>' + menu.map(([v, label]) => `<option value="${v}">${label}</option>`).join('');
+    const want = this.filters.age;
+    const keep = want ? [...menu].reverse().find(([v]) => v <= want)?.[0] ?? menu[0][0] : 0;
+    sel.value = String(keep);
+    this.filters.age = keep;
   }
 
   // Looks up TMDB age ratings and popularity for a list, a few at a time, re-rendering as they arrive.
@@ -281,12 +309,14 @@ export class GalleryView {
     const { title, year } = this.app.parseTitle(item.name);
     el.innerHTML = `<div class="gposter"><span class="ginitial">${esc((title || item.name).charAt(0))}</span></div>
       <div class="gtitle">${esc(title || item.name)}</div>
-      <div class="gmeta"><span>${item.year || year || ''}</span><span class="gbadges"></span></div>`;
+      <div class="gmeta"><span>${item.year || year || ''}</span><span class="gbadges"></span></div>
+      <div class="ginfo"></div>`;
     if (item.logo) this.poster(el.querySelector('.gposter'), item.logo);
     const prog = this.app.progress(item.id);
     if (prog && prog.d) el.querySelector('.gposter').insertAdjacentHTML('beforeend', `<i class="gprog" style="width:${Math.min(100, (prog.t / prog.d) * 100)}%"></i>`);
     if (this.app.isFav(item.id)) el.querySelector('.gposter').insertAdjacentHTML('beforeend', '<span class="gfav">★</span>');
     this.badges(el, item);
+    this.info(el, item);
     el.onclick = () => this.showPreview(item);
     this.cards.set(item.id, el);
     this.observer.observe(el);
@@ -317,6 +347,63 @@ export class GalleryView {
     else if (r?.imdb) out.push(`<span class="badge imdb">IMDb ${esc(r.imdb)}</span>`);
     else if (item.rating) out.push(`<span class="badge star">★ ${(+item.rating).toFixed(1)}</span>`);
     el.querySelector('.gbadges').innerHTML = out.join('');
+  }
+
+  // What tells one listing of a title from another: its category (language, quality), how
+  // many seasons and episodes it has, and when the provider last updated it.
+  info(el, item) {
+    const box = el.querySelector('.ginfo');
+    if (!box) return;
+    const c = this.counts.get(item.id);
+    const bits = [];
+    if (c) bits.push(`${c.seasons} season${c.seasons === 1 ? '' : 's'} · ${c.episodes} ep${c.episodes === 1 ? '' : 's'}`);
+    if (item.kind === 'series' && item.added) bits.push(`updated ${new Date(item.added * 1000).toLocaleDateString([], { month: 'short', year: 'numeric' })}`);
+    const tags = (`${item.name}`.match(/\b(4K|UHD|FHD|HDR|MULTI[- ]?SUBS?|DUAL)\b/gi) || []).map((t) => t.toUpperCase()).filter((t) => !(item.group || '').toUpperCase().includes(t)); // tags in the title the category doesn't already say
+    box.innerHTML = [
+      bits.length ? `<div>${esc(bits.join(' · '))}</div>` : '',
+      `<div class="gcat">${esc(item.group || '')}${tags.length ? ` <b>${esc([...new Set(tags)].join(' '))}</b>` : ''}</div>`,
+      this.best.has(item.id) ? '<span class="badge best">Most episodes</span>' : '',
+    ].join('');
+  }
+
+  // Episode counts for series cards on screen, two requests at a time.
+  queueCounts(item) {
+    if (!this.app.seriesCounts || this.counts.has(item.id) || this.countQueue.includes(item)) return;
+    this.countQueue.push(item);
+    this.pumpCounts();
+  }
+
+  async pumpCounts() {
+    while (this.countBusy < 2 && this.countQueue.length) {
+      const item = this.countQueue.shift();
+      this.countBusy++;
+      this.app.seriesCounts(item).then((c) => {
+        if (c) { this.counts.set(item.id, c); this.markBest(); }
+      }).catch(() => {}).finally(() => { this.countBusy--; this.pumpCounts(); });
+    }
+  }
+
+  // Among cards for the same title, flag the listing with the most episodes.
+  markBest() {
+    const groups = new Map();
+    for (const id of this.cards.keys()) {
+      const item = this.itemsById.get(id);
+      const c = this.counts.get(id);
+      if (!item || !c) continue;
+      const { title, year } = this.app.parseTitle(item.name);
+      const key = `${(title || item.name).toLowerCase()}|${item.year || year || ''}`;
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key).push([id, c.episodes]);
+    }
+    const best = new Set();
+    for (const list of groups.values()) {
+      if (list.length < 2) continue;
+      const max = Math.max(...list.map(([, n]) => n));
+      const top = list.filter(([, n]) => n === max);
+      if (max > 0 && top.length < list.length) for (const [id] of top) best.add(id);
+    }
+    this.best = best;
+    for (const [id, el] of this.cards) this.info(el, this.itemsById.get(id));
   }
 
   // A rating arrived for an item (from Ratings.onUpdate).

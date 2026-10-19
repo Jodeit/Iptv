@@ -215,6 +215,8 @@ export class XtreamLibrary {
           tvgId: '',
           layout: null,
           kind: 'episode',
+          seriesId: series.seriesId,
+          seriesName: series.name,
           season: +season,
           episode: +e.episode_num || 0,
           title: e.title || '',

@@ -319,6 +319,7 @@
       <div id="npStatus" class="np-status muted small">Pick a channel to start</div>
     </div>
     <div class="bar-controls">
+      <button id="episodesBtn" class="chip hidden" title="Seasons and episodes (E)">Episodes</button>
       <button id="prevCh" class="icon-btn" title="Previous channel (PgUp)">⏮</button>
       <button id="playPause" class="icon-btn" title="Play/Pause (Space)">▶</button>
       <button id="nextCh" class="icon-btn" title="Next channel (PgDn)">⏭</button>
@@ -327,6 +328,13 @@
       <button id="enterVR" class="btn xr" disabled>VR not available</button>
       <button id="enterAR" class="btn xr ghost hidden">Passthrough</button>
     </div>
+  </div>
+
+  <!-- Season/episode picker for the series that's playing -->
+  <div id="epMenu" class="ep-menu hidden" role="dialog" aria-label="Episodes">
+    <header><b id="epTitle"></b><button id="epClose" class="icon-btn" title="Close">✕</button></header>
+    <div id="epSeasons" class="ep-seasons"></div>
+    <ol id="epList" class="ep-list"></ol>
   </div>
 
   <div id="toast" class="toast"></div>

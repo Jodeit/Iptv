@@ -329,6 +329,19 @@ const gallery = new GalleryView($('gallery'), {
   },
   searchAll: (kind) => allOfKind(kind),
   episodes: (series) => state.xlib.seriesEpisodes(series),
+  // Seasons and episode count for a series card, cached a day. One API call each (not a
+  // stream, so it doesn't use a connection), made only for cards that stay on screen.
+  seriesCounts: async (series) => {
+    if (!state.xlib) return null;
+    const key = `series-counts:${playlistKey(state.source?.url || '')}:${series.seriesId}`;
+    const cached = await cacheGet(key);
+    if (cached && Date.now() - cached.at < 86400000) return cached.counts;
+    const eps = await state.xlib.seriesEpisodes(series);
+    const seasons = new Set(eps.map((e) => e.season)).size;
+    const counts = { seasons, episodes: eps.length, described: eps.filter((e) => e.plot).length };
+    cachePut(key, { at: Date.now(), counts });
+    return counts;
+  },
   movieInfo: (item) => (state.xlib ? state.xlib.movieInfo(item) : {}),
   moreLike,
   ratings,
@@ -1183,6 +1196,7 @@ async function play(ch, { startAt = resumePoint(ch) } = {}) {
   logo.referrerPolicy = 'no-referrer';
   if (ch.logo) logo.src = ch.logo; else logo.removeAttribute('src');
   markPlaying();
+  syncEpisodes(ch);
   theater.setVideoActive(false);
   theater.setPlaceholder(ch.name, 'Tuning…');
   // Channels tagged as native 3D switch the screen to that layout automatically.
@@ -1211,12 +1225,74 @@ async function play(ch, { startAt = resumePoint(ch) } = {}) {
   }
 }
 
+// ---------- Episode picker ----------
+// Loads the episode list for the series that's playing (cached by XtreamLibrary) and shows
+// the Episodes button; the menu lists one season at a time.
+async function syncEpisodes(ch) {
+  const isEp = ch?.kind === 'episode' && ch.seriesId && state.xlib;
+  $('episodesBtn').classList.toggle('hidden', !isEp);
+  $('prevCh').title = isEp ? 'Previous episode (PgUp)' : 'Previous channel (PgUp)';
+  $('nextCh').title = isEp ? 'Next episode (PgDn)' : 'Next channel (PgDn)';
+  if (!isEp) { state.episodes = null; $('epMenu').classList.add('hidden'); return; }
+  if (state.episodes?.[0]?.seriesId === ch.seriesId) return renderEpMenu();
+  try {
+    state.episodes = await state.xlib.seriesEpisodes({ seriesId: ch.seriesId, name: ch.seriesName });
+  } catch { state.episodes = null; }
+  renderEpMenu();
+}
+
+function renderEpMenu(season = state.current?.season) {
+  const eps = state.episodes || [];
+  const cur = state.current;
+  $('epTitle').textContent = cur?.seriesName || 'Episodes';
+  const seasons = [...new Set(eps.map((e) => e.season))].sort((a, b) => a - b);
+  if (!seasons.includes(season)) season = seasons[0];
+  state.epSeason = season;
+  $('epSeasons').innerHTML = '';
+  for (const s of seasons) {
+    const b = document.createElement('button');
+    b.className = `chip${s === season ? ' on' : ''}`;
+    b.textContent = `Season ${s}`;
+    b.onclick = () => renderEpMenu(s);
+    $('epSeasons').append(b);
+  }
+  const list = $('epList');
+  list.innerHTML = '';
+  for (const e of eps.filter((x) => x.season === season)) {
+    const li = document.createElement('li');
+    li.className = e.id === cur?.id ? 'playing' : '';
+    const p = getProgress(e.id);
+    li.innerHTML = `<span class="ep-num"></span><span class="ep-name"></span><span class="ep-meta muted small"></span>`;
+    li.children[0].textContent = e.episode || '';
+    li.children[1].textContent = e.title || e.name;
+    li.children[2].textContent = [e.runtime, p?.d && p.t / p.d > 0.9 ? 'watched' : ''].filter(Boolean).join(' · ');
+    li.onclick = () => { $('epMenu').classList.add('hidden'); play(e); };
+    list.append(li);
+  }
+  list.querySelector('.playing')?.scrollIntoView({ block: 'nearest' });
+}
+
+$('episodesBtn').onclick = () => {
+  const menu = $('epMenu');
+  menu.classList.toggle('hidden');
+  if (!menu.classList.contains('hidden')) renderEpMenu();
+};
+$('epClose').onclick = () => $('epMenu').classList.add('hidden');
+
 function playDirect(url) {
   if (!url) return;
   play({ id: url, url, name: url.split('/').pop().split('?')[0] || url, group: 'Direct', logo: '', num: 0, layout: null });
 }
 
 function step(dir) {
+  // In a series, ⏮/⏭ go to the previous/next episode (across seasons), not the channel list.
+  const eps = state.current?.kind === 'episode' && state.episodes;
+  if (eps?.length) {
+    const i = eps.findIndex((e) => e.id === state.current.id);
+    const next = eps[i + dir];
+    if (next) play(next); else toast(dir > 0 ? 'That was the last episode' : 'This is the first episode');
+    return;
+  }
   const list = state.filtered.length ? state.filtered : state.channels;
   if (!list.length) return;
   const i = list.indexOf(state.current);
@@ -1683,6 +1759,7 @@ addEventListener('keydown', (e) => {
   else if (k === 'PageDown' || k === 'ArrowDown') { e.preventDefault(); step(1); }
   else if (k === 'PageUp' || k === 'ArrowUp') { e.preventDefault(); step(-1); }
   else if (k === 'm' || k === 'M') $('mute').click();
+  else if ((k === 'e' || k === 'E') && !$('episodesBtn').classList.contains('hidden')) $('episodesBtn').click();
   else if ((k === 'g' || k === 'G') && guide.available()) (guideView.isOpen() ? guideView.close() : guideView.open());
   else if (k === 'h' || k === 'H') togglePanel();
   else if (k === '3') cycleMode();
