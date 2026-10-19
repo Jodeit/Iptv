@@ -248,7 +248,7 @@ export class Theater {
     this.screen.set('uMap', active ? this.videoTexture : this.placeholderTexture);
   }
 
-  setPlaceholder(title, subtitle = 'o3XR IPTV · XR3D') {
+  setPlaceholder(title, subtitle = 'Tuner · XR3D') {
     const c = this.placeholderCanvas;
     const ctx = c.getContext('2d');
     const g = ctx.createLinearGradient(0, 0, c.width, c.height);

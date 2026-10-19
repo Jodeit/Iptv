@@ -1,4 +1,4 @@
-// o3XR IPTV proxy for Cloudflare Workers: the same /proxy endpoint as server.js, on free HTTPS.
+// Tuner proxy for Cloudflare Workers: the same /proxy endpoint as server.js, on free HTTPS.
 // Lets the GitHub Pages build play IPTV servers that send no CORS headers or only speak http://.
 //
 // Deploy: dash.cloudflare.com → Workers & Pages → Create → Worker → paste this file → Deploy.

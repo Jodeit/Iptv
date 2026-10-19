@@ -158,12 +158,12 @@ export class VRPanel {
     ctx.font = '800 28px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('o3', 60, 57);
+    ctx.save(); ctx.translate(36, 32); ctx.scale(1.5, 1.5); ctx.fill(new Path2D('M5 16C9 9 19 8 24 14L29 9 27.5 16 29 23 24 18C19 24 9 23 5 16ZM13 10.6 16 6 18.4 10ZM14 21.4 16 25.5 18.4 22Z')); ctx.restore();
     ctx.textAlign = 'left';
     ctx.fillStyle = C.text;
     ctx.font = '600 30px system-ui, sans-serif';
     const cur = app.current();
-    ctx.fillText(fit(ctx, cur ? cur.name : 'XR IPTV', W - 140), 108, 46);
+    ctx.fillText(fit(ctx, cur ? cur.name : 'Tuner', W - 140), 108, 46);
     ctx.fillStyle = C.muted;
     ctx.font = '400 22px system-ui, sans-serif';
     ctx.fillText(fit(ctx, app.status(), W - 140), 108, 76);

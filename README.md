@@ -1,4 +1,4 @@
-# o3XR IPTV
+# Tuner
 
 A WebXR IPTV player with **XR3D**, which converts flat 2D channels into stereoscopic 3D in real time.
 It runs in Quest Browser, Pico, Vision Pro (Safari WebXR), and any desktop or mobile browser.

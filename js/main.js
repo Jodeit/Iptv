@@ -117,11 +117,12 @@ const guideView = new GuideView({
 });
 
 let miniHidden = false;
+// The player shrinks to a thumbnail whenever the guide or the movie/series gallery covers the screen.
 function syncMini() {
-  const on = guideView.isOpen() && !!state.current && !miniHidden;
+  const on = (guideView.isOpen() || gallery.isOpen()) && !miniHidden;
   document.body.classList.toggle('mini-on', on);
   $('miniBar').classList.toggle('hidden', !on);
-  $('miniTitle').textContent = state.current?.name || '';
+  $('miniTitle').textContent = state.current?.name || 'Nothing playing';
 }
 
 function updateNowPlayingEpg() {
@@ -289,6 +290,7 @@ async function allOfKind(kind) {
 }
 
 const gallery = new GalleryView($('gallery'), {
+  onToggle: () => syncMini(),
   categories: (kind) => (state.xlib ? vodCategories(kind) : galleryGroups(kind)),
   loadCategory: async (kind, catId) => {
     if (!state.xlib) return state.library.filter((c) => kindOf(c) === kind && c.group === catId);
@@ -956,7 +958,10 @@ function rebuildLibrary() {
   if (xl && !state.kind) state.kind = 'live';
   for (const b of $('kindSeg').children) b.classList.toggle('active', b.dataset.kind === state.kind);
   rebuildGroups();
+  // First playlist of the visit: start on the guide (live TV) instead of an empty stage.
+  if (!guideShown && lib.length && !galleryKind() && guide.available() && !gallery.isOpen()) { guideShown = true; guideView.open(); }
 }
+let guideShown = false;
 
 function rebuildGroups() {
   state.seriesOpen = null;
@@ -1348,11 +1353,12 @@ for (const b of $('kindSeg').children) {
     for (const x of $('kindSeg').children) x.classList.toggle('active', x === b);
     rebuildGroups();
     setTab('channels');
-    if (galleryKind()) gallery.open(state.kind, state.group || undefined); // movies and series open as posters
+    if (galleryKind()) { guideView.close(); gallery.open(state.kind, state.group || undefined); } // movies and series open as posters
+    else { gallery.close(); if (guide.available()) guideView.open(); }
   };
 }
 $('miniClose').onclick = () => { miniHidden = true; syncMini(); };
-$('miniFull').onclick = () => guideView.close();
+$('miniFull').onclick = () => { miniHidden = false; guideView.close(); gallery.close(); };
 $('miniSize').onclick = () => {
   const sizes = [280, 360, 520], root = document.documentElement.style;
   const cur = parseInt(root.getPropertyValue('--mini-w')) || 360;

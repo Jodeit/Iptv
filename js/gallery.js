@@ -93,6 +93,7 @@ export class GalleryView {
     this.kind = kind;
     this.root.classList.remove('hidden');
     this.closePreview();
+    this.app.onToggle?.(true);
     for (const b of this.root.querySelectorAll('.gallery-kind button')) b.classList.toggle('active', b.dataset.kind === kind);
     const cats = this.app.categories(kind);
     const sel = this.root.querySelector('.gallery-cat');
@@ -106,6 +107,7 @@ export class GalleryView {
   close() {
     this.root.classList.add('hidden');
     this.closePreview();
+    this.app.onToggle?.(false);
   }
 
   async showCategory(catId) {

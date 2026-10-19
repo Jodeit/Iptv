@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// o3XR IPTV dev server: serves the app and relays IPTV playlists/streams with CORS
+// Tuner dev server: serves the app and relays IPTV playlists/streams with CORS
 // headers, so providers that don't allow browser playback (e.g. Xtream panels) still work.
 //
 //   node server.js                      http://0.0.0.0:8080
@@ -182,7 +182,7 @@ const tls = process.env.CERT && process.env.KEY
 const server = tls ? https.createServer(tls, handler) : http.createServer(handler);
 server.listen(PORT, HOST, () => {
   const scheme = tls ? 'https' : 'http';
-  console.log(`o3XR IPTV on ${scheme}://localhost:${PORT} (proxy at /proxy)`);
+  console.log(`Tuner on ${scheme}://localhost:${PORT} (proxy at /proxy)`);
   if (HOST === '0.0.0.0') {
     const lan = Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal);
     for (const i of lan) console.log(`  on your network: ${scheme}://${i.address}:${PORT}`);
