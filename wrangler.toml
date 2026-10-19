@@ -7,3 +7,7 @@ compatibility_date = "2025-09-01"
 
 [assets]
 directory = "."
+
+# Profile sync storage. No id needed: Wrangler creates the namespace on first deploy.
+[[kv_namespaces]]
+binding = "PROFILES"

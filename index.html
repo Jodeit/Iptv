@@ -24,6 +24,7 @@
   <aside id="panel" class="panel">
     <header class="panel-head">
       <div class="brand"><span class="logo">o3</span><span>XR IPTV</span></div>
+      <button id="profileChip" class="profile-chip" title="Profiles"><span class="avatar" id="chipAvatar">·</span><span id="chipName">This device</span></button>
       <button id="panelToggle" class="icon-btn" title="Hide panel (H)">⟨</button>
     </header>
 
@@ -32,6 +33,7 @@
       <button class="tab" data-tab="sources">Sources</button>
       <button class="tab" data-tab="xr3d">XR3D</button>
       <button class="tab" data-tab="theater">Theater</button>
+      <button class="tab" data-tab="profile">Profile</button>
     </nav>
 
     <!-- Channels -->
@@ -177,6 +179,59 @@
       </div>
       <label class="check"><input id="ambient" type="checkbox" checked> Ambient light from video</label>
       <button id="resetSettings" class="btn ghost">Reset settings</button>
+    </section>
+    <!-- Profile -->
+    <section class="tab-body" data-tab="profile">
+      <div class="profile-card">
+        <span class="avatar big" id="pfAvatar">·</span>
+        <div class="profile-meta">
+          <div id="pfName" class="np-name">This device only</div>
+          <div id="pfStatus" class="muted small">Not synced</div>
+        </div>
+      </div>
+
+      <div id="pfActions" class="row hidden">
+        <button id="pfSync" class="btn ghost">Sync now</button>
+        <button id="pfLink" class="btn">Link a device</button>
+      </div>
+      <div id="pfCodeBox" class="code-box hidden">
+        <div class="muted small">On the other device, open <b>Profile → Link this device</b> and enter:</div>
+        <div id="pfCode" class="code"></div>
+        <div id="pfCodeTimer" class="muted small"></div>
+      </div>
+
+      <h3>Profiles on this device</h3>
+      <ul id="pfList" class="profile-list"></ul>
+
+      <h3>Link this device</h3>
+      <div class="row">
+        <input id="pfClaimCode" type="text" placeholder="8-character code" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <button id="pfClaim" class="btn">Link</button>
+      </div>
+
+      <h3>New profile</h3>
+      <div class="row">
+        <input id="pfNewName" type="text" placeholder="e.g. Living room, Dad, Kids" maxlength="40">
+        <button id="pfCreate" class="btn">Create</button>
+      </div>
+      <label class="check"><input id="pfCopy" type="checkbox" checked> Start with what's on this device</label>
+
+      <p id="pfUnavailable" class="muted small proxy-status hidden"></p>
+      <p class="muted small">A profile keeps your playlists, favorites, content filter and last playlist in step across
+        devices. It's encrypted on your devices before upload, so the server can't read it, Xtream passwords included.
+        3D, screen and volume settings stay per device.</p>
+
+      <div id="pfDanger" class="stack hidden">
+        <h3>This profile</h3>
+        <div class="row">
+          <input id="pfRename" type="text" maxlength="40" placeholder="Rename">
+          <button id="pfRenameBtn" class="btn ghost">Rename</button>
+        </div>
+        <div class="row">
+          <button id="pfSignOut" class="btn ghost">Remove from this device</button>
+          <button id="pfDelete" class="btn ghost danger">Delete everywhere</button>
+        </div>
+      </div>
     </section>
   </aside>
 

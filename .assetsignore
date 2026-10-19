@@ -10,3 +10,4 @@ server.js
 package.json
 wrangler.toml
 *.pem
+data

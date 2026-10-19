@@ -4,6 +4,7 @@ import { StreamPlayer } from './stream.js';
 import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, xtreamAccount } from './m3u.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
 import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
+import { Profiles, emptyDoc, canSync } from './profiles.js';
 import { VRPanel } from './vr-panel.js';
 
 const $ = (id) => document.getElementById(id);
@@ -61,12 +62,68 @@ const state = {
   group: '',
   query: '',
   favOnly: false,
-  favs: new Set(store.get('favs', [])),
+  favs: new Set(),
   status: 'Pick a channel to start',
   activeMode: settings.mode,
 };
 
 let vrPanel = null;
+
+// ---------- Profiles ----------
+// Playlists, favorites, the content filter and the last playlist live in the active profile's
+// document (synced across devices); everything else in settings stays on this device.
+const apiBase = () => {
+  const u = (settings.proxyUrl || '').trim();
+  return u ? new URL('/api/', new URL(u, location.href)).href : new URL('api/', location.href).href;
+};
+
+// First run with profiles: move this device's existing data into its local document.
+function legacyDoc() {
+  const now = Date.now();
+  const seen = new Set();
+  const playlists = store.get('playlists', []).map((p, i) => ({ key: playlistKey(p.url), name: p.name, url: p.url, at: now - i }))
+    .filter((p) => !seen.has(p.key) && seen.add(p.key));
+  return {
+    ...emptyDoc(),
+    playlists,
+    favs: Object.fromEntries(store.get('favs', []).map((id) => [id, now])),
+    contentFilter: { ...settings.contentFilter },
+    last: store.get('last', null),
+    updatedAt: now,
+  };
+}
+
+const profiles = new Profiles({
+  apiBase,
+  migrate: legacyDoc,
+  onDoc: (doc, reason) => applyDoc(doc, reason),
+  onStatus: () => renderProfiles(),
+});
+state.favs = new Set(Object.keys(profiles.doc.favs));
+if (profiles.doc.contentFilter) settings.contentFilter = { ...FILTER_DEFAULTS, ...profiles.doc.contentFilter };
+
+const setLast = (last) => {
+  if (JSON.stringify(profiles.doc.last) !== JSON.stringify(last)) profiles.update((d) => { d.last = last; });
+};
+
+// Another device changed the profile, or the user switched profiles.
+function applyDoc(doc, reason) {
+  state.favs = new Set(Object.keys(doc.favs));
+  settings.contentFilter = { ...FILTER_DEFAULTS, ...(doc.contentFilter || {}) };
+  saveSettings();
+  syncFilterForm();
+  renderSaved();
+  const want = doc.last;
+  const showing = state.source?.url ? playlistKey(state.source.url) : null;
+  if (want?.url && playlistKey(want.url) !== showing && (reason === 'switch' || !state.channels.length)) {
+    loadPlaylistUrl(want.url, want.name, { fresh: false });
+  } else if (reason === 'switch' && !want?.url) {
+    setChannels([], 'Profile', null);
+    setStatus('Add a playlist in Sources');
+  } else {
+    rebuildLibrary();
+  }
+}
 const video = $('video');
 const theater = new Theater($('stage'), video);
 const player = new StreamPlayer(video, {
@@ -268,7 +325,9 @@ function setChannels(channels, label, source = null) {
   state.group = '';
   rebuildLibrary();
   toast(`${label}: ${state.library.length.toLocaleString()} channels${state.library.length < channels.length ? ' after filter' : ''}`);
-  setTab('channels');
+  // Jump to the list after loading from Sources, but not when a profile switch or sync
+  // reloads the playlist while you're on another tab.
+  if (document.querySelector('.tab.active')?.dataset.tab === 'sources') setTab('channels');
 }
 
 const ago = (t) => {
@@ -293,7 +352,7 @@ async function loadPlaylistUrl(url, name, { fresh = true } = {}) {
     const cached = await cacheGet(key);
     if (cached?.channels?.length) {
       setChannels(cached.channels, name, { url, name, savedAt: cached.savedAt });
-      store.set('last', { url, name });
+      setLast({ url, name });
       rememberPlaylist(name, url);
       setStatus(`Saved copy from ${ago(cached.savedAt)} · ↻ to update`);
       return;
@@ -329,7 +388,7 @@ async function loadPlaylistUrl(url, name, { fresh = true } = {}) {
     const savedAt = Date.now();
     setChannels(channels, name, { url, name, savedAt });
     cachePut(key, { url, name, savedAt, channels });
-    store.set('last', { url, name });
+    setLast({ url, name });
     rememberPlaylist(name, url);
     hideLoading();
     setStatus(state.current ? state.status : 'Pick a channel to start');
@@ -343,25 +402,20 @@ async function loadPlaylistUrl(url, name, { fresh = true } = {}) {
 
 function loadBuiltinDemo() {
   setChannels(parseM3U(DEMO_M3U), 'Demo streams');
-  store.set('last', { builtin: true });
+  setLast({ builtin: true });
 }
 
 // Saved playlists are unique per playlistKey, so re-adding an account replaces its entry.
-function savedPlaylists() {
-  const seen = new Set();
-  return store.get('playlists', []).filter((p) => {
-    const k = playlistKey(p.url);
-    if (seen.has(k)) return false;
-    seen.add(k);
-    return true;
-  });
-}
+const savedPlaylists = () => profiles.doc.playlists;
 
 function rememberPlaylist(name, url) {
   const key = playlistKey(url);
-  const saved = savedPlaylists().filter((p) => playlistKey(p.url) !== key);
-  saved.unshift({ name, url });
-  store.set('playlists', saved.slice(0, 12));
+  const top = profiles.doc.playlists[0];
+  if (top?.key === key && top.name === name && top.url === url) return; // nothing new to sync
+  profiles.update((d) => {
+    d.playlists = [{ key, name, url, at: Date.now() }, ...d.playlists.filter((p) => p.key !== key)].slice(0, 30);
+    delete d.playlistsRemoved[key];
+  });
   renderSaved();
 }
 
@@ -369,7 +423,6 @@ function renderSaved() {
   const ul = $('savedList');
   ul.innerHTML = '';
   const saved = savedPlaylists();
-  store.set('playlists', saved); // clears duplicates saved by older versions
   if (!saved.length) { ul.innerHTML = '<li class="muted small">None yet</li>'; return; }
   for (const p of saved) {
     const li = document.createElement('li');
@@ -383,7 +436,10 @@ function renderSaved() {
     del.title = 'Forget';
     del.onclick = () => {
       const key = playlistKey(p.url);
-      store.set('playlists', savedPlaylists().filter((x) => playlistKey(x.url) !== key));
+      profiles.update((d) => {
+        d.playlists = d.playlists.filter((x) => x.key !== key);
+        d.playlistsRemoved[key] = Date.now();
+      });
       cacheDelete(key);
       renderSaved();
     };
@@ -484,8 +540,12 @@ function renderList() {
 }
 
 function toggleFav(ch, btn) {
-  if (state.favs.has(ch.id)) state.favs.delete(ch.id); else state.favs.add(ch.id);
-  store.set('favs', [...state.favs]);
+  const on = !state.favs.has(ch.id);
+  if (on) state.favs.add(ch.id); else state.favs.delete(ch.id);
+  profiles.update((d) => {
+    const now = Date.now();
+    if (on) { d.favs[ch.id] = now; delete d.favsRemoved[ch.id]; } else { delete d.favs[ch.id]; d.favsRemoved[ch.id] = now; }
+  });
   btn?.classList.toggle('on', state.favs.has(ch.id));
   if (state.favOnly) applyFilter();
 }
@@ -689,7 +749,7 @@ $('m3uFile').onchange = async (e) => {
   if (!file) return;
   const text = await file.text();
   setChannels(parseM3U(text), file.name);
-  if (text.length < 2_000_000) { store.set('localText', text); store.set('last', { local: file.name }); }
+  if (text.length < 2_000_000) { store.set('localText', text); setLast({ local: file.name }); }
 };
 $('xtLoad').onclick = () => {
   let server = $('xtServer').value.trim();
@@ -700,7 +760,8 @@ $('xtLoad').onclick = () => {
   loadPlaylistUrl(xtreamUrl(server, user, pass));
 };
 for (const b of $('kindSeg').children) b.onclick = () => { state.kind = b.dataset.kind; for (const x of $('kindSeg').children) x.classList.toggle('active', x === b); rebuildGroups(); };
-$('cfToggle').onclick = () => { settings.contentFilter.on = !settings.contentFilter.on; saveSettings(); syncFilterForm(); rebuildLibrary(); };
+$('cfToggle').onclick = () => { settings.contentFilter.on = !settings.contentFilter.on; saveFilter(); syncFilterForm(); rebuildLibrary(); };
+const saveFilter = () => { saveSettings(); profiles.update((d) => { d.contentFilter = { ...settings.contentFilter }; }); };
 
 function syncFilterForm() {
   const cf = settings.contentFilter;
@@ -713,11 +774,110 @@ const readFilterForm = () => {
   Object.assign(settings.contentFilter, {
     on: $('cfOn').checked, live: $('cfLive').value, vod: $('cfVod').value, vodUntagged: $('cfUntagged').checked,
   });
-  saveSettings();
+  saveFilter();
   rebuildLibrary();
 };
 for (const id of ['cfOn', 'cfLive', 'cfVod', 'cfUntagged']) $(id).onchange = readFilterForm;
 syncFilterForm();
+
+// ---------- Profile tab ----------
+const initial = (name) => (name || '?').trim().charAt(0).toUpperCase() || '?';
+let pairTimer = 0;
+
+function renderProfiles() {
+  const active = profiles.active();
+  const st = profiles.status;
+  $('pfName').textContent = active?.name || 'This device only';
+  $('chipName').textContent = active ? active.name : 'This device';
+  for (const el of [$('pfAvatar'), $('chipAvatar')]) {
+    el.textContent = active ? initial(active.name) : '·';
+    el.classList.toggle('local', !active);
+  }
+  $('pfStatus').textContent = !active
+    ? 'Not synced. Create a profile or link this device to sync.'
+    : st.state === 'synced' ? `Synced ${ago(st.at)}` : st.message || 'Synced';
+  $('pfActions').classList.toggle('hidden', !active);
+  $('pfDanger').classList.toggle('hidden', !active);
+  if (active && document.activeElement !== $('pfRename')) $('pfRename').value = active.name;
+
+  const ul = $('pfList');
+  ul.innerHTML = '';
+  for (const p of [null, ...profiles.list()]) {
+    const li = document.createElement('li');
+    const isActive = (p?.id ?? null) === (active?.id ?? null);
+    li.classList.toggle('active', isActive);
+    const av = document.createElement('span');
+    av.className = `avatar${p ? '' : ' local'}`;
+    av.textContent = p ? initial(p.name) : '·';
+    const label = document.createElement('span');
+    label.className = 'grow';
+    label.textContent = p ? p.name : 'This device only (not synced)';
+    li.append(av, label);
+    li.onclick = () => {
+      if (isActive) return;
+      profiles.switchTo(p?.id ?? null);
+      toast(`Switched to ${p ? p.name : 'this device only'}`);
+    };
+    ul.append(li);
+  }
+}
+
+async function checkSyncAvailable() {
+  const why = await profiles.available();
+  $('pfUnavailable').textContent = why;
+  $('pfUnavailable').classList.toggle('hidden', !why);
+  for (const id of ['pfCreate', 'pfClaim', 'pfLink', 'pfSync']) $(id).disabled = !!why;
+  return !why;
+}
+
+const busy = async (btn, fn) => {
+  btn.disabled = true;
+  try { await fn(); } catch (err) { toast(err.message, true); } finally { btn.disabled = false; }
+};
+
+$('profileChip').onclick = () => { togglePanel(true); setTab('profile'); };
+$('pfCreate').onclick = () => busy($('pfCreate'), async () => {
+  const name = $('pfNewName').value.trim();
+  if (!name) return toast('Give the profile a name', true);
+  await profiles.create(name, { copyCurrent: $('pfCopy').checked });
+  $('pfNewName').value = '';
+  toast(`Profile “${name}” created. Use “Link a device” to add it to your other devices.`);
+});
+$('pfNewName').onkeydown = (e) => { if (e.key === 'Enter') $('pfCreate').click(); };
+$('pfClaim').onclick = () => busy($('pfClaim'), async () => {
+  const code = $('pfClaimCode').value.trim();
+  if (!code) return toast('Enter the code shown on your other device', true);
+  const name = await profiles.claim(code);
+  $('pfClaimCode').value = '';
+  toast(`This device is now linked to “${name}”`);
+});
+$('pfClaimCode').onkeydown = (e) => { if (e.key === 'Enter') $('pfClaim').click(); };
+$('pfSync').onclick = () => busy($('pfSync'), () => profiles.sync());
+$('pfLink').onclick = () => busy($('pfLink'), async () => {
+  const { code, expiresIn } = await profiles.pairingCode();
+  $('pfCode').textContent = `${code.slice(0, 4)} ${code.slice(4)}`;
+  $('pfCodeBox').classList.remove('hidden');
+  const until = Date.now() + expiresIn * 1000;
+  clearInterval(pairTimer);
+  const tick = () => {
+    const left = Math.max(0, Math.round((until - Date.now()) / 1000));
+    $('pfCodeTimer').textContent = left ? `Expires in ${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')} · works once` : 'Expired';
+    if (!left) { clearInterval(pairTimer); $('pfCodeBox').classList.add('hidden'); }
+  };
+  tick();
+  pairTimer = setInterval(tick, 1000);
+});
+$('pfRenameBtn').onclick = () => { profiles.rename($('pfRename').value); toast('Renamed'); };
+$('pfSignOut').onclick = () => {
+  const p = profiles.active();
+  if (p && confirm(`Remove “${p.name}” from this device? It stays on your other devices.`)) profiles.signOut(p.id);
+};
+$('pfDelete').onclick = () => busy($('pfDelete'), async () => {
+  const p = profiles.active();
+  if (!p || !confirm(`Delete “${p.name}” everywhere? Its playlists and favorites will be removed from all linked devices.`)) return;
+  await profiles.destroy(p.id);
+  toast(`Deleted “${p.name}”`);
+});
 
 $('refreshList').onclick = () => state.source && loadPlaylistUrl(state.source.url, state.source.name, { fresh: true });
 $('copyLog').onclick = async () => {
@@ -831,6 +991,8 @@ vrPanel = new VRPanel(theater, {
 applyAll();
 renderSaved();
 await detectProxy();
+renderProfiles();
+checkSyncAvailable().then((ok) => { if (ok) profiles.pull(); });
 // server.js and the Cloudflare deployment include a demo Xtream panel (proxy/xtream-demo.js).
 if (proxy.available && !settings.proxyUrl) {
   const b = document.createElement('button');
@@ -840,10 +1002,10 @@ if (proxy.available && !settings.proxyUrl) {
   b.onclick = () => loadPlaylistUrl(new URL('get.php?username=demo&password=demo&type=m3u_plus', location.href).href, 'Xtream demo');
   $('presets').prepend(b);
 }
-const last = store.get('last', null);
+const last = profiles.doc.last;
 if (last?.url) loadPlaylistUrl(last.url, last.name, { fresh: false });
 else if (last?.local && store.get('localText', null)) setChannels(parseM3U(store.get('localText', '')), last.local);
 else loadBuiltinDemo();
 
 // Debug handle for the console.
-window.o3xr = { theater, vrPanel, state, settings };
+window.o3xr = { theater, vrPanel, state, settings, profiles };

@@ -16,6 +16,9 @@ import path from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
 import { xtreamDemo } from './proxy/xtream-demo.js';
+import { handleProfileApi } from './proxy/profiles-api.js';
+
+if (!globalThis.crypto) globalThis.crypto = (await import('node:crypto')).webcrypto; // Node 18
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = +process.env.PORT || 8080;
@@ -41,6 +44,7 @@ const MIME = {
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': 'range, content-type',
+  'access-control-allow-methods': 'GET, PUT, POST, DELETE, OPTIONS',
   'access-control-expose-headers': 'content-length, content-range, content-type, x-final-url, x-proxy-kind, x-proxy-upstream, x-proxy-error',
   'x-proxy-kind': 'server',
 };
@@ -111,6 +115,8 @@ function rewriteHls(text, base) {
 function serveStatic(req, res, pathname) {
   const file = path.normalize(path.join(ROOT, decodeURIComponent(pathname === '/' ? '/index.html' : pathname)));
   if (!file.startsWith(ROOT + path.sep) || path.basename(file).startsWith('.')) return send(res, 403, 'Forbidden');
+  // Never serve profile storage, keys or certificates.
+  if (file.startsWith(path.dirname(DATA_FILE) + path.sep) || /\.(pem|key)$/i.test(file)) return send(res, 403, 'Forbidden');
   fs.stat(file, (err, st) => {
     if (err || !st.isFile()) return send(res, 404, 'Not found');
     res.writeHead(200, { 'content-type': MIME[path.extname(file)] || 'application/octet-stream', 'content-length': st.size });
@@ -124,11 +130,47 @@ function send(res, status, msg, extra = {}) {
   res.end(msg);
 }
 
+// Profile storage for server.js: a JSON file next to the app (DATA_DIR to move it).
+const DATA_FILE = path.join(process.env.DATA_DIR || path.join(ROOT, 'data'), 'profiles.json');
+const fileStore = (() => {
+  let db = {};
+  try { db = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8')); } catch { /* first run */ }
+  const save = () => {
+    fs.mkdirSync(path.dirname(DATA_FILE), { recursive: true });
+    fs.writeFileSync(DATA_FILE, JSON.stringify(db));
+  };
+  const live = (key) => {
+    const e = db[key];
+    if (e && e.exp && e.exp < Date.now()) { delete db[key]; save(); return null; }
+    return e || null;
+  };
+  return {
+    get: (key) => live(key)?.value ?? null,
+    put: (key, value, ttl) => { db[key] = { value, exp: ttl ? Date.now() + ttl * 1000 : 0 }; save(); },
+    delete: (key) => { delete db[key]; save(); },
+  };
+})();
+
+async function api(req, res, pathname) {
+  let body = null;
+  if (req.method === 'POST' || req.method === 'PUT') {
+    const chunks = [];
+    let size = 0;
+    for await (const c of req) { size += c.length; if (size > 1024 * 1024) return send(res, 413, 'Too large'); chunks.push(c); }
+    try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { body = null; }
+  }
+  const out = await handleProfileApi({ method: req.method, path: pathname, body, ip: req.socket.remoteAddress }, fileStore);
+  if (out.status === 204) { res.writeHead(204, CORS); return res.end(); }
+  res.writeHead(out.status, { ...CORS, 'content-type': 'application/json', 'cache-control': 'no-store' });
+  res.end(JSON.stringify(out.body));
+}
+
 function handler(req, res) {
   const { pathname, searchParams } = new URL(req.url, 'http://x');
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }
   if (pathname === '/proxy/health') return send(res, 200, 'ok');
   if (pathname === '/proxy') return proxy(req, res, searchParams.get('url'));
+  if (pathname.startsWith('/api/')) return api(req, res, pathname).catch(() => send(res, 500, 'API error'));
   const demo = xtreamDemo(new URL(req.url, `${tls ? 'https' : 'http'}://${req.headers.host}`));
   if (demo) { res.writeHead(demo.status, demo.headers); return res.end(demo.body); }
   serveStatic(req, res, pathname);

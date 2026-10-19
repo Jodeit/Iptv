@@ -24,6 +24,24 @@ Browsers only allow WebXR on **HTTPS or localhost**, so for a headset:
 
 The proxy forwards to any URL it's given, so keep the server on your own network.
 
+## Profiles and syncing across devices
+
+**Profile** (top of the panel) keeps playlists, favorites, the content filter and the last playlist in step
+across your devices: TV, phone, laptop, headset. To set it up:
+
+1. On one device, create a profile (e.g. "Living room"). It starts with what's already on that device.
+2. Tap **Link a device**. That shows an 8-character code, valid for 10 minutes and usable once.
+3. On the other device, open **Profile → Link this device** and enter the code.
+
+Changes upload a moment after you make them and download when the app opens or comes back into focus. Edits made on
+two devices at once are merged, not overwritten. 3D, screen, volume and proxy settings stay per device.
+
+Profiles are end-to-end encrypted. Each has a random secret; the browser derives the profile's ID and an AES-GCM
+key from it and only uploads ciphertext. The server (Cloudflare KV, or `data/profiles.json` with `server.js`) never
+sees playlists, favorites or Xtream passwords. The secret only passes through the server inside a pairing code, for
+up to 10 minutes. Profiles need HTTPS (or localhost). On Cloudflare, the KV namespace is created automatically on
+deploy (`wrangler.toml`).
+
 ## Home proxy (when Cloudflare can't reach your provider)
 
 The Cloudflare proxy handles stream servers on bare IP addresses and unusual ports itself. `fetch()` refuses those,
@@ -181,6 +199,8 @@ js/main.js        App state, playlists, settings, UI + keyboard wiring
 js/m3u.js         M3U parser, Xtream link detection + stream alternates
 js/filter.js      Content filter (live regions, movie/series languages)
 js/cache.js       Saved playlist copies (IndexedDB)
+js/profiles.js    Profiles: encryption, merge, sync, device linking
+proxy/profiles-api.js  Profile storage + pairing API (Worker KV / server.js file)
 js/diagnose.js    Stream probe for the playback log
 js/stream.js      HLS / MPEG-TS / native playback with fallback
 js/theater.js     three.js scene, environments, ambient light, desktop stereo, WebXR sessions

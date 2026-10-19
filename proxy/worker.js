@@ -11,6 +11,7 @@
 // and remember what worked per host (for the life of this isolate).
 import { xtreamDemo } from './xtream-demo.js';
 import { socketFetch } from './http-socket.js';
+import { handleProfileApi, kvStore } from './profiles-api.js';
 
 const UAS = [
   'VLC/3.0.20 LibVLC/3.0.20',
@@ -55,6 +56,7 @@ async function fetchFollow(url, headers) {
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': 'range, content-type',
+  'access-control-allow-methods': 'GET, PUT, POST, DELETE, OPTIONS',
   'access-control-expose-headers': 'content-length, content-range, content-type, x-final-url, x-proxy-kind, x-proxy-upstream, x-proxy-error',
   'x-proxy-kind': 'cloudflare',
 };
@@ -69,6 +71,18 @@ export default {
     if (allowed.length && caller && !allowed.includes(caller)) return text('Origin not allowed', 403, { 'x-proxy-error': 'origin-not-allowed' });
 
     if (pathname === '/proxy/health') return text('ok');
+    if (pathname.startsWith('/api/')) {
+      if (!env.PROFILES) return Response.json({ error: 'Profile storage (KV binding PROFILES) is not set up' }, { status: 503, headers: CORS });
+      let body = null;
+      if (request.method === 'POST' || request.method === 'PUT') { try { body = await request.json(); } catch { body = null; } }
+      const res = await handleProfileApi(
+        { method: request.method, path: pathname, body, ip: request.headers.get('cf-connecting-ip') },
+        kvStore(env.PROFILES),
+      );
+      return res.status === 204
+        ? new Response(null, { status: 204, headers: CORS })
+        : Response.json(res.body, { status: res.status, headers: { ...CORS, 'cache-control': 'no-store' } });
+    }
     const demo = xtreamDemo(new URL(request.url));
     if (demo) return new Response(demo.body || null, { status: demo.status, headers: demo.headers });
     if (pathname !== '/proxy') return text('Not found', 404);
