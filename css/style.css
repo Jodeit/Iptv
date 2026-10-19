@@ -413,3 +413,7 @@ body.panel-hidden #flatStage { left: 12px; }
 
 .account-info { margin: 0; padding: 4px 14px; }
 .account-info.warn { color: #ff9f43; }
+
+/* Profile tab: buttons wrap instead of forcing a horizontal scroll */
+.tab-body { overflow-x: hidden; }
+.row:has(#pfSignOut) { flex-wrap: wrap; }
