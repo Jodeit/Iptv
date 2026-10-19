@@ -8,7 +8,7 @@
 //
 // The synced document (one per profile, plus a device-only one for "no profile"):
 //   { v, playlists: [{ key, name, url, at }], playlistsRemoved: { key: ts },
-//     favs: { id: ts }, favsRemoved: { id: ts }, contentFilter, omdbKey, last, updatedAt }
+//     favs: { id: ts }, favsRemoved: { id: ts }, contentFilter, omdbKey, tmdbKey, last, updatedAt }
 // Merging takes the union of playlists/favorites minus anything deleted later (tombstones),
 // so edits made on two devices at once both survive.
 
@@ -28,7 +28,7 @@ const write = (k, v) => { try { localStorage.setItem(`o3xr.${k}`, JSON.stringify
 const remove = (k) => { try { localStorage.removeItem(`o3xr.${k}`); } catch { /* ignore */ } };
 
 export const emptyDoc = () => ({
-  v: 1, playlists: [], playlistsRemoved: {}, favs: {}, favsRemoved: {}, contentFilter: null, omdbKey: null, last: null, updatedAt: 0,
+  v: 1, playlists: [], playlistsRemoved: {}, favs: {}, favsRemoved: {}, contentFilter: null, omdbKey: null, tmdbKey: null, last: null, updatedAt: 0,
 });
 
 export function mergeDocs(a, b) {
@@ -63,6 +63,7 @@ export function mergeDocs(a, b) {
     name: newer.name ?? older.name ?? null,
     contentFilter: newer.contentFilter ?? older.contentFilter ?? null,
     omdbKey: newer.omdbKey ?? older.omdbKey ?? null,
+    tmdbKey: newer.tmdbKey ?? older.tmdbKey ?? null,
     last: newer.last ?? older.last ?? null,
     updatedAt: Math.max(a.updatedAt || 0, b.updatedAt || 0),
   };

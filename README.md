@@ -84,6 +84,12 @@ key (1,000 lookups a day) under **Sources → Ratings**. It is checked before sa
 posters that stay on screen are looked up, and results are cached for 30 days. Without a key, the provider's own star
 rating is shown.
 
+**More like this.** Preview pages show a row of recommendations that your provider actually carries. TMDB
+(themoviedb.org) picks them from what its users watched together and from similar titles. The app keeps only the ones
+it finds in your catalog, matched by TMDB ID or by name and year. It needs a free TMDB API key (v3 key or read
+access token) under **Sources → Ratings**, which syncs with your profile. To know what your provider has, the app
+indexes the movie or series categories your content filter keeps, once a day. Recommendations are cached for a week.
+
 ## TV guide
 
 Live channels show what's on now, with a progress bar, in the channel list and the now-playing bar. **Guide**
@@ -278,6 +284,7 @@ js/epg.js         Guide data: Xtream short EPG and XMLTV
 js/guide-view.js  Guide grid
 js/gallery.js     Movies & series poster gallery and preview pages
 js/ratings.js     Rotten Tomatoes / IMDb / Metacritic via OMDb, title cleanup, cache
+js/similar.js     “More like this”: TMDB recommendations matched against the provider's catalog
 js/cache.js       Saved playlist copies (IndexedDB)
 js/profiles.js    Profiles: encryption, merge, sync, device linking
 proxy/profiles-api.js  Profile storage + pairing API (Worker KV / server.js file)

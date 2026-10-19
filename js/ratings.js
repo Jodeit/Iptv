@@ -16,7 +16,7 @@ export function parseTitle(raw = '') {
     .replace(/\[[^\]]*\]|\{[^}]*\}/g, ' ') // [Multi sub], {tags}
     .replace(/[._]/g, ' ');
   // Leading numbering and language/region prefixes: "01 - ", "EN - ", "|EN| ", "4K-EN: "
-  for (let i = 0; i < 3; i++) s = s.replace(/^\s*(\d{1,3}\s*[-.)]\s+|\|?[A-Z]{2,3}\|\s*|[A-Z]{2,3}(\s*\|\s*[A-Z0-9]+)?\s*[-:|]\s+|4K\s*[-:|]\s*)/, ' ');
+  for (let i = 0; i < 3; i++) s = s.replace(/^\s*(\d{1,3}\s*[-.)]\s+|\|?[A-Z]{2,3}\|\s*|[A-Z]{2,4}(\s*\|\s*[A-Z0-9]+)?\s*[-:|]\s+|4K\s*[-:|]\s*)/, ' ');
   let year = 0;
   const years = [...s.matchAll(/(?:^|[\s(\-–])((?:19[2-9]|20[0-4])\d)(?=$|[\s)\-–])/g)];
   const y = years[years.length - 1];

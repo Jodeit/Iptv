@@ -91,15 +91,24 @@ export class XtreamLibrary {
     if (cache.has(catId)) return cache.get(catId);
     const action = kind === 'movie' ? 'get_vod_streams' : 'get_series';
     const rows = await this.fetchJson(this.api(action, { category_id: catId }), onProgress);
-    const auth = `${enc(this.xt.username)}/${enc(this.xt.password)}`;
     const group = this.catName(kind, catId);
-    const items = (Array.isArray(rows) ? rows : []).map((s, i) => (kind === 'movie'
+    const items = (Array.isArray(rows) ? rows : []).map((s, i) => this.toItem(kind, s, i, group));
+    // Keep a handful of categories in memory; older ones reload when reopened.
+    cache.set(catId, items);
+    if (cache.size > 6) cache.delete(cache.keys().next().value);
+    return items;
+  }
+
+  toItem(kind, s, i, group) {
+    const auth = `${enc(this.xt.username)}/${enc(this.xt.password)}`;
+    const tmdb = String(s.tmdb || s.tmdb_id || '').replace(/\D/g, '');
+    return kind === 'movie'
       ? {
         num: i + 1,
         id: `${this.streamBase}/movie/${auth}/${s.stream_id}.${s.container_extension || 'mp4'}`,
         url: `${this.streamBase}/movie/${auth}/${s.stream_id}.${s.container_extension || 'mp4'}`,
         name: s.name, logo: s.stream_icon || '', group, tvgId: '', layout: null, kind: 'movie',
-        streamId: s.stream_id, rating: +s.rating || 0, added: +s.added || 0, year: +s.year || yearOf(s.name, s.releaseDate || s.release_date),
+        streamId: s.stream_id, rating: +s.rating || 0, added: +s.added || 0, year: +s.year || yearOf(s.name, s.releaseDate || s.release_date), tmdb,
       }
       : {
         num: i + 1,
@@ -109,12 +118,40 @@ export class XtreamLibrary {
         name: s.name, logo: s.cover || '', group, tvgId: '', layout: null, kind: 'series', plot: s.plot || '',
         rating: +s.rating || 0, added: +s.last_modified || 0, year: yearOf(s.name, s.releaseDate || s.release_date),
         genre: s.genre || '', cast: s.cast || '', director: s.director || '', trailer: s.youtube_trailer || '',
-        backdrop: firstOf(s.backdrop_path),
-      }));
-    // Keep a handful of categories in memory; older ones reload when reopened.
-    cache.set(catId, items);
-    if (cache.size > 6) cache.delete(cache.keys().next().value);
-    return items;
+        backdrop: firstOf(s.backdrop_path), tmdb,
+      };
+  }
+
+  // Every title in the given categories, for matching recommendations against what this
+  // provider carries. Fetched a few categories at a time; nothing is kept beyond the result
+  // (the caller caches it), so memory stays at one list of titles.
+  async catalog(kind, catIds, onProgress) {
+    const out = [];
+    const seen = new Set();
+    let next = 0;
+    let done = 0;
+    const worker = async () => {
+      while (next < catIds.length) {
+        const catId = catIds[next++];
+        let items = this.items[kind].get(catId);
+        if (!items) {
+          try {
+            const rows = await this.fetchJson(this.api(kind === 'movie' ? 'get_vod_streams' : 'get_series', { category_id: catId }));
+            const group = this.catName(kind, catId);
+            items = (Array.isArray(rows) ? rows : []).map((s, i) => this.toItem(kind, s, i, group));
+          } catch { items = []; } // one broken category shouldn't sink the rest
+        }
+        for (const it of items) {
+          if (seen.has(it.id)) continue;
+          seen.add(it.id);
+          // Long text isn't needed to match titles; the preview page fetches details anyway.
+          out.push({ ...it, plot: undefined, cast: undefined });
+        }
+        onProgress?.(++done, catIds.length);
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    return out;
   }
 
   // Full details for a film's preview page (plot, cast, trailer…); {} if the panel has none.
@@ -130,7 +167,7 @@ export class XtreamLibrary {
         plot: i.plot || i.description || '', cast: i.cast || i.actors || '', director: i.director || '', genre: i.genre || '',
         runtime: runtimeOf(i.duration) || (i.duration_secs ? runtimeOf(+i.duration_secs) : '') || (i.episode_run_time ? `${i.episode_run_time} min` : ''),
         released: i.releasedate || i.release_date || '', rating: +i.rating || 0, trailer: i.youtube_trailer || '',
-        poster: i.movie_image || i.cover_big || '', backdrop: firstOf(i.backdrop_path), tmdb: i.tmdb_id || '', age: i.mpaa_rating || i.age || '',
+        poster: i.movie_image || i.cover_big || '', backdrop: firstOf(i.backdrop_path), tmdb: String(i.tmdb_id || i.tmdb || '').replace(/\D/g, ''), age: i.mpaa_rating || i.age || '',
       };
     } catch { /* details are optional */ }
     this.details ??= new Map();
@@ -150,6 +187,7 @@ export class XtreamLibrary {
       plot: si.plot || series.plot, cast: si.cast || series.cast, director: si.director || series.director,
       genre: si.genre || series.genre, trailer: si.youtube_trailer || series.trailer,
       backdrop: firstOf(si.backdrop_path) || series.backdrop, released: si.releaseDate || si.release_date || '',
+      tmdb: String(si.tmdb || si.tmdb_id || series.tmdb || '').replace(/\D/g, ''),
     });
     for (const [season, eps] of Object.entries(info?.episodes || {})) {
       for (const e of eps || []) {

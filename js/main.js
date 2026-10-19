@@ -10,6 +10,7 @@ import { Guide } from './epg.js';
 import { GuideView } from './guide-view.js';
 import { Ratings, parseTitle } from './ratings.js';
 import { GalleryView } from './gallery.js';
+import { Similar, indexCatalog, matchCatalog } from './similar.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -167,6 +168,7 @@ const setLast = (last) => {
 function applyDoc(doc, reason) {
   state.favs = new Set(Object.keys(doc.favs));
   $('omdbKey').value = doc.omdbKey || '';
+  $('tmdbKey').value = doc.tmdbKey || '';
   settings.contentFilter = { ...FILTER_DEFAULTS, ...(doc.contentFilter || {}) };
   saveSettings();
   syncFilterForm();
@@ -218,6 +220,45 @@ const ratings = new Ratings({
   onUpdate: (item) => gallery.updated(item),
 });
 
+// "More like this": TMDB's recommendations, kept to titles this provider has. TMDB allows
+// browsers to call it directly, so no proxy is involved.
+const similar = new Similar({ fetcher: (u, init) => fetch(u, init), getKey: () => profiles.doc.tmdbKey || '' });
+
+// Title index of the provider's movies or series, to check recommendations against. With the
+// Xtream API that means every category the content filter keeps, fetched once a day.
+const catalogs = new Map(); // kind → { key, promise }
+function catalogIndex(kind, onProgress) {
+  const lib = state.xlib;
+  const cats = lib ? vodCategories(kind).map((c) => c.id) : [];
+  const key = lib ? `catalog:${playlistKey(state.source?.url || '')}:${kind}:${cats.join(',')}` : `m3u:${state.library.length}`;
+  const have = catalogs.get(kind);
+  if (have?.key === key) return have.promise;
+  const promise = (async () => {
+    if (!lib) return indexCatalog(state.library.filter((c) => kindOf(c) === kind));
+    const cached = await cacheGet(key);
+    if (cached && Date.now() - cached.at < 86400000) return indexCatalog(cached.items);
+    const items = await lib.catalog(kind, cats, onProgress);
+    cachePut(key, { at: Date.now(), items });
+    return indexCatalog(items);
+  })();
+  promise.catch(() => catalogs.delete(kind));
+  catalogs.set(kind, { key, promise });
+  return promise;
+}
+
+async function moreLike(item, details, onProgress) {
+  if (!similar.enabled()) return { items: [], note: 'Add a free TMDB key in Sources → Ratings to see recommendations.' };
+  const kind = kindOf(item) === 'series' ? 'series' : 'movie';
+  const ref = await similar.tmdbId(item, { tmdb: details.tmdb || item.tmdb, imdbID: ratings.peek(item)?.imdbID });
+  if (!ref) return { items: [], note: 'TMDB doesn’t know this title, so there are no recommendations.' };
+  const [recs, index] = await Promise.all([similar.recommendations(ref), catalogIndex(kind, onProgress)]);
+  const items = matchCatalog(recs, index, item.id);
+  return {
+    items,
+    note: items.length ? '' : recs.length ? `None of TMDB’s ${recs.length} recommendations are on your provider${state.xlib && settings.contentFilter.on ? ' (in the categories your content filter keeps)' : ''}.` : 'TMDB has no recommendations for this title yet.',
+  };
+}
+
 // Playlists without the Xtream API: categories are the groups of that kind.
 const galleryGroups = (kind) => [...new Set(state.library.filter((c) => kindOf(c) === kind).map((c) => c.group))]
   .sort((a, b) => a.localeCompare(b)).map((g) => ({ id: g, name: g }));
@@ -237,6 +278,7 @@ const gallery = new GalleryView($('gallery'), {
   },
   episodes: (series) => state.xlib.seriesEpisodes(series),
   movieInfo: (item) => (state.xlib ? state.xlib.movieInfo(item) : {}),
+  moreLike,
   ratings,
   parseTitle,
   play: (item, startAt) => play(item, { startAt }),
@@ -1239,6 +1281,20 @@ $('omdbSave').onclick = () => busy($('omdbSave'), async () => {
   if (gallery.isOpen()) gallery.render();
 });
 $('omdbKey').onkeydown = (e) => { if (e.key === 'Enter') $('omdbSave').click(); };
+
+$('tmdbKey').value = profiles.doc.tmdbKey || '';
+$('tmdbSave').onclick = () => busy($('tmdbSave'), async () => {
+  const key = $('tmdbKey').value.trim();
+  const status = $('tmdbStatus');
+  if (key) {
+    status.textContent = 'Checking…';
+    const problem = await similar.test(key);
+    if (problem) { status.textContent = `That key didn’t work: ${problem}`; return; }
+  }
+  profiles.update((d) => { d.tmdbKey = key; });
+  status.textContent = key ? 'Saved. Preview pages now show “More like this”.' : 'Removed.';
+});
+$('tmdbKey').onkeydown = (e) => { if (e.key === 'Enter') $('tmdbSave').click(); };
 $('cfToggle').onclick = () => { settings.contentFilter.on = !settings.contentFilter.on; saveFilter(); syncFilterForm(); rebuildLibrary(); };
 const saveFilter = () => {
   saveSettings();
@@ -1527,4 +1583,4 @@ else if (last?.local && store.get('localText', null)) setChannels(parseM3U(store
 else loadBuiltinDemo();
 
 // Debug handle for the console.
-window.o3xr = { theater, vrPanel, state, settings, profiles, gallery, ratings };
+window.o3xr = { theater, vrPanel, state, settings, profiles, gallery, ratings, similar };

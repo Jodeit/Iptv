@@ -12,7 +12,7 @@ const SORTS = {
 };
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-const cleanName = (n) => n.replace(/^\s*(\d{1,3}\s*[-.)]\s+|\|?[A-Z]{2,3}\|\s*|[A-Z]{2,3}\s*[-:|]\s+)/, '');
+const cleanName = (n) => n.replace(/^\s*(\d{1,3}\s*[-.)]\s+|\|?[A-Z]{2,4}\|\s*|[A-Z]{2,4}\s*[-:|]\s+)/, '');
 const fmtTime = (s) => (s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}` : `${Math.floor(s / 60)}`) + `:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 export class GalleryView {
@@ -61,7 +61,7 @@ export class GalleryView {
     root.querySelector('.gallery-close').onclick = () => this.close();
     addEventListener('keydown', (e) => {
       if (e.key !== 'Escape' || !this.isOpen()) return;
-      if (!this.preview.classList.contains('hidden')) this.closePreview(); else this.close();
+      if (!this.preview.classList.contains('hidden')) this.back(); else this.close();
     });
   }
 
@@ -183,12 +183,18 @@ export class GalleryView {
   updated(item) {
     const el = item && this.cards.get(item.id);
     if (el) this.badges(el, item);
+    const row = item && this.rowCards?.get(item.id);
+    if (row) this.badges(row, item);
     if (this.previewItem && item?.id === this.previewItem.id) this.renderPreview();
   }
 
   // ---------- Preview page ----------
-  async showPreview(item) {
+  // `from` is the title whose "More like this" row was used, for the back button.
+  async showPreview(item, from = null) {
+    this.stack = from ? [...(this.stack || []), from] : [];
     this.previewItem = item;
+    this.moreState = null;
+    this.preview.scrollTop = 0;
     this.details = {};
     this.episodes = null;
     this.season = null;
@@ -201,10 +207,66 @@ export class GalleryView {
     } catch (err) {
       this.loadError = err.message;
     }
-    if (this.previewItem === item) this.renderPreview();
+    if (this.previewItem !== item) return;
+    this.renderPreview();
+    this.loadMore(item);
+  }
+
+  async loadMore(item) {
+    this.moreState = { loading: 'Finding recommendations…' };
+    this.renderMore();
+    let state;
+    try {
+      state = await this.app.moreLike(item, this.details || {}, (done, total) => {
+        if (this.previewItem !== item) return;
+        this.moreState = { loading: `Checking which recommendations your provider has · indexing ${done} of ${total} categories (once a day)` };
+        this.renderMore();
+      });
+    } catch (err) {
+      state = { items: [], note: `Couldn’t get recommendations: ${err.message}` };
+    }
+    if (this.previewItem !== item) return;
+    this.moreState = state;
+    this.renderMore();
+  }
+
+  renderMore() {
+    const box = this.preview.querySelector('.pv-more');
+    const st = this.moreState;
+    if (!box || !st) return;
+    const scroll = box.querySelector('.pv-row')?.scrollLeft || 0;
+    this.rowCards = new Map();
+    if (st.loading) { box.innerHTML = `<h3>More like this</h3><p class="muted small">${esc(st.loading)}</p>`; return; }
+    if (!st.items.length) { box.innerHTML = st.note ? `<h3>More like this</h3><p class="muted small">${esc(st.note)}</p>` : ''; return; }
+    box.innerHTML = `<h3>More like this <span class="muted small">· ${st.items.length} on your provider, picked by TMDB</span></h3><div class="pv-row"></div>`;
+    const row = box.querySelector('.pv-row');
+    for (const [i, it] of st.items.entries()) {
+      const el = document.createElement('button');
+      el.className = 'gcard';
+      const { title, year } = this.app.parseTitle(it.name);
+      el.innerHTML = `<div class="gposter"><span class="ginitial">${esc((title || it.name).charAt(0))}</span></div>
+        <div class="gtitle">${esc(title || it.name)}</div>
+        <div class="gmeta"><span>${it.year || year || ''}</span><span class="gbadges"></span></div>`;
+      if (it.logo) this.poster(el.querySelector('.gposter'), it.logo);
+      this.badges(el, it);
+      if (i < 10) this.app.ratings.get(it); // the first few get scores; cached for next time
+      el.onclick = () => this.showPreview(it, this.previewItem);
+      this.rowCards.set(it.id, el);
+      row.append(el);
+    }
+    row.scrollLeft = scroll;
+  }
+
+  back() {
+    const prev = this.stack?.pop();
+    if (!prev) { this.closePreview(); return; }
+    const stack = this.stack;
+    this.showPreview(prev);
+    this.stack = stack;
   }
 
   closePreview() {
+    this.stack = [];
     this.previewItem = null;
     this.preview.classList.add('hidden');
     this.preview.innerHTML = '';
@@ -257,12 +319,13 @@ export class GalleryView {
           <div class="pv-trailer-box"></div>
           ${item.kind === 'series' ? '<div class="pv-episodes"></div>' : ''}
         </div>
-      </div>`;
+      </div>
+      <section class="pv-more"></section>`;
     for (const img of this.preview.querySelectorAll('img')) {
       img.onerror = () => { const alt = this.app.imageUrl(img.getAttribute('src')); if (alt && img.src !== alt) img.src = alt; else img.remove(); };
     }
     const $ = (s) => this.preview.querySelector(s);
-    $('.pv-back').onclick = () => this.closePreview();
+    $('.pv-back').onclick = () => this.back();
     $('.pv-play')?.addEventListener('click', () => { this.app.play(item, canResume ? prog.t : 0); this.close(); });
     $('.pv-restart')?.addEventListener('click', () => { this.app.play(item, 0); this.close(); });
     $('.pv-fav').onclick = () => { this.app.toggleFav(item); this.renderPreview(); const c = this.cards.get(item.id); if (c) c.replaceWith(this.card(item)); };
@@ -271,6 +334,7 @@ export class GalleryView {
       $('.pv-trailer-box').innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(trailer)}?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Trailer"></iframe>`;
     });
     if (item.kind === 'series') this.renderEpisodes();
+    this.renderMore();
   }
 
   renderEpisodes() {
