@@ -154,6 +154,8 @@ export class GuideView {
       label.onclick = () => { this.onPlay(ch); };
       const track = document.createElement('div');
       track.className = 'guide-track';
+      // Click a programme for details; double-click anywhere on the row to watch the channel.
+      track.ondblclick = () => { this.detail.classList.add('hidden'); this.onPlay(ch); };
       row.append(label, track);
       this.sentinel.before(row);
       this.rows.set(ch.id, { el: row, track, ch });

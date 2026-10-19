@@ -393,7 +393,7 @@ class Health {
 
   start(engine, player) {
     this.stop();
-    Object.assign(this, { engine, player, stalls: 0, stallTime: 0, stallStart: 0, bytes: 0, loadMs: 0, media: 0, lastSpeed: 0, notes: new Map(), began: performance.now() });
+    Object.assign(this, { engine, player, stalls: 0, stallTime: 0, stallStart: 0, bytes: 0, loadMs: 0, media: 0, lastSpeed: 0, bufMark: null, notes: new Map(), began: performance.now() });
     this.video.addEventListener('waiting', this.onWaiting);
     this.video.addEventListener('playing', this.onPlaying);
     this.timer = setInterval(() => this.report(), 30000);
@@ -425,7 +425,16 @@ class Health {
       const bitrate = (this.bytes * 8) / this.media;
       return ` · download ${mbps(speed)} for a ${mbps(bitrate)} stream (${(speed / bitrate).toFixed(1)}× real time)`;
     }
-    return this.lastSpeed ? ` · download ${mbps(this.lastSpeed * 8)}` : '';
+    if (this.lastSpeed) return ` · download ${mbps(this.lastSpeed * 8)}`;
+    // The built-in player hides its downloads, so measure how fast the buffered end moves:
+    // below 1× real time, the connection can't keep up with the file's bitrate.
+    const v = this.video, b = v.buffered;
+    let end = 0;
+    for (let i = 0; i < b.length; i++) if (b.start(i) <= v.currentTime + 1 && b.end(i) > end) end = b.end(i);
+    const now = performance.now(), prev = this.bufMark;
+    this.bufMark = { end, at: now };
+    if (!prev || end < prev.end || now - prev.at < 2000) return '';
+    return ` · downloading at ${((end - prev.end) / ((now - prev.at) / 1000)).toFixed(1)}× real time`;
   }
 
   report() {
