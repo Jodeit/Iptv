@@ -5,19 +5,35 @@
 
 import { probe, describeProbe } from './diagnose.js';
 
+// 'auto' | 'hlsjs' | 'native': which engine plays HLS first (Sources → Display).
+let hlsPreference = 'auto';
+export const setHlsPreference = (p) => { hlsPreference = p || 'auto'; };
+
 export class StreamPlayer {
-  constructor(video, { onStatus = () => {}, onError = () => {} } = {}) {
+  constructor(video, { onStatus = () => {}, onError = () => {}, onWarn = () => {}, onLog = () => {} } = {}) {
     this.video = video;
     this.onStatus = onStatus;
     this.onError = onError;
+    this.onWarn = onWarn;
+    this.onLog = onLog; // (report) after each new line, so the playback log stays live
+    this.health = new Health(video, (line) => this.log(line));
     this.hls = null;
     this.ts = null;
     this.token = 0;
     this.report = [];
   }
 
+  log(line) {
+    const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    this.report.push(`${t} ${line}`);
+    if (this.report.length > 300) this.report.splice(0, this.report.length - 300);
+    this.onLog(this.report);
+  }
+
   destroy() {
     clearInterval(this.watchdog);
+    this.health.stop();
+    if (this.mkvp) { this.mkvp.destroy(); this.mkvp = null; }
     if (this.hls) { this.hls.destroy(); this.hls = null; }
     if (this.ts) {
       try { this.ts.pause(); this.ts.unload(); this.ts.detachMediaElement(); this.ts.destroy(); } catch { /* ignore */ }
@@ -36,6 +52,7 @@ export class StreamPlayer {
     if (!reconnect) {
       this.sources = list;
       this.reconnects = 0;
+      this.resumeAt = 0;
       this.report = [];
     } else if (this.winner) {
       // Go straight back to what worked.
@@ -73,11 +90,13 @@ export class StreamPlayer {
         this.winner = { source };
         this.lastEngine = engine;
         this.onStatus(`Playing · ${engine}${label ? ` · ${label}` : ''}`);
+        this.log(`▶ playing with ${ENGINE_NAMES[engine]}${label ? ' via proxy' : ''}: ${hint || src}`);
+        this.health.start(engine, this);
         this.watch(token);
         return true;
       } catch (err) {
         console.warn(`[stream] ${engine} failed for ${hint || src}`, err);
-        this.report.push(`✗ ${engine}${label ? ` (${label})` : ''} ${hint || src}: ${err.message}`);
+        this.log(`✗ ${engine}${label ? ` (${label})` : ''} ${hint || src}: ${err.message}`);
         this.destroy();
         // A refusal (bad login, connection limit) won't change with another variant, and
         // every extra try counts against the account.
@@ -95,7 +114,7 @@ export class StreamPlayer {
       if (seen.has(src) || seen.size >= max || token !== this.token) continue;
       seen.add(src);
       this.onStatus(`Didn’t play. Checking why (${seen.size} of ${probes})…`, { loading: true, frac: (seen.size - 1) / probes });
-      this.report.push(`? ${hint || src} → ${describeProbe(await probe(src))}`);
+      this.log(`? ${hint || src} → ${describeProbe(await probe(src))}`);
     }
     if (token === this.token) this.onError(summarise(this.report), this.report, { refused });
     return false;
@@ -118,8 +137,10 @@ export class StreamPlayer {
 
   recover(token, reason) {
     if (token !== this.token) return;
+    // Films resume where they were; live streams rejoin the live edge.
+    if (this.video.duration && Number.isFinite(this.video.duration)) this.resumeAt = this.video.currentTime;
     clearInterval(this.watchdog);
-    this.report.push(`↻ ${reason} after playing (reconnect ${this.reconnects + 1} of 3)`);
+    this.log(`↻ ${reason} after playing (reconnect ${this.reconnects + 1} of 3)`);
     if (this.reconnects >= 3) {
       this.destroy();
       this.onError('The stream keeps dropping. The provider or connection may be overloaded; try again later or another channel.', this.report);
@@ -173,11 +194,17 @@ export class StreamPlayer {
       hls.on(Hls.Events.MANIFEST_LOADED, () => this.progress(token, 'Channel found, loading video'));
       hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
         bytes += data.payload?.byteLength || 0;
+        const st = data.frag?.stats;
+        // stats.loaded: the payload itself may already be handed to hls.js's worker (0 bytes here).
+        if (st?.loading) this.health.fragment(st.loaded || st.total || 0, st.loading.end - st.loading.start, data.frag.duration);
         if (this.video.paused) this.progress(token, 'Buffering', mb(bytes), this.bufferedAhead() / 3);
       });
       hls.on(Hls.Events.MANIFEST_PARSED, () => { ready = true; resolve(); });
       hls.on(Hls.Events.ERROR, (_, data) => {
-        if (!data.fatal) return;
+        if (!data.fatal) {
+          if (ready && token === this.token) this.health.note(`hls.js: ${data.details}${data.response?.code ? ` (HTTP ${data.response.code})` : ''}`);
+          return;
+        }
         if (!ready) return reject(new Error(`${data.details}${data.response?.code ? ` (HTTP ${data.response.code})` : ''}`));
         if (token !== this.token) return;
         if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
@@ -186,6 +213,21 @@ export class StreamPlayer {
       hls.loadSource(url);
       hls.attachMedia(this.video);
     });
+  }
+
+  // Remuxes MKV to fragmented MP4 in the browser (js/mkv), for Safari and anything else
+  // that can't open Matroska itself.
+  async mkv(url, token) {
+    const { MkvPlayer } = await import('./mkv/player.js');
+    if (token !== this.token) throw new Error('cancelled');
+    const p = new MkvPlayer(this.video, url, {
+      onWarn: (m) => { this.log(`⚠ ${m}`); this.onWarn(m); },
+      onLog: (m) => this.log(m),
+      onFatal: (err) => this.recover(token, `MKV: ${err.message}`),
+      startAt: this.resumeAt || 0,
+    });
+    this.mkvp = p;
+    await p.start();
   }
 
   native(url) {
@@ -216,6 +258,7 @@ export class StreamPlayer {
       this.ts = p;
       const v = this.video;
       p.on(mpegts.Events.STATISTICS_INFO, (s) => {
+        if (s.speed) this.health.speed(s.speed * 1024);
         if (v.paused && s.speed) this.progress(token, 'Receiving', `${Math.round(s.speed)} KB/s`, this.bufferedAhead() / 3);
       });
       let started = false;
@@ -238,6 +281,8 @@ export class StreamPlayer {
 // Turns the attempt/probe log into one actionable sentence.
 function summarise(report) {
   const text = report.join('\n');
+  const mkvErr = text.match(/✗ mkv[^\n]*?: ([^\n]+)/);
+  if (mkvErr && !/HTTP \d/.test(mkvErr[1])) return `Couldn’t play this MKV in the browser: ${mkvErr[1]}. Use one of the player apps below.`;
   if (/Matroska \(MKV\)[^\n]*⚠ this browser can’t play MKV/.test(text) || /✗ unsupported format/.test(text)) {
     return 'This movie is an MKV file, which this browser can’t play. Use one of the player apps below instead.';
   }
@@ -279,7 +324,78 @@ export function unsupportedFormat(url) {
   return orderEngines(url).length === 0;
 }
 
-const ENGINE_NAMES = { hlsjs: 'HLS', mpegts: 'MPEG-TS', native: 'built-in player' };
+const ENGINE_NAMES = { hlsjs: 'HLS', mpegts: 'MPEG-TS', native: 'built-in player', mkv: 'MKV remux' };
+
+// Playback health for the log: every stall with its length and the buffer it ran down from,
+// and every 30 s the buffer, resolution, download speed vs bitrate, and dropped frames.
+class Health {
+  constructor(video, log) {
+    this.video = video;
+    this.log = log;
+    this.onWaiting = () => {
+      if (this.stallStart) return;
+      this.stallStart = performance.now();
+      this.stalls++;
+    };
+    this.onPlaying = () => {
+      if (!this.stallStart) return;
+      const secs = (performance.now() - this.stallStart) / 1000;
+      this.stallStart = 0;
+      this.stallTime += secs;
+      if (secs >= 0.3) this.log(`⏸ buffering ${secs.toFixed(1)}s (stall #${this.stalls}${this.rateText()})`);
+    };
+  }
+
+  start(engine, player) {
+    this.stop();
+    Object.assign(this, { engine, player, stalls: 0, stallTime: 0, stallStart: 0, bytes: 0, loadMs: 0, media: 0, lastSpeed: 0, notes: new Map(), began: performance.now() });
+    this.video.addEventListener('waiting', this.onWaiting);
+    this.video.addEventListener('playing', this.onPlaying);
+    this.timer = setInterval(() => this.report(), 30000);
+  }
+
+  stop() {
+    if (!this.timer) return;
+    clearInterval(this.timer);
+    this.timer = 0;
+    this.video.removeEventListener('waiting', this.onWaiting);
+    this.video.removeEventListener('playing', this.onPlaying);
+  }
+
+  // A downloaded segment: bytes, milliseconds it took, seconds of media it holds.
+  fragment(bytes, ms, mediaSecs) {
+    this.bytes += bytes;
+    this.loadMs += ms;
+    this.media += mediaSecs || 0;
+  }
+
+  speed(bytesPerSec) { this.lastSpeed = bytesPerSec; }
+
+  // Non-fatal engine trouble: logged once per kind per report period, with a count.
+  note(what) { this.notes.set(what, (this.notes.get(what) || 0) + 1); }
+
+  rateText() {
+    if (this.loadMs && this.media && this.bytes) {
+      const speed = (this.bytes * 8) / (this.loadMs / 1000);
+      const bitrate = (this.bytes * 8) / this.media;
+      return ` · download ${mbps(speed)} for a ${mbps(bitrate)} stream (${(speed / bitrate).toFixed(1)}× real time)`;
+    }
+    return this.lastSpeed ? ` · download ${mbps(this.lastSpeed * 8)}` : '';
+  }
+
+  report() {
+    const v = this.video;
+    const q = v.getVideoPlaybackQuality?.();
+    const dropped = q && q.totalVideoFrames ? ` · dropped frames ${q.droppedVideoFrames}/${q.totalVideoFrames} (${((q.droppedVideoFrames / q.totalVideoFrames) * 100).toFixed(1)}%)` : '';
+    const mins = (performance.now() - this.began) / 60000;
+    this.log(`ℹ ${ENGINE_NAMES[this.engine]} · ${v.videoWidth}×${v.videoHeight} · buffer ${this.player.bufferedAhead().toFixed(1)}s · ${this.stalls} stall(s), ${this.stallTime.toFixed(1)}s in ${mins.toFixed(1)} min${this.rateText()}${dropped}`);
+    for (const [what, n] of this.notes) this.log(`  ${what}${n > 1 ? ` ×${n}` : ''}`);
+    this.notes.clear();
+    this.bytes = 0; this.loadMs = 0; this.media = 0; // speeds per period
+  }
+}
+
+const mbps = (bps) => `${(bps / 1e6).toFixed(1)} Mbit/s`;
 const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
 
 function withTimeout(promise, ms, message) {
@@ -292,14 +408,18 @@ function orderEngines(url) {
   const path = url.split('?')[0].toLowerCase();
   const canNativeHls = document.createElement('video').canPlayType('application/vnd.apple.mpegurl');
   if (path.endsWith('.m3u8') || path.endsWith('.m3u') || url.includes('m3u8')) {
-    // iPhone/iPad: Safari's own HLS is lighter and supports AirPlay and picture-in-picture.
-    if (canNativeHls && (IOS || !(window.Hls && Hls.isSupported()))) return ['native', 'hlsjs'];
+    const hlsjs = !!(window.Hls && Hls.isSupported());
+    // hls.js first wherever it runs (its buffering is tuned for slow proxied segments);
+    // Safari's own player is the fallback, or first if chosen in Sources → Display.
+    if (canNativeHls && (hlsPreference === 'native' || !hlsjs)) return ['native', 'hlsjs'];
     return ['hlsjs', 'native', 'mpegts'];
   }
   if (path.endsWith('.ts') || path.endsWith('.flv')) return ['mpegts', 'native'];
   // MKV/AVI only when the browser says it might cope (Chrome often can; Safari never does):
   // a doomed attempt would still cost a connection against the account.
-  if (/\.(mkv|avi)$/.test(path)) return canContainer(path) ? ['native'] : [];
+  const mse = !!(window.ManagedMediaSource || window.MediaSource);
+  if (path.endsWith('.mkv')) return canContainer(path) ? ['native', ...(mse ? ['mkv'] : [])] : mse ? ['mkv'] : [];
+  if (path.endsWith('.avi')) return canContainer(path) ? ['native'] : [];
   if (/\.(mp4|webm|mov|m4v|ogv)$/.test(path)) return ['native'];
   // Extension-less IPTV URLs (e.g. Xtream /user/pass/123) are usually raw MPEG-TS.
   return ['mpegts', 'hlsjs'];

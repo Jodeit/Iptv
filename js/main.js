@@ -1,6 +1,6 @@
 import { preferFlat, device } from './device.js';
 import { FlatStage } from './flat-stage.js';
-import { StreamPlayer } from './stream.js';
+import { StreamPlayer, setHlsPreference } from './stream.js';
 import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, xtreamAccount, xtreamAlternates, readBody } from './m3u.js';
 import { XtreamLibrary } from './xtream.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
@@ -25,7 +25,7 @@ const DEFAULTS = {
   mode: 'xr3d', relief: 0.18, parallax: 0.8, convergence: 0.5, contrast: 1.4, smooth: 0.006,
   invert: false, showDepth: false, swap: false, view: 'mono',
   size: 6, distance: 5, height: 1.8, curve: 0.15, bright: 1, env: 'cinema', ambient: true,
-  volume: 1, muted: false, proxy: 'auto', proxyUrl: '', display: 'auto',
+  volume: 1, muted: false, proxy: 'auto', proxyUrl: '', display: 'auto', hlsEngine: 'auto',
 };
 const settings = { ...DEFAULTS, ...store.get('settings', {}) };
 settings.contentFilter = { ...FILTER_DEFAULTS, ...settings.contentFilter };
@@ -70,6 +70,8 @@ const state = {
 };
 
 let vrPanel = null;
+let logTimer = 0;
+setHlsPreference(settings.hlsEngine);
 
 // ---------- Guide (EPG) ----------
 // Guide requests go direct when the server allows it, otherwise through the proxy.
@@ -187,6 +189,12 @@ const theater = flat ? new FlatStage(video) : new TheaterModule.Theater($('stage
 const LAYOUT = { mono: 0, sbs: 1, tab: 2 }; // must match xr3d.js
 const player = new StreamPlayer(video, {
   onStatus: (s, { loading = false, frac = null } = {}) => (loading ? showLoading(s, frac) : (hideLoading(), setStatus(s))),
+  onWarn: (m) => toast(m, true),
+  // The log updates while playing (stalls, buffer, speed), not only after a failure.
+  onLog: (report) => {
+    clearTimeout(logTimer);
+    logTimer = setTimeout(() => renderPlaybackLog(report), 300);
+  },
   onError: (e, report, { refused = false } = {}) => {
     hideLoading();
     setStatus(e);
@@ -315,6 +323,7 @@ function renderPlaybackLog(report) {
     `Channel: ${state.current?.name || '?'}`,
     `App: ${location.origin} · proxy ${proxy.available ? proxy.base : 'none'} (${settings.proxy})`,
     `Browser: ${navigator.userAgent}`,
+    `Player: ${flat ? 'flat' : '3D theater'} · HLS engine ${settings.hlsEngine || 'auto'}`,
     '',
     ...report,
   ];
@@ -556,6 +565,8 @@ async function loadXtream(url, name, xt, key, fresh) {
     }
     return false; // no usable player_api: use the classic playlist
   }
+  // An API that answers but lists nothing is broken or locked down; the playlist may still work.
+  if (!lib.cats.live.length && !lib.cats.movie.length && !lib.cats.series.length) return false;
   try {
     state.xlib = lib;
     const cats = liveCategoriesWanted(lib);
@@ -1255,6 +1266,16 @@ for (const b of $('displaySeg').children) {
     settings.display = b.dataset.display;
     saveSettings();
     location.reload();
+  };
+}
+for (const b of $('hlsSeg').children) {
+  b.classList.toggle('active', b.dataset.hls === (settings.hlsEngine || 'auto'));
+  b.onclick = () => {
+    settings.hlsEngine = b.dataset.hls;
+    saveSettings();
+    setHlsPreference(settings.hlsEngine);
+    for (const x of $('hlsSeg').children) x.classList.toggle('active', x === b);
+    toast('Applies from the next channel you open');
   };
 }
 $('displayNote').textContent = flat

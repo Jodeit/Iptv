@@ -59,8 +59,10 @@ export async function socketFetch(url, headers = {}) {
     return new Response(null, { status, headers: resHeaders });
   }
 
-  // Plain body: hand the socket to the runtime and let it stream natively.
-  if (!chunked && length == null && typeof IdentityTransformStream !== 'undefined') {
+  // Plain body: hand the socket to the runtime and let it stream natively. That includes
+  // big sized bodies (films): HTTP/1.0 means the server closes when the body ends, and a
+  // per-chunk JS stream would run into the Worker's CPU limit over a two-hour movie.
+  if (!chunked && (length == null || length > 2 * 1048576) && typeof IdentityTransformStream !== 'undefined') {
     reader.releaseLock();
     const { readable, writable } = new IdentityTransformStream();
     (async () => {

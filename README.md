@@ -47,6 +47,28 @@ from about 113 MB to 10 MB (3 MB with the US filter on). That matters on iPad, w
 too much. If a load is ever interrupted by such a reload, the app doesn't retry on its own at the next start (no
 reload loop); it explains what happened and waits for ↻. Other M3U playlists are parsed while they download.
 
+## MKV movies in the browser
+
+Safari (and some other browsers) can't open MKV files, and many Xtream movies are MKV. The app remuxes them on the
+fly (`js/mkv/`): it streams the file, unpacks the Matroska clusters, and repackages the same video and audio as
+fragmented MP4 for Media Source Extensions. Nothing is re-encoded, and only about 45 s is buffered ahead, so memory
+stays small even for a full-length film.
+
+- **Video:** H.264, HEVC, VP9. **Audio:** AAC, AC-3, E-AC-3, MP3, Opus. With several audio tracks it picks the
+  default (or English) one the browser can play.
+- **Subtitles:** text subtitles (SRT, ASS) appear in the player's captions menu.
+- **Seeking:** uses the file's Cues index, fetched with a range request on the first jump.
+- **DTS / TrueHD audio:** no browser can decode it, so the film plays without sound and the app says so.
+  **Open in VLC / Infuse** stays available for anything the browser can't handle.
+
+## Playback log
+
+**Sources → Playback log** records each playback: which engine and source played, every buffering stall with its
+length, and every 30 s the buffer level, resolution, download speed against the stream's bitrate, dropped frames and
+engine warnings. Failed attempts and stream probes are there too. Xtream passwords are masked, and **Copy log** copies
+it for sharing. **Display → HLS player** switches between hls.js (default) and the browser's own HLS player, to
+compare on a given device.
+
 ## TV guide
 
 Live channels show what's on now, with a progress bar, in the channel list and the now-playing bar. **Guide**
@@ -233,6 +255,7 @@ js/main.js        App state, playlists, settings, UI + keyboard wiring
 js/m3u.js         Streaming M3U parser, Xtream link detection + stream alternates
 js/xtream.js      Xtream API library: categories, live, movies, series, episodes
 js/device.js      Device detection: flat player vs 3D theater
+js/mkv/           MKV → fragmented MP4 remuxer (EBML reader, demuxer, MP4 writer, MSE player)
 js/flat-stage.js  Flat player for phones and tablets
 js/filter.js      Content filter (live regions, movie/series languages)
 js/epg.js         Guide data: Xtream short EPG and XMLTV

@@ -108,7 +108,9 @@ function matroska(b) {
   }
   const streams = [...new Set([...ids].map((id) => MKV_CODECS[id] || id))];
   const problems = [];
-  const playable = canPlay(webm ? 'video/webm' : 'video/x-matroska') || document.createElement('video').canPlayType(webm ? 'video/webm' : 'video/x-matroska');
+  // MKV plays through the app's remuxer wherever Media Source Extensions exist.
+  const playable = canPlay(webm ? 'video/webm' : 'video/x-matroska') || document.createElement('video').canPlayType(webm ? 'video/webm' : 'video/x-matroska')
+    || !!(window.ManagedMediaSource || window.MediaSource);
   if (!playable) problems.push(`this browser can’t play ${webm ? 'WebM' : 'MKV'} files`);
   if (streams.includes('DTS audio') || streams.includes('TrueHD audio')) problems.push('browsers can’t decode DTS/TrueHD audio');
   return { kind: webm ? 'WebM' : 'Matroska (MKV)', streams, problems };
