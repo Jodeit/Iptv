@@ -1,7 +1,8 @@
 import { Theater } from './theater.js';
 import { LAYOUT } from './xr3d.js';
 import { StreamPlayer } from './stream.js';
-import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl } from './m3u.js';
+import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey } from './m3u.js';
+import { cacheGet, cachePut, cacheDelete } from './cache.js';
 import { VRPanel } from './vr-panel.js';
 
 const $ = (id) => document.getElementById(id);
@@ -185,7 +186,9 @@ function renderProxyStatus() {
 }
 
 // ---------- Playlists ----------
-function setChannels(channels, label) {
+function setChannels(channels, label, source = null) {
+  state.source = source;
+  $('refreshList').classList.toggle('hidden', !source?.url);
   state.channels = channels;
   state.group = '';
   const groups = [...new Set(channels.map((c) => c.group))].sort((a, b) => a.localeCompare(b));
@@ -198,7 +201,14 @@ function setChannels(channels, label) {
   setTab('channels');
 }
 
-async function loadPlaylistUrl(url, name) {
+const ago = (t) => {
+  const m = Math.round((Date.now() - t) / 60000);
+  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} d ago`;
+};
+
+// fresh=false opens the saved copy when there is one (app start, saved-list clicks);
+// fresh=true always downloads (Load button, ↻ refresh).
+async function loadPlaylistUrl(url, name, { fresh = true } = {}) {
   const xt = parseXtream(url);
   if (xt) {
     secrets.add(xt.password);
@@ -208,6 +218,17 @@ async function loadPlaylistUrl(url, name) {
     $('xtPass').value = xt.password;
   }
   name = name || hostOf(url) || 'Playlist';
+  const key = playlistKey(url);
+  if (!fresh) {
+    const cached = await cacheGet(key);
+    if (cached?.channels?.length) {
+      setChannels(cached.channels, name, { url, name, savedAt: cached.savedAt });
+      store.set('last', { url, name });
+      rememberPlaylist(name, url);
+      setStatus(`Saved copy from ${ago(cached.savedAt)} · ↻ to update`);
+      return;
+    }
+  }
   setStatus(`Loading ${name}…`);
   const plan = proxyPlan(url);
   const viaProxy = { proxify: proxied };
@@ -230,7 +251,9 @@ async function loadPlaylistUrl(url, name) {
       for (const h of new Set(channels.map((c) => hostOf(c.url)))) proxy.blockedHosts.add(h);
       store.set('blockedHosts', [...proxy.blockedHosts].slice(-50));
     }
-    setChannels(channels, name);
+    const savedAt = Date.now();
+    setChannels(channels, name, { url, name, savedAt });
+    cachePut(key, { url, name, savedAt, channels });
     store.set('last', { url, name });
     rememberPlaylist(name, url);
     setStatus(state.current ? state.status : 'Pick a channel to start');
@@ -246,8 +269,20 @@ function loadBuiltinDemo() {
   store.set('last', { builtin: true });
 }
 
+// Saved playlists are unique per playlistKey, so re-adding an account replaces its entry.
+function savedPlaylists() {
+  const seen = new Set();
+  return store.get('playlists', []).filter((p) => {
+    const k = playlistKey(p.url);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
+}
+
 function rememberPlaylist(name, url) {
-  const saved = store.get('playlists', []).filter((p) => p.url !== url);
+  const key = playlistKey(url);
+  const saved = savedPlaylists().filter((p) => playlistKey(p.url) !== key);
   saved.unshift({ name, url });
   store.set('playlists', saved.slice(0, 12));
   renderSaved();
@@ -256,19 +291,25 @@ function rememberPlaylist(name, url) {
 function renderSaved() {
   const ul = $('savedList');
   ul.innerHTML = '';
-  const saved = store.get('playlists', []);
+  const saved = savedPlaylists();
+  store.set('playlists', saved); // clears duplicates saved by older versions
   if (!saved.length) { ul.innerHTML = '<li class="muted small">None yet</li>'; return; }
   for (const p of saved) {
     const li = document.createElement('li');
     const span = document.createElement('span');
     span.textContent = p.name;
     span.title = maskUrl(p.url);
-    span.onclick = () => loadPlaylistUrl(p.url, p.name);
+    span.onclick = () => loadPlaylistUrl(p.url, p.name, { fresh: false });
     const del = document.createElement('button');
     del.className = 'icon-btn';
     del.textContent = '✕';
     del.title = 'Forget';
-    del.onclick = () => { store.set('playlists', store.get('playlists', []).filter((x) => x.url !== p.url)); renderSaved(); };
+    del.onclick = () => {
+      const key = playlistKey(p.url);
+      store.set('playlists', savedPlaylists().filter((x) => playlistKey(x.url) !== key));
+      cacheDelete(key);
+      renderSaved();
+    };
     li.append(span, del);
     ul.append(li);
   }
@@ -321,9 +362,10 @@ function renderList() {
   }
   ul.append(frag);
   const n = state.filtered.length;
-  $('listInfo').textContent = n > LIST_LIMIT
+  const updated = state.source?.savedAt ? ` · updated ${ago(state.source.savedAt)}` : '';
+  $('listInfo').textContent = (n > LIST_LIMIT
     ? `Showing ${LIST_LIMIT} of ${n} channels. Search to narrow down.`
-    : `${n} channel${n === 1 ? '' : 's'}`;
+    : `${n} channel${n === 1 ? '' : 's'}`) + updated;
 }
 
 function toggleFav(ch, btn) {
@@ -536,6 +578,7 @@ $('xtLoad').onclick = () => {
   if (!/^https?:\/\//i.test(server)) server = `http://${server}`;
   loadPlaylistUrl(xtreamUrl(server, user, pass));
 };
+$('refreshList').onclick = () => state.source && loadPlaylistUrl(state.source.url, state.source.name, { fresh: true });
 $('copyLog').onclick = async () => {
   try { await navigator.clipboard.writeText($('playbackLog').textContent); toast('Playback log copied'); }
   catch { toast('Couldn’t copy. Select the text and copy it manually.', true); }
@@ -656,7 +699,7 @@ if (proxy.available && !settings.proxyUrl) {
   $('presets').prepend(b);
 }
 const last = store.get('last', null);
-if (last?.url) loadPlaylistUrl(last.url, last.name);
+if (last?.url) loadPlaylistUrl(last.url, last.name, { fresh: false });
 else if (last?.local && store.get('localText', null)) setChannels(parseM3U(store.get('localText', '')), last.local);
 else loadBuiltinDemo();
 

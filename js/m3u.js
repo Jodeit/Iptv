@@ -149,6 +149,14 @@ export function xtreamAlternates(streamUrl, { username, password }) {
   return [`${base}.m3u8`, `${base}.ts`].filter((x) => x !== streamUrl);
 }
 
+// Identity of a playlist source: one entry per Xtream account however its link is written
+// (output=, parameter order, http:// or not); otherwise the normalised URL.
+export function playlistKey(link) {
+  const xt = parseXtream(link);
+  if (xt) return `xtream:${xt.server.toLowerCase()}|${xt.username}`;
+  try { return new URL(link).href; } catch { return link; }
+}
+
 // Display-safe version of a link: hides Xtream credentials.
 export function maskUrl(link) {
   const xt = parseXtream(link);
