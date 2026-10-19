@@ -1,0 +1,9 @@
+# Cloudflare deploy: serves the app as static assets and runs proxy/worker.js for /proxy,
+# so the player and its CORS proxy share one HTTPS origin (no Proxy URL setting needed).
+# Cloudflare dashboard → Workers & Pages → Create → Import a repository → this repo.
+name = "o3xr-iptv"
+main = "proxy/worker.js"
+compatibility_date = "2025-09-01"
+
+[assets]
+directory = "."

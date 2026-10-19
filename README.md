@@ -24,21 +24,31 @@ Browsers only allow WebXR on **HTTPS or localhost**, so for a headset:
 
 The proxy forwards to any URL it's given, so keep the server on your own network.
 
-## GitHub Pages
+## Hosting
 
-Live at **https://jodeit.github.io/Iptv/**: Pages serves the repo root of `main` as-is, with no build step.
-Pages is HTTPS, so WebXR works on a headset without any certificate setup.
+### Cloudflare (recommended: app + proxy on one HTTPS address)
 
-Pages can't run `server.js`, so add a proxy for IPTV servers that block browsers. That covers most Xtream panels,
-and any `http://` provider, since an HTTPS page can't load `http://` streams.
+The repo includes `wrangler.toml`, so Cloudflare deploys it as a single app. Cloudflare serves the player files,
+and `proxy/worker.js` handles `/proxy`. The app finds that proxy by itself, so Xtream and `http://` providers
+work with no Proxy URL setting.
 
-1. **Cloudflare Worker (free, recommended):** paste [`proxy/worker.js`](proxy/worker.js) into a new Worker
-   (dash.cloudflare.com → Workers & Pages → Create → Worker → Deploy). Set the variable
-   `ALLOWED_ORIGINS=https://jodeit.github.io` so only this app can use it.
-2. In the app, open **Sources → Proxy URL**, enter `https://<worker-name>.<account>.workers.dev`, then press Save.
+1. dash.cloudflare.com → **Workers & Pages** → **Create application** → **Import a repository**, then pick `Jodeit/Iptv`.
+2. Keep the defaults: no build command, and deploy command `npx wrangler deploy`. Then deploy.
+3. Open `https://o3xr-iptv.<account>.workers.dev` on your headset.
 
-Or point Proxy URL at your own `server.js` running with HTTPS (`CERT=… KEY=… node server.js`).
-Some IPTV providers block datacenter IPs. If channels fail through the Worker but work through `server.js` at home, that's why.
+Each push to `main` redeploys automatically. Server-only files (`server.js`, `proxy/`, configs) are never served
+(see `.assetsignore`). To stop other sites using your proxy, add the variable
+`ALLOWED_ORIGINS=https://o3xr-iptv.<account>.workers.dev` under the Worker's Settings → Variables.
+
+### GitHub Pages (app only)
+
+Enable Settings → Pages → Deploy from a branch → `main` / root. The app is then at **https://jodeit.github.io/Iptv/**.
+Pages can't run a proxy, so for IPTV servers that block browsers, set **Sources → Proxy URL** to:
+
+- your Cloudflare deployment above (set `ALLOWED_ORIGINS=https://jodeit.github.io`), or
+- your own `server.js` running over HTTPS (`CERT=… KEY=… node server.js`).
+
+Some IPTV providers block datacenter IPs. If channels fail through Cloudflare but work through `server.js` at home, that's why.
 
 ## Xtream Codes links
 
@@ -124,7 +134,8 @@ Tuning (XR3D tab):
 
 ```
 server.js         Static server + CORS/HLS-rewriting proxy (zero dependencies)
-proxy/worker.js   Same proxy as a Cloudflare Worker, for the GitHub Pages build
+proxy/worker.js   Same proxy as a Cloudflare Worker (used by wrangler.toml)
+wrangler.toml     Cloudflare deploy config: static app + /proxy Worker
 index.html        UI shell + CDN import map
 css/style.css     Panel / bar styling (phone layout included)
 js/main.js        App state, playlists, settings, UI + keyboard wiring

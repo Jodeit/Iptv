@@ -1,0 +1,12 @@
+.git/
+.wrangler/
+.github
+.assetsignore
+.gitignore
+.nojekyll
+node_modules
+proxy
+server.js
+package.json
+wrangler.toml
+*.pem
