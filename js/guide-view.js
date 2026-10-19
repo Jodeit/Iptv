@@ -5,7 +5,6 @@ import { classify, TOPIC_NAMES } from './livecats.js';
 
 const PX_PER_MIN = 4;          // 30 minutes = 120 px
 const HOURS = 6;
-const LABEL_W = 170;
 const PAGE = 60; // rows added each time the bottom comes into view
 
 const fmt = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
@@ -88,10 +87,11 @@ export class GuideView {
     this.observer.disconnect();
     this.rows.clear();
     this.visible.clear();
+    this.labelW = parseFloat(getComputedStyle(this.root).getPropertyValue('--guide-label-w')) || 260;
     const now = Date.now();
     this.t0 = Math.floor(now / 1800000) * 1800000 - 1800000; // half-hour boundary, 30 min back
     this.t1 = this.t0 + HOURS * 3600000;
-    const width = LABEL_W + (HOURS * 60) * PX_PER_MIN;
+    const width = this.labelW + (HOURS * 60) * PX_PER_MIN;
     this.grid.style.width = `${width}px`;
     this.grid.innerHTML = '';
 
@@ -102,7 +102,7 @@ export class GuideView {
     for (let t = this.t0; t < this.t1; t += 1800000) {
       const mark = document.createElement('div');
       mark.className = 'guide-mark';
-      mark.style.left = `${LABEL_W + this.x(t)}px`;
+      mark.style.left = `${this.labelW + this.x(t)}px`;
       mark.textContent = fmt(t);
       ruler.append(mark);
     }
@@ -216,7 +216,7 @@ export class GuideView {
   tick() {
     if (!this.isOpen() || !this.nowLine) return;
     if (Date.now() > this.t0 + 3600000 * 2) { this.build(); return; } // keep "now" near the start
-    this.nowLine.style.left = `${LABEL_W + this.x(Date.now())}px`;
+    this.nowLine.style.left = `${this.labelW + this.x(Date.now())}px`;
   }
 
   scrollToNow() {
