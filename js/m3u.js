@@ -122,6 +122,9 @@ function httpReason(res, url) {
   if (proxyError === 'origin-not-allowed') {
     return 'The proxy refused this page. Add this site’s address to the Worker’s ALLOWED_ORIGINS variable.';
   }
+  if (proxyError === 'socket-failed') {
+    return 'Cloudflare couldn’t open a direct connection to the provider. Use server.js at home as the proxy.';
+  }
   if (proxyError === 'ip-unsupported') {
     return 'The provider redirects to a bare IP address, which Cloudflare can’t connect to. Use server.js at home as the proxy.';
   }

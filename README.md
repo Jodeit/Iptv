@@ -26,9 +26,10 @@ The proxy forwards to any URL it's given, so keep the server on your own network
 
 ## Home proxy (when Cloudflare can't reach your provider)
 
-Some providers can't be reached from Cloudflare at all. They might block cloud servers, redirect streams to a
-bare IP address (Cloudflare error 1003), or use unusual ports. The playback log says when that's the case. The fix
-is to run the proxy at home, so your provider sees your home connection, like any IPTV app would.
+The Cloudflare proxy handles stream servers on bare IP addresses and unusual ports itself. `fetch()` refuses those,
+so it opens a direct TCP connection instead (`proxy/http-socket.js`). It still can't help when a provider blocks
+cloud servers outright, and the playback log says when that's the case. The fix then is to run the proxy at home,
+so your provider sees your home connection, like any IPTV app would.
 
 1. On a computer at home (Windows, Mac or Linux with [Node 18+](https://nodejs.org)):
    ```bash
@@ -171,6 +172,7 @@ Tuning (XR3D tab):
 ```
 server.js         Static server + CORS/HLS-rewriting proxy (zero dependencies)
 proxy/worker.js   Same proxy as a Cloudflare Worker (used by wrangler.toml)
+proxy/http-socket.js  HTTP over TCP sockets for hosts the Worker's fetch() refuses (bare IPs, odd ports)
 wrangler.toml     Cloudflare deploy config: static app + /proxy Worker
 proxy/xtream-demo.js  Built-in demo Xtream panel (demo / demo) for testing
 index.html        UI shell + CDN import map

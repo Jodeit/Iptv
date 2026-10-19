@@ -10,6 +10,7 @@
 // IPTV panels often allow only known players. Try these in order when one is refused,
 // and remember what worked per host (for the life of this isolate).
 import { xtreamDemo } from './xtream-demo.js';
+import { socketFetch } from './http-socket.js';
 
 const UAS = [
   'VLC/3.0.20 LibVLC/3.0.20',
@@ -20,26 +21,28 @@ const UAS = [
 const uaByHost = new Map();
 const REFUSED = new Set([401, 403, 406, 451]);
 
-// Ports Cloudflare Workers can fetch. Xtream stream servers often redirect to others
-// (e.g. :25461), which Workers can't reach.
+// Ports Cloudflare Workers' fetch() can reach. Xtream stream servers often redirect to
+// others (e.g. :25461); those hops go over a raw TCP socket instead.
 const HTTP_PORTS = new Set(['', '80', '8080', '8880', '2052', '2082', '2086', '2095']);
 const HTTPS_PORTS = new Set(['', '443', '8443', '2053', '2083', '2087', '2096']);
 const portOk = (u) => (u.protocol === 'https:' ? HTTPS_PORTS : HTTP_PORTS).has(u.port);
 
-// Cloudflare refuses Worker fetches to bare IP addresses (error 1003). Many Xtream panels
+// fetch() also refuses bare IP addresses (Cloudflare error 1003), and many Xtream panels
 // redirect streams to one, e.g. http://46.249.110.235/live/…?token=…
 const isIp = (u) => /^\d{1,3}(\.\d{1,3}){3}$/.test(u.hostname) || u.hostname.startsWith('[');
+const needsSocket = (u) => isIp(u) || !portOk(u);
 
-class PortError extends Error {}
-class IpError extends Error {}
-
-// Follows redirects by hand so every hop's port can be checked.
+// Follows redirects by hand, choosing fetch() or a TCP socket for each hop.
 async function fetchFollow(url, headers) {
   let current = url;
   for (let hop = 0; hop < 6; hop++) {
-    if (isIp(current)) throw new IpError(current.host);
-    if (!portOk(current)) throw new PortError(current.host);
-    const res = await fetch(current, { headers, redirect: 'manual' });
+    let res;
+    if (needsSocket(current)) {
+      try { res = await socketFetch(current, headers); }
+      catch (err) { throw Object.assign(new Error(`direct connection to ${current.host} failed: ${err.message}`), { socket: true }); }
+    } else {
+      res = await fetch(current, { headers, redirect: 'manual' });
+    }
     const location = res.headers.get('location');
     if (res.status < 300 || res.status >= 400 || !location) return { res, finalUrl: current.href };
     await res.body?.cancel().catch(() => {});
@@ -85,14 +88,7 @@ export default {
       try {
         ({ res: up, finalUrl } = await fetchFollow(target, { ...base, 'user-agent': ua }));
       } catch (err) {
-        if (err instanceof IpError) {
-          return text(`Cloudflare Workers can't connect to bare IP addresses (${err.message}). Use server.js as the proxy.`, 502,
-            { 'x-proxy-error': 'ip-unsupported', 'x-final-url': `http://${err.message}/` });
-        }
-        if (err instanceof PortError) {
-          return text(`Cloudflare Workers can't connect to port ${err.message}`, 502, { 'x-proxy-error': 'port-unsupported', 'x-final-url': `http://${err.message}/` });
-        }
-        return text(`Upstream error: ${err.message}`, 502, { 'x-proxy-error': 'upstream-unreachable' });
+        return text(`Upstream error: ${err.message}`, 502, { 'x-proxy-error': err.socket ? 'socket-failed' : 'upstream-unreachable' });
       }
       if (!REFUSED.has(up.status)) { uaByHost.set(target.host, ua); break; }
       if (ua !== order.at(-1)) await up.body?.cancel().catch(() => {}); // keep the last refusal to pass on

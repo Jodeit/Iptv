@@ -42,7 +42,9 @@ export class StreamPlayer {
         this.step = `${ENGINE_NAMES[engine]}${label ? ' via proxy' : ''}${attempts > 1 ? ` (try ${n} of ${attempts})` : ''}`;
         this.progress(token, 'Connecting');
         try {
-          await this[engine](src, token);
+          // A source that never answers (or streams endlessly where a playlist was expected)
+          // shouldn't hold up the remaining tries.
+          await withTimeout(this[engine](src, token), 15000, 'no response within 15s');
           if (token !== this.token) return false;
           this.progress(token, 'Starting video');
           await withTimeout(this.video.play().catch(() => {
@@ -91,7 +93,20 @@ export class StreamPlayer {
   hlsjs(url, token) {
     return new Promise((resolve, reject) => {
       if (!window.Hls || !Hls.isSupported()) return reject(new Error('hls.js unsupported'));
-      const hls = new Hls({ enableWorker: true, backBufferLength: 30, maxBufferLength: 30 });
+      const hls = new Hls({
+        enableWorker: true,
+        backBufferLength: 30,
+        maxBufferLength: 30,
+        // Fail fast on the playlist: other sources are waiting their turn.
+        manifestLoadPolicy: {
+          default: {
+            maxTimeToFirstByteMs: 8000,
+            maxLoadTimeMs: 12000,
+            timeoutRetry: { maxNumRetry: 0, retryDelayMs: 0, maxRetryDelayMs: 0 },
+            errorRetry: { maxNumRetry: 1, retryDelayMs: 500, maxRetryDelayMs: 1000 },
+          },
+        },
+      });
       this.hls = hls;
       let ready = false;
       let bytes = 0;
@@ -156,6 +171,10 @@ export class StreamPlayer {
 function summarise(report) {
   const text = report.join('\n');
   if (/⚠ ([^\n·]+)/.test(text)) return `Stream found, but ${text.match(/⚠ ([^\n·]+)/)[1].trim()}`;
+  if (/proxy error “socket-failed”/.test(text)) {
+    return 'Cloudflare couldn’t open a direct connection to this provider’s stream server. '
+      + 'Run server.js at home and use it as the proxy (see README: Home proxy).';
+  }
   if (/proxy error “ip-unsupported”|error code: 1003/.test(text)) {
     return 'This provider sends streams from a bare IP address, which Cloudflare can’t connect to. '
       + 'Run server.js at home and use it as the proxy (see README: Home proxy).';
@@ -169,6 +188,10 @@ function summarise(report) {
   }
   const page = text.match(/(?:HTML page|JSON|text) \(not video\) · “([^”]+)”/);
   if (page) return `The provider sent a message instead of video: “${page[1].slice(0, 100)}”`;
+  const healthy = text.match(/· (MPEG-TS \[[^\]]+\]|HLS (?:master )?playlist)/);
+  if (healthy && !/⚠/.test(text)) {
+    return `The stream is reachable (${healthy[1]}), but the player couldn’t start it. Try again; if it keeps failing, copy the Playback log.`;
+  }
   if (/no data within/.test(text)) return 'The stream connected but sent no data. The channel may be offline.';
   if (/request blocked or failed/.test(text)) return 'The browser couldn’t reach the stream. A proxy is needed (Sources → Proxy).';
   return 'Stream failed to load. See Sources → Playback log for details.';
