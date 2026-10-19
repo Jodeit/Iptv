@@ -24,6 +24,17 @@ Browsers only allow WebXR on **HTTPS or localhost**, so for a headset:
 
 The proxy forwards to any URL it's given, so keep the server on your own network.
 
+## TV guide
+
+Live channels show what's on now, with a progress bar, in the channel list and the now-playing bar. **Guide**
+(or the G key) opens a grid with a six-hour timeline for the current list and group. Tap a programme for details,
+or a channel name to watch it.
+
+- **Xtream accounts:** guide data comes from the panel's `get_short_epg` API. It's requested only for channels on
+  screen, a few at a time, and cached for 30 minutes.
+- **Other playlists:** if the playlist header names an XMLTV guide (`url-tvg` or `x-tvg-url`), the app streams it,
+  gunzips it if needed, and keeps only this playlist's channels for the next 24 hours.
+
 ## Profiles and syncing across devices
 
 **Profile** (top of the panel) keeps playlists, favorites, the content filter and the last playlist in step
@@ -198,6 +209,8 @@ css/style.css     Panel / bar styling (phone layout included)
 js/main.js        App state, playlists, settings, UI + keyboard wiring
 js/m3u.js         M3U parser, Xtream link detection + stream alternates
 js/filter.js      Content filter (live regions, movie/series languages)
+js/epg.js         Guide data: Xtream short EPG and XMLTV
+js/guide-view.js  Guide grid
 js/cache.js       Saved playlist copies (IndexedDB)
 js/profiles.js    Profiles: encryption, merge, sync, device linking
 proxy/profiles-api.js  Profile storage + pairing API (Worker KV / server.js file)

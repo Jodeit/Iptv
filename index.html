@@ -46,6 +46,7 @@
         <button id="favFilter" class="chip" title="Show favorites only">★</button>
         <button id="refreshList" class="chip hidden" title="Download the playlist again from the provider">↻</button>
         <button id="cfToggle" class="chip" title="Content filter (set it up in Sources)">Filter</button>
+        <button id="guideBtn" class="chip hidden" title="TV guide (G)">Guide</button>
       </div>
       <div class="seg hidden" id="kindSeg">
         <button data-kind="" class="active">All</button>
@@ -234,6 +235,18 @@
       </div>
     </section>
   </aside>
+
+  <!-- TV guide -->
+  <div id="guideView" class="guide hidden" role="dialog" aria-label="TV guide">
+    <header class="guide-head">
+      <h2>Guide</h2>
+      <span class="guide-info muted small"></span>
+      <button class="guide-now chip">Now</button>
+      <button class="guide-close icon-btn" title="Close (Esc)">✕</button>
+    </header>
+    <div class="guide-scroll"><div class="guide-grid"></div></div>
+    <div class="guide-detail hidden"></div>
+  </div>
 
   <button id="panelOpen" class="fab hidden" title="Show panel (H)">☰</button>
 

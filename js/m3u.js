@@ -6,12 +6,17 @@ export function parseM3U(text, baseUrl = location.href) {
   const lines = text.split(/\r?\n/);
   const channels = [];
   let pending = null;
+  let tvgUrl = '';
 
   for (const raw of lines) {
     const line = raw.trim();
     if (!line) continue;
 
-    if (line.startsWith('#EXTINF')) {
+    if (line.startsWith('#EXTM3U')) {
+      // The header may name an XMLTV guide: url-tvg="…" or x-tvg-url="…" (comma-separated list).
+      const m = line.match(/(?:url-tvg|x-tvg-url)="([^"]+)"/i);
+      if (m) tvgUrl = m[1].split(',')[0].trim();
+    } else if (line.startsWith('#EXTINF')) {
       const attrs = {};
       for (const m of line.matchAll(ATTR_RE)) attrs[m[1].toLowerCase()] = m[2];
       // The display name follows the first comma once the quoted attributes are removed,
@@ -43,6 +48,7 @@ export function parseM3U(text, baseUrl = location.href) {
   }
 
   channels.forEach((c, i) => { c.num = i + 1; c.id = c.url; });
+  channels.tvgUrl = tvgUrl; // read by the guide; not part of each channel
   return channels;
 }
 

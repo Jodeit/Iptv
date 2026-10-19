@@ -5,6 +5,8 @@ import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, 
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
 import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
 import { Profiles, emptyDoc, canSync } from './profiles.js';
+import { Guide } from './epg.js';
+import { GuideView } from './guide-view.js';
 import { VRPanel } from './vr-panel.js';
 
 const $ = (id) => document.getElementById(id);
@@ -68,6 +70,45 @@ const state = {
 };
 
 let vrPanel = null;
+
+// ---------- Guide (EPG) ----------
+// Guide requests go direct when the server allows it, otherwise through the proxy.
+async function smartFetch(url) {
+  if (proxyPlan(url) !== 'proxy-first') {
+    try { return await fetch(url); } catch { if (!proxy.available) throw new Error('blocked'); }
+  }
+  return fetch(proxied(url));
+}
+
+const guide = new Guide({
+  fetcher: smartFetch,
+  onUpdate: (ids) => {
+    for (const id of ids || visibleRows) if (visibleRows.has(id)) updateRowEpg(id);
+    if (!ids || ids.includes(state.current?.id)) updateNowPlayingEpg();
+    guideView.refresh(ids);
+  },
+});
+
+const guideView = new GuideView({
+  root: $('guideView'),
+  guide,
+  channels: () => state.filtered.filter((c) => kindOf(c) === 'live'),
+  onPlay: (ch) => play(ch),
+});
+
+function updateNowPlayingEpg() {
+  const ch = state.current;
+  const nn = ch && guide.nowNext(ch);
+  $('npName').textContent = ch ? (nn?.now ? `${ch.name} · ${nn.now.title}` : ch.name) : 'No channel';
+  $('npName').title = nn?.now ? `${fmtTime(nn.now.start)}–${fmtTime(nn.now.stop)} ${nn.now.title}${nn.now.desc ? `\n${nn.now.desc}` : ''}` : '';
+}
+
+// Keep progress bars and "now" titles current as programmes change.
+setInterval(() => {
+  for (const id of visibleRows) updateRowEpg(id);
+  updateNowPlayingEpg();
+  guideView.tick();
+}, 60000);
 
 // ---------- Profiles ----------
 // Playlists, favorites, the content filter and the last playlist live in the active profile's
@@ -179,7 +220,7 @@ function hideLoading() {
   $('progress').classList.add('hidden');
 }
 
-const mb = (n) => `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
+const mb = (n) => (n < 1048576 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`);
 
 // The VR panel is a canvas texture: every redraw re-uploads ~3 MB to the GPU and causes a
 // visible hitch in the headset. So it shows the status without the ticking parts (elapsed
@@ -320,6 +361,9 @@ function renderProxyStatus() {
 // ---------- Playlists ----------
 function setChannels(channels, label, source = null) {
   state.source = source;
+  guide.setSource({ xtream: source?.url ? parseXtream(source.url) : null, tvgUrl: source?.tvgUrl || channels.tvgUrl || null });
+  guide.setChannels(channels);
+  $('guideBtn').classList.toggle('hidden', !guide.available());
   $('refreshList').classList.toggle('hidden', !source?.url);
   state.channels = channels;
   state.group = '';
@@ -351,13 +395,14 @@ async function loadPlaylistUrl(url, name, { fresh = true } = {}) {
   if (!fresh) {
     const cached = await cacheGet(key);
     if (cached?.channels?.length) {
-      setChannels(cached.channels, name, { url, name, savedAt: cached.savedAt });
+      setChannels(cached.channels, name, { url, name, savedAt: cached.savedAt, tvgUrl: cached.tvgUrl });
       setLast({ url, name });
       rememberPlaylist(name, url);
       setStatus(`Saved copy from ${ago(cached.savedAt)} · ↻ to update`);
       return;
     }
   }
+  const statusBefore = loading.active ? '' : state.status;
   showLoading(`Connecting to ${name}…`);
   const plan = proxyPlan(url);
   const onProgress = ({ phase, received = 0, total = 0, rate = 0 }) => {
@@ -386,12 +431,12 @@ async function loadPlaylistUrl(url, name, { fresh = true } = {}) {
       store.set('blockedHosts', [...proxy.blockedHosts].slice(-50));
     }
     const savedAt = Date.now();
-    setChannels(channels, name, { url, name, savedAt });
-    cachePut(key, { url, name, savedAt, channels });
+    setChannels(channels, name, { url, name, savedAt, tvgUrl: channels.tvgUrl });
+    cachePut(key, { url, name, savedAt, channels, tvgUrl: channels.tvgUrl });
     setLast({ url, name });
     rememberPlaylist(name, url);
     hideLoading();
-    setStatus(state.current ? state.status : 'Pick a channel to start');
+    setStatus(state.current && statusBefore ? statusBefore : 'Pick a channel to start');
   } catch (err) {
     hideLoading();
     const msg = `Couldn’t load playlist: ${err.message}`;
@@ -499,8 +544,41 @@ function applyFilter() {
   vrPanel?.draw();
 }
 
+// Rows on screen ask the guide for their programmes; others don't cost a request.
+const rowEls = new Map(); // channel id → { li, ch }
+const visibleRows = new Set();
+const rowObserver = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    const id = e.target.dataset.id;
+    if (e.isIntersecting) { visibleRows.add(id); updateRowEpg(id); } else visibleRows.delete(id);
+  }
+}, { root: null, rootMargin: '200px' });
+
+function updateRowEpg(id) {
+  const row = rowEls.get(id);
+  if (!row) return;
+  const nn = guide.nowNext(row.ch);
+  const line = row.li.querySelector('.ch-group');
+  const bar = row.li.querySelector('.ch-prog');
+  if (nn?.now) {
+    const { now: p } = nn;
+    line.textContent = `${p.title}${nn.next ? `  ·  next ${fmtTime(nn.next.start)} ${nn.next.title}` : ''}`;
+    line.title = p.desc || '';
+    bar.classList.add('on');
+    bar.firstElementChild.style.width = `${Math.round(((Date.now() - p.start) / (p.stop - p.start)) * 100)}%`;
+  } else {
+    line.textContent = row.ch.group + (row.ch.layout ? ` · 3D ${row.ch.layout.toUpperCase()}` : '');
+    bar.classList.remove('on');
+  }
+}
+
+const fmtTime = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+
 function renderList() {
   const ul = $('channelList');
+  rowObserver.disconnect();
+  rowEls.clear();
+  visibleRows.clear();
   ul.innerHTML = '';
   const frag = document.createDocumentFragment();
   for (const ch of state.filtered.slice(0, LIST_LIMIT)) {
@@ -519,9 +597,11 @@ function renderList() {
     img.onerror = () => { img.style.visibility = 'hidden'; };
     const text = document.createElement('div');
     text.className = 'ch-text';
-    text.innerHTML = '<div class="ch-name"></div><div class="ch-group"></div>';
+    text.innerHTML = '<div class="ch-name"></div><div class="ch-group"></div><div class="ch-prog"><i></i></div>';
     text.firstChild.textContent = ch.name;
-    text.lastChild.textContent = ch.group + (ch.layout ? ` · 3D ${ch.layout.toUpperCase()}` : '');
+    text.children[1].textContent = ch.group + (ch.layout ? ` · 3D ${ch.layout.toUpperCase()}` : '');
+    rowEls.set(ch.id, { li, ch });
+    rowObserver.observe(li);
     const fav = document.createElement('button');
     fav.className = 'fav' + (state.favs.has(ch.id) ? ' on' : '');
     fav.textContent = '★';
@@ -558,6 +638,7 @@ function markPlaying() {
 async function play(ch) {
   state.current = ch;
   $('npName').textContent = ch.name;
+  updateNowPlayingEpg();
   const logo = $('npLogo');
   logo.referrerPolicy = 'no-referrer';
   if (ch.logo) logo.src = ch.logo; else logo.removeAttribute('src');
@@ -879,6 +960,8 @@ $('pfDelete').onclick = () => busy($('pfDelete'), async () => {
   toast(`Deleted “${p.name}”`);
 });
 
+$('guideBtn').onclick = () => guideView.open();
+
 $('refreshList').onclick = () => state.source && loadPlaylistUrl(state.source.url, state.source.name, { fresh: true });
 $('copyLog').onclick = async () => {
   try { await navigator.clipboard.writeText($('playbackLog').textContent); toast('Playback log copied'); }
@@ -936,6 +1019,7 @@ addEventListener('keydown', (e) => {
   else if (k === 'PageDown' || k === 'ArrowDown') { e.preventDefault(); step(1); }
   else if (k === 'PageUp' || k === 'ArrowUp') { e.preventDefault(); step(-1); }
   else if (k === 'm' || k === 'M') $('mute').click();
+  else if ((k === 'g' || k === 'G') && guide.available()) (guideView.isOpen() ? guideView.close() : guideView.open());
   else if (k === 'h' || k === 'H') togglePanel();
   else if (k === '3') cycleMode();
   else if (k === 'd' || k === 'D') { $('showDepth').click(); }
