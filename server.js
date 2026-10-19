@@ -11,6 +11,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
@@ -137,5 +138,11 @@ const tls = process.env.CERT && process.env.KEY
   : null;
 const server = tls ? https.createServer(tls, handler) : http.createServer(handler);
 server.listen(PORT, HOST, () => {
-  console.log(`o3XR IPTV on ${tls ? 'https' : 'http'}://${HOST === '0.0.0.0' ? 'localhost' : HOST}:${PORT} (proxy at /proxy)`);
+  const scheme = tls ? 'https' : 'http';
+  console.log(`o3XR IPTV on ${scheme}://localhost:${PORT} (proxy at /proxy)`);
+  if (HOST === '0.0.0.0') {
+    const lan = Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal);
+    for (const i of lan) console.log(`  on your network: ${scheme}://${i.address}:${PORT}`);
+  }
+  if (!tls) console.log('  For VR on a headset, give it HTTPS: npm run tunnel (needs cloudflared) — see README “Home proxy”.');
 });

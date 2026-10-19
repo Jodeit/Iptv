@@ -24,6 +24,31 @@ Browsers only allow WebXR on **HTTPS or localhost**, so for a headset:
 
 The proxy forwards to any URL it's given, so keep the server on your own network.
 
+## Home proxy (when Cloudflare can't reach your provider)
+
+Some providers can't be reached from Cloudflare at all. They might block cloud servers, redirect streams to a
+bare IP address (Cloudflare error 1003), or use unusual ports. The playback log says when that's the case. The fix
+is to run the proxy at home, so your provider sees your home connection, like any IPTV app would.
+
+1. On a computer at home (Windows, Mac or Linux with [Node 18+](https://nodejs.org)):
+   ```bash
+   git clone https://github.com/Jodeit/Iptv && cd Iptv
+   node server.js
+   ```
+2. Give it an HTTPS address so the Quest can use VR. Install
+   [cloudflared](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/)
+   (`winget install Cloudflare.cloudflared` or `brew install cloudflared`), then in a second terminal run:
+   ```bash
+   npm run tunnel        # = cloudflared tunnel --url http://localhost:8080
+   ```
+   It prints an address like `https://random-words.trycloudflare.com`. You don't need a Cloudflare account.
+3. Open that address in the Quest browser. The app and proxy both run on your computer; the tunnel only carries the
+   traffic, so your provider sees your home connection.
+
+Without the tunnel, `http://<computer-ip>:8080` (printed by `server.js`) works on the Quest in the flat browser,
+but VR mode needs HTTPS. You can also keep using your Cloudflare app and set **Sources → Proxy URL** to the
+tunnel address.
+
 ## Hosting
 
 ### Cloudflare (recommended: app + proxy on one HTTPS address)
@@ -152,6 +177,9 @@ index.html        UI shell + CDN import map
 css/style.css     Panel / bar styling (phone layout included)
 js/main.js        App state, playlists, settings, UI + keyboard wiring
 js/m3u.js         M3U parser, Xtream link detection + stream alternates
+js/filter.js      Content filter (live regions, movie/series languages)
+js/cache.js       Saved playlist copies (IndexedDB)
+js/diagnose.js    Stream probe for the playback log
 js/stream.js      HLS / MPEG-TS / native playback with fallback
 js/theater.js     three.js scene, environments, ambient light, desktop stereo, WebXR sessions
 js/xr3d.js        XR3D depth + stereo shader and per-eye screen meshes

@@ -54,7 +54,7 @@ function guessLayout(name, attrs) {
   return null;
 }
 
-export async function fetchPlaylist(url, { proxify = (u) => u } = {}) {
+export async function fetchPlaylist(url, { proxify = (u) => u, onProgress = () => {} } = {}) {
   let res;
   try {
     res = await fetch(proxify(url));
@@ -65,7 +65,9 @@ export async function fetchPlaylist(url, { proxify = (u) => u } = {}) {
     throw e;
   }
   if (!res.ok) throw new Error(httpReason(res, url));
-  const text = await res.text();
+  const text = await readText(res, onProgress);
+  onProgress({ phase: 'parse', received: text.length });
+  await new Promise((r) => setTimeout(r, 30)); // let the status paint before parsing blocks
   if (!text.includes('#EXTINF') && !text.trim().startsWith('#EXTM3U')) {
     // A bare stream manifest rather than a channel list: treat it as one channel.
     if (text.includes('#EXT-X-')) return [{ num: 1, id: url, url, name: url.split('/').pop(), logo: '', group: 'Direct', layout: null }];
@@ -76,6 +78,31 @@ export async function fetchPlaylist(url, { proxify = (u) => u } = {}) {
   const xt = parseXtream(url);
   if (xt) for (const ch of channels) ch.alts = xtreamAlternates(ch.url, xt);
   return channels;
+}
+
+// Streams the body so big playlists can report progress (size, speed).
+async function readText(res, onProgress) {
+  const total = +res.headers.get('content-length') || 0;
+  if (!res.body) return res.text();
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  const parts = [];
+  const start = performance.now();
+  let received = 0;
+  let last = 0;
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    received += value.length;
+    parts.push(decoder.decode(value, { stream: true }));
+    const now = performance.now();
+    if (now - last > 200) {
+      last = now;
+      onProgress({ phase: 'download', received, total, rate: received / Math.max(0.001, (now - start) / 1000) });
+    }
+  }
+  parts.push(decoder.decode());
+  return parts.join('');
 }
 
 function blockedReason(url) {
@@ -94,6 +121,9 @@ function httpReason(res, url) {
   const upstream = res.headers.get('x-proxy-upstream');
   if (proxyError === 'origin-not-allowed') {
     return 'The proxy refused this page. Add this site’s address to the Worker’s ALLOWED_ORIGINS variable.';
+  }
+  if (proxyError === 'ip-unsupported') {
+    return 'The provider redirects to a bare IP address, which Cloudflare can’t connect to. Use server.js at home as the proxy.';
   }
   if (proxyError === 'port-unsupported') {
     return 'The provider redirects to a port Cloudflare can’t connect to. Use server.js at home as the proxy (Sources → Proxy URL).';

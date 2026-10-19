@@ -33,20 +33,24 @@ export class StreamPlayer {
     this.destroy();
     const list = (Array.isArray(sources) ? sources : [sources]).map((s) => (typeof s === 'string' ? { src: s, hint: s } : s));
     this.report = [];
+    const attempts = list.reduce((n, s) => n + orderEngines(s.hint || s.src).length, 0);
     let n = 0;
     for (const { src, hint, label } of list) {
-      n++;
       for (const engine of orderEngines(hint || src)) {
         if (token !== this.token) return false;
-        this.onStatus(`Connecting (${engine}${label ? ` · ${label}` : ''}${list.length > 1 ? ` · ${n}/${list.length}` : ''})…`);
+        n++;
+        this.step = `${ENGINE_NAMES[engine]}${label ? ' via proxy' : ''}${attempts > 1 ? ` (try ${n} of ${attempts})` : ''}`;
+        this.progress(token, 'Connecting');
         try {
           await this[engine](src, token);
           if (token !== this.token) return false;
-          await this.video.play().catch(() => {
+          this.progress(token, 'Starting video');
+          await withTimeout(this.video.play().catch(() => {
             // Autoplay with sound can be blocked until the user interacts; retry muted.
             this.video.muted = true;
             return this.video.play();
-          });
+          }), 25000, 'no video within 25s');
+          if (token !== this.token) return false;
           this.onStatus(`Playing · ${engine}${label ? ` · ${label}` : ''}`);
           return true;
         } catch (err) {
@@ -57,16 +61,31 @@ export class StreamPlayer {
       }
     }
     if (token !== this.token) return false;
-    this.onError('Stream failed to load. Checking why…', this.report);
     // Look at what each address actually returns (one probe per distinct source).
     const seen = new Set();
+    const probes = Math.min(4, new Set(list.map((s) => s.src)).size);
     for (const { src, hint } of list) {
       if (seen.has(src) || seen.size >= 4 || token !== this.token) continue;
       seen.add(src);
+      this.onStatus(`Didn’t play. Checking why (${seen.size} of ${probes})…`, { loading: true, frac: (seen.size - 1) / probes });
       this.report.push(`? ${hint || src} → ${describeProbe(await probe(src))}`);
     }
     if (token === this.token) this.onError(summarise(this.report), this.report);
     return false;
+  }
+
+  // Status while tuning: current step, plus how much video has arrived.
+  progress(token, phase, detail = '', frac = null) {
+    if (token !== this.token) return;
+    this.onStatus(`${phase} · ${this.step}${detail ? ` · ${detail}` : ''}…`, { loading: true, frac });
+  }
+
+  bufferedAhead() {
+    const v = this.video;
+    for (let i = 0; i < v.buffered.length; i++) {
+      if (v.buffered.end(i) >= v.currentTime) return v.buffered.end(i) - Math.max(v.currentTime, v.buffered.start(i));
+    }
+    return 0;
   }
 
   hlsjs(url, token) {
@@ -75,6 +94,12 @@ export class StreamPlayer {
       const hls = new Hls({ enableWorker: true, backBufferLength: 30, maxBufferLength: 30 });
       this.hls = hls;
       let ready = false;
+      let bytes = 0;
+      hls.on(Hls.Events.MANIFEST_LOADED, () => this.progress(token, 'Channel found, loading video'));
+      hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
+        bytes += data.payload?.byteLength || 0;
+        if (this.video.paused) this.progress(token, 'Buffering', mb(bytes), this.bufferedAhead() / 3);
+      });
       hls.on(Hls.Events.MANIFEST_PARSED, () => { ready = true; resolve(); });
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (!data.fatal) return;
@@ -109,6 +134,9 @@ export class StreamPlayer {
       const p = mpegts.createPlayer({ type, isLive: true, url }, { enableWorker: true, liveBufferLatencyChasing: true });
       this.ts = p;
       const v = this.video;
+      p.on(mpegts.Events.STATISTICS_INFO, (s) => {
+        if (v.paused && s.speed) this.progress(token, 'Receiving', `${Math.round(s.speed)} KB/s`, this.bufferedAhead() / 3);
+      });
       const ok = () => { cleanup(); resolve(); };
       const cleanup = () => { v.removeEventListener('loadedmetadata', ok); clearTimeout(t); };
       const t = setTimeout(() => { cleanup(); reject(new Error('mpegts timeout')); }, 15000);
@@ -128,6 +156,10 @@ export class StreamPlayer {
 function summarise(report) {
   const text = report.join('\n');
   if (/⚠ ([^\n·]+)/.test(text)) return `Stream found, but ${text.match(/⚠ ([^\n·]+)/)[1].trim()}`;
+  if (/proxy error “ip-unsupported”|error code: 1003/.test(text)) {
+    return 'This provider sends streams from a bare IP address, which Cloudflare can’t connect to. '
+      + 'Run server.js at home and use it as the proxy (see README: Home proxy).';
+  }
   if (/proxy error “port-unsupported”/.test(text)) {
     return 'The stream server uses a port Cloudflare can’t connect to. Use server.js at home as the proxy for this provider.';
   }
@@ -140,6 +172,15 @@ function summarise(report) {
   if (/no data within/.test(text)) return 'The stream connected but sent no data. The channel may be offline.';
   if (/request blocked or failed/.test(text)) return 'The browser couldn’t reach the stream. A proxy is needed (Sources → Proxy).';
   return 'Stream failed to load. See Sources → Playback log for details.';
+}
+
+const ENGINE_NAMES = { hlsjs: 'HLS', mpegts: 'MPEG-TS', native: 'built-in player' };
+const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
+
+function withTimeout(promise, ms, message) {
+  let t;
+  return Promise.race([promise, new Promise((_, reject) => { t = setTimeout(() => reject(new Error(message)), ms); })])
+    .finally(() => clearTimeout(t));
 }
 
 function orderEngines(url) {

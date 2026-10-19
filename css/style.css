@@ -69,6 +69,7 @@ button, input, select { font: inherit; color: inherit; }
 
 .tab-body { display: none; flex: 1; overflow-y: auto; padding: 10px 14px 14px; min-height: 0; }
 .tab-body.active { display: flex; flex-direction: column; gap: 8px; }
+.tab-body > * { flex-shrink: 0; } /* a long channel list must not squash the controls above it */
 .tab-body h3 { margin: 10px 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
 
 .row { display: flex; gap: 6px; align-items: center; }
@@ -137,6 +138,19 @@ input[type=file] { font-size: 12px; color: var(--muted); }
   font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(0,0,0,.35);
   border: 1px solid var(--line); border-radius: 8px; color: var(--muted);
 }
+
+.field { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+
+.progress {
+  position: absolute; left: 12px; right: 12px; top: 0; height: 3px; overflow: hidden;
+  border-radius: 0 0 3px 3px; background: rgba(255,255,255,.06);
+}
+.progress > div {
+  height: 100%; width: 0; background: linear-gradient(90deg, var(--accent-2), var(--accent));
+  transition: width .3s ease;
+}
+.progress.indeterminate > div { width: 30%; animation: progress-slide 1.2s ease-in-out infinite; }
+@keyframes progress-slide { from { transform: translateX(-100%); } to { transform: translateX(340%); } }
 
 .saved-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
 .saved-list li { display: flex; gap: 6px; align-items: center; }

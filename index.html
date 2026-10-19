@@ -43,6 +43,13 @@
         <select id="groupFilter"><option value="">All groups</option></select>
         <button id="favFilter" class="chip" title="Show favorites only">★</button>
         <button id="refreshList" class="chip hidden" title="Download the playlist again from the provider">↻</button>
+        <button id="cfToggle" class="chip" title="Content filter (set it up in Sources)">Filter</button>
+      </div>
+      <div class="seg hidden" id="kindSeg">
+        <button data-kind="" class="active">All</button>
+        <button data-kind="live">Live</button>
+        <button data-kind="movie">Movies</button>
+        <button data-kind="series">Series</button>
       </div>
       <div id="listInfo" class="muted small"></div>
       <ul id="channelList" class="channel-list"></ul>
@@ -79,6 +86,15 @@
 
       <h3>Quick sources</h3>
       <div class="presets" id="presets"></div>
+
+      <h3>Content filter</h3>
+      <label class="check"><input id="cfOn" type="checkbox"> Only show these regions and languages</label>
+      <label class="field">Live channel groups
+        <input id="cfLive" type="text" placeholder="US, USA, United States"></label>
+      <label class="field">Movie &amp; series groups
+        <input id="cfVod" type="text" placeholder="EN, English"></label>
+      <label class="check"><input id="cfUntagged" type="checkbox"> Keep movie &amp; series groups with no language tag</label>
+      <p class="muted small">Comma-separated words matched against group names, like “US | News”, “USA: Sports” or “EN - Action”.</p>
 
       <h3>Proxy</h3>
       <div class="seg" id="proxySeg">
@@ -168,6 +184,7 @@
 
   <!-- Now playing bar -->
   <div id="bar" class="bar">
+    <div id="progress" class="progress hidden"><div></div></div>
     <img id="npLogo" class="np-logo" alt="">
     <div class="np-text">
       <div id="npName" class="np-name">No channel</div>

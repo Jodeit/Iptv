@@ -3,6 +3,7 @@ import { LAYOUT } from './xr3d.js';
 import { StreamPlayer } from './stream.js';
 import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey } from './m3u.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
+import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
 import { VRPanel } from './vr-panel.js';
 
 const $ = (id) => document.getElementById(id);
@@ -24,6 +25,7 @@ const DEFAULTS = {
   volume: 1, muted: false, proxy: 'auto', proxyUrl: '',
 };
 const settings = { ...DEFAULTS, ...store.get('settings', {}) };
+settings.contentFilter = { ...FILTER_DEFAULTS, ...settings.contentFilter };
 const saveSettings = () => store.set('settings', settings);
 
 const DEMO_M3U = `#EXTM3U
@@ -52,7 +54,9 @@ const PRESETS = [
 // ---------- State ----------
 const state = {
   channels: [],
+  library: [], // channels after the content filter
   filtered: [],
+  kind: '',
   current: null,
   group: '',
   query: '',
@@ -66,8 +70,9 @@ let vrPanel = null;
 const video = $('video');
 const theater = new Theater($('stage'), video);
 const player = new StreamPlayer(video, {
-  onStatus: (s) => setStatus(s),
+  onStatus: (s, { loading = false, frac = null } = {}) => (loading ? showLoading(s, frac) : (hideLoading(), setStatus(s))),
   onError: (e, report) => {
+    hideLoading();
     setStatus(e);
     toast(e, true);
     theater.setVideoActive(false);
@@ -86,6 +91,37 @@ function toast(msg, error = false) {
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => t.classList.remove('show'), 3500);
 }
+
+// Progress bar + elapsed time for anything slow (playlist downloads, tuning a channel).
+const loading = { active: false, start: 0, text: '', timer: 0 };
+
+function showLoading(text, frac = null) {
+  if (!loading.active) {
+    loading.active = true;
+    loading.start = performance.now();
+    loading.timer = setInterval(renderLoading, 1000);
+    $('progress').classList.remove('hidden');
+  }
+  loading.text = text;
+  const bar = $('progress');
+  bar.classList.toggle('indeterminate', frac == null);
+  bar.firstElementChild.style.width = frac == null ? '' : `${Math.round(Math.min(1, frac) * 100)}%`;
+  renderLoading();
+}
+
+function renderLoading() {
+  const s = Math.floor((performance.now() - loading.start) / 1000);
+  setStatus(s >= 2 ? `${loading.text} · ${s}s` : loading.text);
+}
+
+function hideLoading() {
+  if (!loading.active) return;
+  loading.active = false;
+  clearInterval(loading.timer);
+  $('progress').classList.add('hidden');
+}
+
+const mb = (n) => `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
 
 function setStatus(s) {
   state.status = s;
@@ -141,7 +177,8 @@ const hostOf = (u) => { try { return new URL(u, location.href).host; } catch { r
 const isCrossOrigin = (u) => { try { return new URL(u, location.href).origin !== location.origin; } catch { return false; } };
 const isMixed = (u) => location.protocol === 'https:' && /^http:/i.test(u);
 const isHls = (u) => /\.m3u8(\?|$)/i.test(u);
-const proxied = (u) => `${proxy.base}?url=${encodeURIComponent(u)}`;
+// Absolute, because mpegts.js fetches from a Web Worker where relative URLs don't resolve.
+const proxied = (u) => new URL(`${proxy.base}?url=${encodeURIComponent(u)}`, location.href).href;
 
 // 'direct' | 'proxy-first' | 'proxy-fallback'
 function proxyPlan(url) {
@@ -191,13 +228,8 @@ function setChannels(channels, label, source = null) {
   $('refreshList').classList.toggle('hidden', !source?.url);
   state.channels = channels;
   state.group = '';
-  const groups = [...new Set(channels.map((c) => c.group))].sort((a, b) => a.localeCompare(b));
-  state.groups = groups;
-  const sel = $('groupFilter');
-  sel.innerHTML = '<option value="">All groups</option>';
-  for (const g of groups) sel.add(new Option(g, g));
-  applyFilter();
-  toast(`${label}: ${channels.length} channels`);
+  rebuildLibrary();
+  toast(`${label}: ${state.library.length.toLocaleString()} channels${state.library.length < channels.length ? ' after filter' : ''}`);
   setTab('channels');
 }
 
@@ -229,19 +261,24 @@ async function loadPlaylistUrl(url, name, { fresh = true } = {}) {
       return;
     }
   }
-  setStatus(`Loading ${name}…`);
+  showLoading(`Connecting to ${name}…`);
   const plan = proxyPlan(url);
-  const viaProxy = { proxify: proxied };
+  const onProgress = ({ phase, received = 0, total = 0, rate = 0 }) => {
+    if (phase === 'parse') return showLoading(`Reading channels from ${mb(received)}…`);
+    const size = total ? `${mb(received)} of ${mb(total)}` : mb(received);
+    showLoading(`Downloading playlist · ${size}${rate ? ` · ${mb(rate)}/s` : ''}`, total ? received / total : null);
+  };
+  const viaProxy = { proxify: proxied, onProgress };
   try {
     let channels;
     if (plan === 'proxy-first') {
       channels = await fetchPlaylist(url, viaProxy);
     } else {
       try {
-        channels = await fetchPlaylist(url);
+        channels = await fetchPlaylist(url, { onProgress });
       } catch (err) {
         if (!err.blocked || plan !== 'proxy-fallback') throw err;
-        setStatus('Direct access blocked, retrying through the proxy…');
+        showLoading('Direct access blocked, retrying through the proxy…');
         channels = await fetchPlaylist(url, viaProxy);
         markBlocked(url);
       }
@@ -256,8 +293,10 @@ async function loadPlaylistUrl(url, name, { fresh = true } = {}) {
     cachePut(key, { url, name, savedAt, channels });
     store.set('last', { url, name });
     rememberPlaylist(name, url);
+    hideLoading();
     setStatus(state.current ? state.status : 'Pick a channel to start');
   } catch (err) {
+    hideLoading();
     const msg = `Couldn’t load playlist: ${err.message}`;
     setStatus(msg);
     toast(msg, true);
@@ -318,9 +357,47 @@ function renderSaved() {
 // ---------- Channel list ----------
 const LIST_LIMIT = 400;
 
+// Applies the content filter (region/language) and rebuilds groups and type tabs.
+function rebuildLibrary() {
+  const cf = settings.contentFilter;
+  const all = state.channels;
+  state.filterNote = '';
+  let lib = all;
+  if (cf.on && all.length) {
+    const kept = all.filter(makeFilter(cf));
+    if (kept.length) {
+      lib = kept;
+      if (kept.length < all.length) state.filterNote = ` · filter: ${kept.length.toLocaleString()} of ${all.length.toLocaleString()}`;
+    } else {
+      state.filterNote = ' · filter matched nothing, showing all';
+    }
+  }
+  state.library = lib;
+  $('cfToggle').classList.toggle('on', cf.on);
+
+  const hasVod = lib.some((c) => kindOf(c) !== 'live');
+  $('kindSeg').classList.toggle('hidden', !hasVod);
+  if (!hasVod) state.kind = '';
+  for (const b of $('kindSeg').children) b.classList.toggle('active', b.dataset.kind === state.kind);
+  rebuildGroups();
+}
+
+function rebuildGroups() {
+  const inKind = state.kind ? state.library.filter((c) => kindOf(c) === state.kind) : state.library;
+  const groups = [...new Set(inKind.map((c) => c.group))].sort((a, b) => a.localeCompare(b));
+  state.groups = groups;
+  if (!groups.includes(state.group)) state.group = '';
+  const sel = $('groupFilter');
+  sel.innerHTML = '<option value="">All groups</option>';
+  for (const g of groups) sel.add(new Option(g, g));
+  sel.value = state.group;
+  applyFilter();
+}
+
 function applyFilter() {
   const q = state.query.toLowerCase();
-  state.filtered = state.channels.filter((c) =>
+  state.filtered = state.library.filter((c) =>
+    (!state.kind || kindOf(c) === state.kind) &&
     (!state.group || c.group === state.group) &&
     (!state.favOnly || state.favs.has(c.id)) &&
     (!q || c.name.toLowerCase().includes(q) || c.group.toLowerCase().includes(q)));
@@ -365,7 +442,7 @@ function renderList() {
   const updated = state.source?.savedAt ? ` · updated ${ago(state.source.savedAt)}` : '';
   $('listInfo').textContent = (n > LIST_LIMIT
     ? `Showing ${LIST_LIMIT} of ${n} channels. Search to narrow down.`
-    : `${n} channel${n === 1 ? '' : 's'}`) + updated;
+    : `${n.toLocaleString()} channel${n === 1 ? '' : 's'}`) + updated + (state.filterNote || '');
 }
 
 function toggleFav(ch, btn) {
@@ -578,6 +655,26 @@ $('xtLoad').onclick = () => {
   if (!/^https?:\/\//i.test(server)) server = `http://${server}`;
   loadPlaylistUrl(xtreamUrl(server, user, pass));
 };
+for (const b of $('kindSeg').children) b.onclick = () => { state.kind = b.dataset.kind; for (const x of $('kindSeg').children) x.classList.toggle('active', x === b); rebuildGroups(); };
+$('cfToggle').onclick = () => { settings.contentFilter.on = !settings.contentFilter.on; saveSettings(); syncFilterForm(); rebuildLibrary(); };
+
+function syncFilterForm() {
+  const cf = settings.contentFilter;
+  $('cfOn').checked = cf.on;
+  $('cfLive').value = cf.live;
+  $('cfVod').value = cf.vod;
+  $('cfUntagged').checked = cf.vodUntagged;
+}
+const readFilterForm = () => {
+  Object.assign(settings.contentFilter, {
+    on: $('cfOn').checked, live: $('cfLive').value, vod: $('cfVod').value, vodUntagged: $('cfUntagged').checked,
+  });
+  saveSettings();
+  rebuildLibrary();
+};
+for (const id of ['cfOn', 'cfLive', 'cfVod', 'cfUntagged']) $(id).onchange = readFilterForm;
+syncFilterForm();
+
 $('refreshList').onclick = () => state.source && loadPlaylistUrl(state.source.url, state.source.name, { fresh: true });
 $('copyLog').onclick = async () => {
   try { await navigator.clipboard.writeText($('playbackLog').textContent); toast('Playback log copied'); }
