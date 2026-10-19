@@ -1,13 +1,13 @@
-import { Theater } from './theater.js';
-import { LAYOUT } from './xr3d.js';
+import { preferFlat } from './device.js';
+import { FlatStage } from './flat-stage.js';
 import { StreamPlayer } from './stream.js';
-import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, xtreamAccount } from './m3u.js';
+import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, xtreamAccount, xtreamAlternates, readBody } from './m3u.js';
+import { XtreamLibrary } from './xtream.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
 import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
 import { Profiles, emptyDoc, canSync } from './profiles.js';
 import { Guide } from './epg.js';
 import { GuideView } from './guide-view.js';
-import { VRPanel } from './vr-panel.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -25,7 +25,7 @@ const DEFAULTS = {
   mode: 'xr3d', relief: 0.18, parallax: 0.8, convergence: 0.5, contrast: 1.4, smooth: 0.006,
   invert: false, showDepth: false, swap: false, view: 'mono',
   size: 6, distance: 5, height: 1.8, curve: 0.15, bright: 1, env: 'cinema', ambient: true,
-  volume: 1, muted: false, proxy: 'auto', proxyUrl: '',
+  volume: 1, muted: false, proxy: 'auto', proxyUrl: '', display: 'auto',
 };
 const settings = { ...DEFAULTS, ...store.get('settings', {}) };
 settings.contentFilter = { ...FILTER_DEFAULTS, ...settings.contentFilter };
@@ -74,10 +74,22 @@ let vrPanel = null;
 // ---------- Guide (EPG) ----------
 // Guide requests go direct when the server allows it, otherwise through the proxy.
 async function smartFetch(url) {
-  if (proxyPlan(url) !== 'proxy-first') {
-    try { return await fetch(url); } catch { if (!proxy.available) throw new Error('blocked'); }
+  const plan = proxyPlan(url);
+  if (plan !== 'proxy-first') {
+    try { return await fetch(url); } catch {
+      if (plan === 'direct') throw new Error('blocked');
+      markBlocked(url);
+    }
   }
   return fetch(proxied(url));
+}
+
+async function fetchJsonSmart(url, onProgress) {
+  const res = await smartFetch(url);
+  if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
+  const parts = [];
+  await readBody(res, (t) => parts.push(t), onProgress);
+  return JSON.parse(parts.join(''));
 }
 
 const guide = new Guide({
@@ -166,7 +178,13 @@ function applyDoc(doc, reason) {
   }
 }
 const video = $('video');
-const theater = new Theater($('stage'), video);
+// Phones and tablets without WebXR get the plain video player; the 3D theater (three.js,
+// WebGL) isn't even downloaded there.
+const flat = await preferFlat(settings.display);
+document.body.classList.toggle('flat', flat);
+const TheaterModule = flat ? null : await import('./theater.js');
+const theater = flat ? new FlatStage(video) : new TheaterModule.Theater($('stage'), video);
+const LAYOUT = { mono: 0, sbs: 1, tab: 2 }; // must match xr3d.js
 const player = new StreamPlayer(video, {
   onStatus: (s, { loading = false, frac = null } = {}) => (loading ? showLoading(s, frac) : (hideLoading(), setStatus(s))),
   onError: (e, report, { refused = false } = {}) => {
@@ -332,7 +350,9 @@ function markBlocked(url) {
 function streamCandidates(ch) {
   // HLS first: it's what Xtream web players use, works with hls.js everywhere, and uses
   // short requests instead of one long TS connection that counts against account limits.
-  const urls = [ch.url, ...(ch.alts || [])].sort((a, b) => isHls(b) - isHls(a));
+  const xt = state.source?.url && parseXtream(state.source.url);
+  const alts = ch.alts || (xt && kindOf(ch) === 'live' ? xtreamAlternates(ch.url, xt) : []);
+  const urls = [ch.url, ...alts].sort((a, b) => isHls(b) - isHls(a));
   const direct = urls.filter((u) => !isMixed(u)).map((u) => ({ src: u, hint: u }));
   const via = urls.map((u) => ({ src: proxied(u), hint: u, label: 'proxy' }));
   switch (proxyPlan(ch.url)) {
@@ -381,7 +401,14 @@ const ago = (t) => {
 
 // fresh=false opens the saved copy when there is one (app start, saved-list clicks);
 // fresh=true always downloads (Load button, ↻ refresh).
-async function loadPlaylistUrl(url, name, { fresh = true } = {}) {
+// If the page reloads mid-load (iPad Safari does that when a tab runs out of memory), the
+// marker survives and the next start doesn't retry automatically: no reload loop.
+async function loadPlaylistUrl(url, name, opts = {}) {
+  store.set('loadingSince', { url, name, at: Date.now() });
+  try { await loadPlaylistInner(url, name, opts); } finally { store.set('loadingSince', null); }
+}
+
+async function loadPlaylistInner(url, name, { fresh = true } = {}) {
   const xt = parseXtream(url);
   if (xt) {
     secrets.add(xt.password);
@@ -392,6 +419,8 @@ async function loadPlaylistUrl(url, name, { fresh = true } = {}) {
   }
   name = name || hostOf(url) || 'Playlist';
   const key = playlistKey(url);
+  if (xt && await loadXtream(url, name, xt, key, fresh)) return;
+  state.xlib = null;
   if (!fresh) {
     const cached = await cacheGet(key);
     if (cached?.channels?.length) {
@@ -405,10 +434,9 @@ async function loadPlaylistUrl(url, name, { fresh = true } = {}) {
   const statusBefore = loading.active ? '' : state.status;
   showLoading(`Connecting to ${name}…`);
   const plan = proxyPlan(url);
-  const onProgress = ({ phase, received = 0, total = 0, rate = 0 }) => {
-    if (phase === 'parse') return showLoading(`Reading channels from ${mb(received)}…`);
+  const onProgress = ({ received = 0, total = 0, rate = 0, channels: channelsSoFar = 0 }) => {
     const size = total ? `${mb(received)} of ${mb(total)}` : mb(received);
-    showLoading(`Downloading playlist · ${size}${rate ? ` · ${mb(rate)}/s` : ''}`, total ? received / total : null);
+    showLoading(`Downloading playlist · ${size}${rate ? ` · ${mb(rate)}/s` : ''}${channelsSoFar ? ` · ${channelsSoFar.toLocaleString()} channels` : ''}`, total ? received / total : null);
   };
   const viaProxy = { proxify: proxied, onProgress };
   try {
@@ -445,7 +473,165 @@ async function loadPlaylistUrl(url, name, { fresh = true } = {}) {
   }
 }
 
+// ---------- Xtream API ----------
+// Returns true when handled (loaded, or failed with a message); false to fall back to get.php.
+async function loadXtream(url, name, xt, key, fresh) {
+  const lib = new XtreamLibrary(xt, fetchJsonSmart);
+  if (!fresh) {
+    const cached = await cacheGet(key);
+    if (cached?.xtream && cached.channels) {
+      Object.assign(lib, {
+        cats: cached.xtream.cats,
+        streamBase: cached.xtream.streamBase,
+        liveLoaded: cached.xtream.liveLoaded === 'all' ? 'all' : new Set(cached.xtream.liveLoaded || []),
+      });
+      state.xlib = lib;
+      setChannels(cached.channels, name, { url, name, savedAt: cached.savedAt });
+      setLast({ url, name });
+      rememberPlaylist(name, url);
+      setStatus(`Saved copy from ${ago(cached.savedAt)} · ↻ to update`);
+      ensureLiveCoverage();
+      return true;
+    }
+  }
+  const statusBefore = loading.active ? '' : state.status;
+  showLoading(`Connecting to ${name}…`);
+  try {
+    await lib.init();
+  } catch (err) {
+    if (/refused the login/.test(err.message) || err.status === 401) {
+      hideLoading();
+      const msg = `Couldn’t load playlist: ${err.status === 401 ? 'The Xtream server refused the login. Check the username and password.' : err.message}`;
+      setStatus(msg);
+      toast(msg, true);
+      return true;
+    }
+    return false; // no usable player_api: use the classic playlist
+  }
+  try {
+    state.xlib = lib;
+    const cats = liveCategoriesWanted(lib);
+    showLoading(cats ? `Loading live channels · 0 of ${cats.length} categories` : 'Downloading live channels…', cats ? 0 : null);
+    const channels = await lib.live(cats, (p) => (p.phase === 'categories'
+      ? showLoading(`Loading live channels · ${p.done} of ${p.total} categories`, p.done / p.total)
+      : showLoading(`Downloading live channels · ${mb(p.received)}`, null)));
+    const savedAt = Date.now();
+    setChannels(channels, name, { url, name, savedAt });
+    saveXtreamCache(key, url, name, savedAt);
+    setLast({ url, name });
+    rememberPlaylist(name, url);
+    hideLoading();
+    setStatus(state.current && statusBefore ? statusBefore : 'Pick a channel to start');
+  } catch (err) {
+    hideLoading();
+    const msg = `Couldn’t load live channels: ${err.message}`;
+    setStatus(msg);
+    toast(msg, true);
+  }
+  return true;
+}
+
+function saveXtreamCache(key, url, name, savedAt = Date.now()) {
+  const lib = state.xlib;
+  cachePut(key, {
+    url, name, savedAt, channels: state.channels,
+    xtream: { cats: lib.cats, streamBase: lib.streamBase, liveLoaded: lib.liveLoaded === 'all' ? 'all' : [...lib.liveLoaded] },
+  });
+}
+
+// Live categories the content filter keeps (null = everything, in one request).
+function liveCategoriesWanted(lib) {
+  const cf = settings.contentFilter;
+  if (!cf.on) return null;
+  const keep = makeFilter(cf);
+  const ids = lib.cats.live.filter((c) => keep({ group: c.name, kind: 'live', url: '' })).map((c) => c.id);
+  return ids.length ? ids : null;
+}
+
+// After the filter changes, fetch live categories that are now wanted but weren't loaded.
+async function ensureLiveCoverage() {
+  const lib = state.xlib;
+  if (!lib || lib.liveLoaded === 'all') return;
+  const wanted = liveCategoriesWanted(lib);
+  const missing = wanted ? wanted.filter((id) => !lib.liveLoaded.has(id)) : null;
+  if (missing && !missing.length) return;
+  try {
+    showLoading(missing ? `Loading ${missing.length} more categories…` : 'Downloading all live channels…');
+    const more = await lib.live(missing, (p) => p.phase === 'categories' && showLoading(`Loading live channels · ${p.done} of ${p.total} categories`, p.done / p.total));
+    const have = new Set(state.channels.map((c) => c.id));
+    const merged = missing ? [...state.channels, ...more.filter((c) => !have.has(c.id))] : more;
+    state.channels = merged;
+    hideLoading();
+    rebuildLibrary();
+    if (state.source?.url) saveXtreamCache(playlistKey(state.source.url), state.source.url, state.source.name, state.source.savedAt);
+  } catch (err) {
+    hideLoading();
+    toast(`Couldn’t load more channels: ${err.message}`, true);
+  }
+}
+
+// Movies and series: categories first, a category's items when opened, a series' episodes
+// when opened.
+const isVodKind = () => state.xlib && (state.kind === 'movie' || state.kind === 'series');
+
+function vodCategories(kind) {
+  const cf = settings.contentFilter;
+  const cats = state.xlib.cats[kind];
+  if (!cf.on) return cats;
+  const keep = makeFilter(cf);
+  const kept = cats.filter((c) => keep({ group: c.name, kind: 'movie', url: '' }));
+  return kept.length ? kept : cats;
+}
+
+async function showVod() {
+  const lib = state.xlib;
+  const kind = state.kind;
+  const q = state.query.toLowerCase();
+  state.listMode = 'items';
+  if (state.seriesOpen) {
+    state.filtered = state.seriesOpen.episodes.filter((e) => !q || e.name.toLowerCase().includes(q));
+  } else if (!state.group) {
+    state.listMode = 'categories';
+    state.vodCats = vodCategories(kind).filter((c) => !q || c.name.toLowerCase().includes(q));
+    state.filtered = [];
+  } else {
+    const catId = state.group;
+    let items = lib.items[kind].get(catId);
+    if (!items) {
+      state.filtered = [];
+      state.listMode = 'loading';
+      renderList();
+      try {
+        showLoading(`Loading ${lib.catName(kind, catId)}…`);
+        items = await lib.category(kind, catId, (p) => showLoading(`Loading ${lib.catName(kind, catId)} · ${mb(p.received)}`));
+      } catch (err) {
+        toast(`Couldn’t load category: ${err.message}`, true);
+        items = [];
+      } finally { hideLoading(); }
+      if (state.group !== catId || state.kind !== kind) return; // moved on meanwhile
+      state.listMode = 'items';
+    }
+    state.filtered = items.filter((c) => (!state.favOnly || state.favs.has(c.id)) && (!q || c.name.toLowerCase().includes(q)));
+  }
+  renderList();
+  vrPanel?.draw();
+}
+
+async function openSeries(series) {
+  try {
+    showLoading(`Loading episodes of ${series.name}…`);
+    const episodes = await state.xlib.seriesEpisodes(series);
+    hideLoading();
+    state.seriesOpen = { series, episodes };
+    showVod();
+  } catch (err) {
+    hideLoading();
+    toast(`Couldn’t load episodes: ${err.message}`, true);
+  }
+}
+
 function loadBuiltinDemo() {
+  state.xlib = null;
   setChannels(parseM3U(DEMO_M3U), 'Demo streams');
   setLast({ builtin: true });
 }
@@ -514,14 +700,30 @@ function rebuildLibrary() {
   state.library = lib;
   $('cfToggle').classList.toggle('on', cf.on);
 
-  const hasVod = lib.some((c) => kindOf(c) !== 'live');
+  const xl = state.xlib;
+  const hasVod = xl ? !!(xl.cats.movie.length || xl.cats.series.length) : lib.some((c) => kindOf(c) !== 'live');
   $('kindSeg').classList.toggle('hidden', !hasVod);
+  // With the Xtream API, movies and series are browsed separately, so there's no "All".
+  $('kindSeg').querySelector('[data-kind=""]').classList.toggle('hidden', !!xl);
   if (!hasVod) state.kind = '';
+  if (xl && !state.kind) state.kind = 'live';
   for (const b of $('kindSeg').children) b.classList.toggle('active', b.dataset.kind === state.kind);
   rebuildGroups();
 }
 
 function rebuildGroups() {
+  state.seriesOpen = null;
+  if (isVodKind()) {
+    const cats = vodCategories(state.kind);
+    state.groups = cats.map((c) => c.name);
+    if (!cats.some((c) => c.id === state.group)) state.group = '';
+    const sel = $('groupFilter');
+    sel.innerHTML = `<option value="">All ${state.kind === 'movie' ? 'movie' : 'series'} categories</option>`;
+    for (const c of cats) sel.add(new Option(c.name, c.id));
+    sel.value = state.group;
+    applyFilter();
+    return;
+  }
   const inKind = state.kind ? state.library.filter((c) => kindOf(c) === state.kind) : state.library;
   const groups = [...new Set(inKind.map((c) => c.group))].sort((a, b) => a.localeCompare(b));
   state.groups = groups;
@@ -534,6 +736,8 @@ function rebuildGroups() {
 }
 
 function applyFilter() {
+  if (isVodKind()) return showVod();
+  state.listMode = 'items';
   const q = state.query.toLowerCase();
   state.filtered = state.library.filter((c) =>
     (!state.kind || kindOf(c) === state.kind) &&
@@ -581,6 +785,32 @@ function renderList() {
   visibleRows.clear();
   ul.innerHTML = '';
   const frag = document.createDocumentFragment();
+  const special = (text, sub, onClick, cls = '') => {
+    const li = document.createElement('li');
+    li.className = `special ${cls}`;
+    li.innerHTML = '<div class="ch-text"><div class="ch-name"></div><div class="ch-group"></div></div><span class="chev">›</span>';
+    li.querySelector('.ch-name').textContent = text;
+    li.querySelector('.ch-group').textContent = sub;
+    if (onClick) li.onclick = onClick; else li.querySelector('.chev').remove();
+    frag.append(li);
+  };
+  if (state.listMode === 'categories') {
+    for (const c of state.vodCats) {
+      special(c.name, state.kind === 'movie' ? 'Movies' : 'Series', () => { state.group = c.id; $('groupFilter').value = c.id; applyFilter(); });
+    }
+    ul.append(frag);
+    $('listInfo').textContent = `${state.vodCats.length} ${state.kind === 'movie' ? 'movie' : 'series'} categories${state.filterNote || ''}`;
+    return;
+  }
+  if (state.listMode === 'loading') {
+    special('Loading…', 'Fetching this category from your provider');
+    ul.append(frag);
+    $('listInfo').textContent = '';
+    return;
+  }
+  if (state.seriesOpen) {
+    special(`‹ ${state.seriesOpen.series.name}`, `${state.seriesOpen.episodes.length} episodes · back to series`, () => { state.seriesOpen = null; showVod(); }, 'back');
+  }
   for (const ch of state.filtered.slice(0, LIST_LIMIT)) {
     const li = document.createElement('li');
     li.dataset.id = ch.id;
@@ -608,15 +838,17 @@ function renderList() {
     fav.title = 'Favorite';
     fav.onclick = (e) => { e.stopPropagation(); toggleFav(ch, fav); };
     li.append(num, img, text, fav);
-    li.onclick = () => play(ch);
+    li.onclick = () => (kindOf(ch) === 'series' ? openSeries(ch) : play(ch));
     frag.append(li);
   }
   ul.append(frag);
   const n = state.filtered.length;
   const updated = state.source?.savedAt ? ` · updated ${ago(state.source.savedAt)}` : '';
+  const noun = state.seriesOpen ? ['episode', 'episodes']
+    : isVodKind() ? (state.kind === 'movie' ? ['movie', 'movies'] : ['series', 'series']) : ['channel', 'channels'];
   $('listInfo').textContent = (n > LIST_LIMIT
-    ? `Showing ${LIST_LIMIT} of ${n} channels. Search to narrow down.`
-    : `${n.toLocaleString()} channel${n === 1 ? '' : 's'}`) + updated + (state.filterNote || '');
+    ? `Showing ${LIST_LIMIT} of ${n.toLocaleString()} ${noun[1]}. Search to narrow down.`
+    : `${n.toLocaleString()} ${noun[n === 1 ? 0 : 1]}`) + (isVodKind() ? '' : updated + (state.filterNote || ''));
 }
 
 function toggleFav(ch, btn) {
@@ -809,13 +1041,14 @@ for (const t of document.querySelectorAll('.tab')) t.onclick = () => setTab(t.da
 
 function togglePanel(show = $('panel').classList.contains('collapsed')) {
   $('panel').classList.toggle('collapsed', !show);
+  document.body.classList.toggle('panel-hidden', !show);
   $('panelOpen').classList.toggle('hidden', show);
 }
 $('panelToggle').onclick = () => togglePanel(false);
 $('panelOpen').onclick = () => togglePanel(true);
 
 $('search').oninput = (e) => { state.query = e.target.value; applyFilter(); };
-$('groupFilter').onchange = (e) => { state.group = e.target.value; applyFilter(); };
+$('groupFilter').onchange = (e) => { state.group = e.target.value; state.seriesOpen = null; applyFilter(); };
 $('favFilter').onclick = (e) => { state.favOnly = !state.favOnly; e.target.classList.toggle('on', state.favOnly); applyFilter(); };
 
 $('loadUrl').onclick = () => {
@@ -842,7 +1075,11 @@ $('xtLoad').onclick = () => {
 };
 for (const b of $('kindSeg').children) b.onclick = () => { state.kind = b.dataset.kind; for (const x of $('kindSeg').children) x.classList.toggle('active', x === b); rebuildGroups(); };
 $('cfToggle').onclick = () => { settings.contentFilter.on = !settings.contentFilter.on; saveFilter(); syncFilterForm(); rebuildLibrary(); };
-const saveFilter = () => { saveSettings(); profiles.update((d) => { d.contentFilter = { ...settings.contentFilter }; }); };
+const saveFilter = () => {
+  saveSettings();
+  profiles.update((d) => { d.contentFilter = { ...settings.contentFilter }; });
+  ensureLiveCoverage();
+};
 
 function syncFilterForm() {
   const cf = settings.contentFilter;
@@ -962,6 +1199,19 @@ $('pfDelete').onclick = () => busy($('pfDelete'), async () => {
 
 $('guideBtn').onclick = () => guideView.open();
 
+for (const b of $('displaySeg').children) {
+  b.classList.toggle('active', b.dataset.display === (settings.display || 'auto'));
+  b.onclick = () => {
+    if (b.dataset.display === settings.display) return;
+    settings.display = b.dataset.display;
+    saveSettings();
+    location.reload();
+  };
+}
+$('displayNote').textContent = flat
+  ? 'This device is using the flat player (no VR here). Choose “3D theater” for the 3D view.'
+  : 'This device is using the 3D theater. “Flat player” is lighter on phones and tablets.';
+
 $('refreshList').onclick = () => state.source && loadPlaylistUrl(state.source.url, state.source.name, { fresh: true });
 $('copyLog').onclick = async () => {
   try { await navigator.clipboard.writeText($('playbackLog').textContent); toast('Playback log copied'); }
@@ -1036,7 +1286,7 @@ function cycleMode() {
 // ---------- WebXR ----------
 const vrBtn = $('enterVR');
 const arBtn = $('enterAR');
-Theater.support().then(({ vr, ar }) => {
+if (!flat) TheaterModule.Theater.support().then(({ vr, ar }) => {
   if (vr) { vrBtn.disabled = false; vrBtn.textContent = 'Enter VR'; }
   else vrBtn.title = window.isSecureContext ? 'No WebXR headset detected' : 'WebXR needs HTTPS or localhost';
   if (ar) arBtn.classList.remove('hidden');
@@ -1053,7 +1303,7 @@ vrBtn.onclick = () => startXR('immersive-vr', vrBtn);
 arBtn.onclick = () => startXR('immersive-ar', arBtn);
 theater.onXREnd = () => { vrBtn.textContent = 'Enter VR'; arBtn.textContent = 'Passthrough'; };
 
-vrPanel = new VRPanel(theater, {
+if (!flat) vrPanel = new (await import('./vr-panel.js')).VRPanel(theater, {
   channels: () => state.filtered,
   current: () => state.current,
   status: () => state.panelStatus ?? state.status,
@@ -1087,7 +1337,15 @@ if (proxy.available && !settings.proxyUrl) {
   $('presets').prepend(b);
 }
 const last = profiles.doc.last;
-if (last?.url) loadPlaylistUrl(last.url, last.name, { fresh: false });
+const interrupted = store.get('loadingSince', null);
+if (interrupted && Date.now() - interrupted.at < 10 * 60 * 1000) {
+  // The last load never finished: the page was reloaded under it, most likely out of memory.
+  store.set('loadingSince', null);
+  setChannels([], interrupted.name || 'Playlist', { url: interrupted.url, name: interrupted.name });
+  const msg = `Loading “${interrupted.name || 'the playlist'}” didn’t finish last time; the page reloaded, probably out of memory. Tap ↻ to try again.`;
+  setStatus(msg);
+  toast(msg, true);
+} else if (last?.url) loadPlaylistUrl(last.url, last.name, { fresh: false });
 else if (last?.local && store.get('localText', null)) setChannels(parseM3U(store.get('localText', '')), last.local);
 else loadBuiltinDemo();
 

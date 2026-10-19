@@ -32,8 +32,10 @@ function matcher(list) {
   };
 }
 
-// Xtream puts movies and series under /movie/ and /series/ paths; everything else is live.
+// Items from the Xtream API carry their kind; in M3U playlists Xtream puts movies and series
+// under /movie/ and /series/ paths, and everything else is live.
 export function kindOf(ch) {
+  if (ch.kind) return ch.kind;
   if (/\/movie\//i.test(ch.url)) return 'movie';
   if (/\/series\//i.test(ch.url)) return 'series';
   return 'live';

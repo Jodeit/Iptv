@@ -260,6 +260,7 @@ function summarise(report) {
   return 'Stream failed to load. See Sources → Playback log for details.';
 }
 
+const IOS = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
 const ENGINE_NAMES = { hlsjs: 'HLS', mpegts: 'MPEG-TS', native: 'built-in player' };
 const mb = (n) => `${(n / 1048576).toFixed(1)} MB`;
 
@@ -273,7 +274,9 @@ function orderEngines(url) {
   const path = url.split('?')[0].toLowerCase();
   const canNativeHls = document.createElement('video').canPlayType('application/vnd.apple.mpegurl');
   if (path.endsWith('.m3u8') || path.endsWith('.m3u') || url.includes('m3u8')) {
-    return canNativeHls && !(window.Hls && Hls.isSupported()) ? ['native', 'hlsjs'] : ['hlsjs', 'native', 'mpegts'];
+    // iPhone/iPad: Safari's own HLS is lighter and supports AirPlay and picture-in-picture.
+    if (canNativeHls && (IOS || !(window.Hls && Hls.isSupported()))) return ['native', 'hlsjs'];
+    return ['hlsjs', 'native', 'mpegts'];
   }
   if (path.endsWith('.ts') || path.endsWith('.flv')) return ['mpegts', 'native'];
   if (/\.(mp4|webm|mkv|mov|ogv|avi)$/.test(path)) return ['native'];

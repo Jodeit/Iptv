@@ -24,6 +24,29 @@ Browsers only allow WebXR on **HTTPS or localhost**, so for a headset:
 
 The proxy forwards to any URL it's given, so keep the server on your own network.
 
+## Phones and tablets
+
+On iPhone, iPad and Android phones and tablets without WebXR, the app uses a **flat player**: the video itself with
+the system's own controls (full screen, picture-in-picture, AirPlay) instead of the 3D theater. The VR, XR3D and
+Theater controls are hidden, and three.js isn't downloaded at all. **Sources → Display** overrides this per device
+(Auto / Flat player / 3D theater). Vision Pro keeps the theater, since it supports immersive VR.
+
+## Large Xtream accounts
+
+Xtream accounts load through the panel's API (`player_api.php`), like dedicated IPTV apps do, instead of one giant
+`get.php` playlist with every channel, movie and episode in it:
+
+- **Categories load first.** Live channels come next: only the categories the content filter keeps, or all of them in
+  one request when it's off.
+- **Movies and Series** are browsed by category. A category loads when you open it; a series' episodes load when
+  you open the series.
+- **Panels without the API** fall back to `get.php`.
+
+On a mock account with 20k live channels, 40k movies and 8k series (a 33 MB playlist), peak memory during load fell
+from about 113 MB to 10 MB (3 MB with the US filter on). That matters on iPad, where Safari reloads a tab that uses
+too much. If a load is ever interrupted by such a reload, the app doesn't retry on its own at the next start (no
+reload loop); it explains what happened and waits for ↻. Other M3U playlists are parsed while they download.
+
 ## TV guide
 
 Live channels show what's on now, with a progress bar, in the channel list and the now-playing bar. **Guide**
@@ -207,7 +230,10 @@ proxy/xtream-demo.js  Built-in demo Xtream panel (demo / demo) for testing
 index.html        UI shell + CDN import map
 css/style.css     Panel / bar styling (phone layout included)
 js/main.js        App state, playlists, settings, UI + keyboard wiring
-js/m3u.js         M3U parser, Xtream link detection + stream alternates
+js/m3u.js         Streaming M3U parser, Xtream link detection + stream alternates
+js/xtream.js      Xtream API library: categories, live, movies, series, episodes
+js/device.js      Device detection: flat player vs 3D theater
+js/flat-stage.js  Flat player for phones and tablets
 js/filter.js      Content filter (live regions, movie/series languages)
 js/epg.js         Guide data: Xtream short EPG and XMLTV
 js/guide-view.js  Guide grid

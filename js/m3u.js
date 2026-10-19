@@ -2,26 +2,29 @@
 
 const ATTR_RE = /([\w-]+)="([^"]*)"/g;
 
-export function parseM3U(text, baseUrl = location.href) {
-  const lines = text.split(/\r?\n/);
+// Incremental parser: feed text as it downloads, so a large playlist never has to sit in
+// memory whole (and then again as an array of lines). Repeated group names share one string.
+export function createM3UParser(baseUrl = location.href) {
   const channels = [];
+  const groups = new Map();
+  const intern = (g) => { let v = groups.get(g); if (v === undefined) { v = g; groups.set(g, g); } return v; };
   let pending = null;
   let tvgUrl = '';
+  let carry = '';
 
-  for (const raw of lines) {
-    const line = raw.trim();
-    if (!line) continue;
-
-    if (line.startsWith('#EXTM3U')) {
+  const line = (raw) => {
+    const l = raw.trim();
+    if (!l) return;
+    if (l.startsWith('#EXTM3U')) {
       // The header may name an XMLTV guide: url-tvg="…" or x-tvg-url="…" (comma-separated list).
-      const m = line.match(/(?:url-tvg|x-tvg-url)="([^"]+)"/i);
+      const m = l.match(/(?:url-tvg|x-tvg-url)="([^"]+)"/i);
       if (m) tvgUrl = m[1].split(',')[0].trim();
-    } else if (line.startsWith('#EXTINF')) {
+    } else if (l.startsWith('#EXTINF')) {
       const attrs = {};
-      for (const m of line.matchAll(ATTR_RE)) attrs[m[1].toLowerCase()] = m[2];
+      for (const m of l.matchAll(ATTR_RE)) attrs[m[1].toLowerCase()] = m[2];
       // The display name follows the first comma once the quoted attributes are removed,
       // because attribute values may contain commas themselves.
-      const stripped = line.replace(ATTR_RE, '');
+      const stripped = l.replace(ATTR_RE, '');
       const comma = stripped.indexOf(',');
       const name = comma >= 0 ? stripped.slice(comma + 1).trim() : '';
       pending = {
@@ -31,25 +34,42 @@ export function parseM3U(text, baseUrl = location.href) {
         tvgId: attrs['tvg-id'] || '',
         layout: guessLayout(name, attrs),
       };
-    } else if (line.startsWith('#EXTGRP:')) {
-      if (pending) pending.group = line.slice(8).trim();
-    } else if (line.startsWith('#')) {
-      continue;
-    } else {
-      let url = line;
-      try { url = new URL(line, baseUrl).href; } catch { /* keep as-is */ }
+    } else if (l.startsWith('#EXTGRP:')) {
+      if (pending) pending.group = l.slice(8).trim();
+    } else if (!l.startsWith('#')) {
+      let url = l;
+      if (!/^[a-z][a-z0-9+.-]*:/i.test(l)) { try { url = new URL(l, baseUrl).href; } catch { /* keep as-is */ } }
       const ch = pending || { name: '', logo: '', group: '', tvgId: '', layout: null };
       ch.url = url;
+      ch.id = url;
+      ch.num = channels.length + 1;
       ch.name = ch.name || url.split('/').pop() || url;
-      ch.group = ch.group || 'Uncategorized';
+      ch.group = intern(ch.group || 'Uncategorized');
       channels.push(ch);
       pending = null;
     }
-  }
+  };
 
-  channels.forEach((c, i) => { c.num = i + 1; c.id = c.url; });
-  channels.tvgUrl = tvgUrl; // read by the guide; not part of each channel
-  return channels;
+  return {
+    push(text) {
+      const parts = (carry + text).split(/\r?\n/);
+      carry = parts.pop();
+      for (const p of parts) line(p);
+    },
+    end() {
+      if (carry) line(carry);
+      carry = '';
+      channels.tvgUrl = tvgUrl; // read by the guide; not part of each channel
+      return channels;
+    },
+    get count() { return channels.length; },
+  };
+}
+
+export function parseM3U(text, baseUrl = location.href) {
+  const parser = createM3UParser(baseUrl);
+  parser.push(text);
+  return parser.end();
 }
 
 // Native 3D content is often tagged in the channel name, e.g. "Movie 3D SBS".
@@ -71,28 +91,28 @@ export async function fetchPlaylist(url, { proxify = (u) => u, onProgress = () =
     throw e;
   }
   if (!res.ok) throw new Error(httpReason(res, url));
-  const text = await readText(res, onProgress);
-  onProgress({ phase: 'parse', received: text.length });
-  await new Promise((r) => setTimeout(r, 30)); // let the status paint before parsing blocks
-  if (!text.includes('#EXTINF') && !text.trim().startsWith('#EXTM3U')) {
+  const parser = createM3UParser(res.headers.get('x-final-url') || url);
+  let head = '';
+  await readBody(res, (text) => {
+    if (head.length < 4096) head += text.slice(0, 4096);
+    parser.push(text);
+  }, (p) => onProgress({ ...p, channels: parser.count }));
+  const channels = parser.end();
+  if (!channels.length) {
     // A bare stream manifest rather than a channel list: treat it as one channel.
-    if (text.includes('#EXT-X-')) return [{ num: 1, id: url, url, name: url.split('/').pop(), logo: '', group: 'Direct', layout: null }];
-    if (/^\s*[{[]/.test(text)) throw new Error('The server sent JSON, not an M3U playlist. Check the link and credentials.');
+    if (head.includes('#EXT-X-')) return [{ num: 1, id: url, url, name: url.split('/').pop(), logo: '', group: 'Direct', layout: null }];
+    if (/^\s*[{[]/.test(head)) throw new Error('The server sent JSON, not an M3U playlist. Check the link and credentials.');
     throw new Error('The server didn’t send an M3U playlist. The account may be expired or the link wrong.');
   }
-  const channels = parseM3U(text, res.headers.get('x-final-url') || url);
-  const xt = parseXtream(url);
-  if (xt) for (const ch of channels) ch.alts = xtreamAlternates(ch.url, xt);
   return channels;
 }
 
-// Streams the body so big playlists can report progress (size, speed).
-async function readText(res, onProgress) {
+// Streams a response body as text chunks, reporting size and speed.
+export async function readBody(res, onText, onProgress = () => {}) {
   const total = +res.headers.get('content-length') || 0;
-  if (!res.body) return res.text();
+  if (!res.body) { const t = await res.text(); onText(t); return t.length; }
   const reader = res.body.getReader();
   const decoder = new TextDecoder();
-  const parts = [];
   const start = performance.now();
   let received = 0;
   let last = 0;
@@ -100,15 +120,15 @@ async function readText(res, onProgress) {
     const { value, done } = await reader.read();
     if (done) break;
     received += value.length;
-    parts.push(decoder.decode(value, { stream: true }));
+    onText(decoder.decode(value, { stream: true }));
     const now = performance.now();
     if (now - last > 200) {
       last = now;
       onProgress({ phase: 'download', received, total, rate: received / Math.max(0.001, (now - start) / 1000) });
     }
   }
-  parts.push(decoder.decode());
-  return parts.join('');
+  onText(decoder.decode());
+  return received;
 }
 
 function blockedReason(url) {
