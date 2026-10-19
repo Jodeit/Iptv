@@ -901,7 +901,8 @@ function renderSaved() {
 }
 
 // ---------- Channel list ----------
-const LIST_LIMIT = 400;
+const LIST_PAGE = 200; // rows added each time the end of the list scrolls into view
+let listMore = null;
 
 // Applies the content filter (region/language) and rebuilds groups and type tabs.
 function rebuildLibrary() {
@@ -1033,7 +1034,7 @@ function renderList() {
   if (state.seriesOpen) {
     special(`‹ ${state.seriesOpen.series.name}`, `${state.seriesOpen.episodes.length} episodes · back to series`, () => { state.seriesOpen = null; showVod(); }, 'back');
   }
-  for (const ch of state.filtered.slice(0, LIST_LIMIT)) {
+  const makeRow = (ch) => {
     const li = document.createElement('li');
     li.dataset.id = ch.id;
     if (ch === state.current) li.classList.add('playing');
@@ -1061,16 +1062,30 @@ function renderList() {
     fav.onclick = (e) => { e.stopPropagation(); toggleFav(ch, fav); };
     li.append(num, img, text, fav);
     li.onclick = () => (kindOf(ch) === 'series' ? openSeries(ch) : play(ch));
-    frag.append(li);
-  }
+    return li;
+  };
+  // Rows come a page at a time: a sentinel at the end asks for the next one.
+  listMore?.disconnect();
+  let shown = 0;
+  const sentinel = document.createElement('li');
+  sentinel.className = 'list-sentinel';
+  const addPage = () => {
+    const page = document.createDocumentFragment();
+    for (const ch of state.filtered.slice(shown, shown + LIST_PAGE)) page.append(makeRow(ch));
+    shown = Math.min(state.filtered.length, shown + LIST_PAGE);
+    sentinel.before(page);
+    if (shown >= state.filtered.length) listMore.disconnect();
+  };
+  listMore = new IntersectionObserver((e) => { if (e.some((x) => x.isIntersecting)) addPage(); }, { rootMargin: '600px' });
+  frag.append(sentinel);
   ul.append(frag);
+  addPage();
+  if (shown < state.filtered.length) listMore.observe(sentinel);
   const n = state.filtered.length;
   const updated = state.source?.savedAt ? ` · updated ${ago(state.source.savedAt)}` : '';
   const noun = state.seriesOpen ? ['episode', 'episodes']
     : isVodKind() ? (state.kind === 'movie' ? ['movie', 'movies'] : ['series', 'series']) : ['channel', 'channels'];
-  $('listInfo').textContent = (n > LIST_LIMIT
-    ? `Showing ${LIST_LIMIT} of ${n.toLocaleString()} ${noun[1]}. Search to narrow down.`
-    : `${n.toLocaleString()} ${noun[n === 1 ? 0 : 1]}`) + (isVodKind() ? '' : updated + (state.filterNote || ''));
+  $('listInfo').textContent = `${n.toLocaleString()} ${noun[n === 1 ? 0 : 1]}` + (isVodKind() ? '' : updated + (state.filterNote || ''));
 }
 
 function toggleFav(ch, btn) {

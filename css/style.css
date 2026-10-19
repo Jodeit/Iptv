@@ -421,3 +421,8 @@ body.panel-hidden #flatStage { left: 12px; }
 .gallery-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 6px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
 .gallery-filters label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
 .gallery-filters select { width: auto; }
+
+.guide-filters { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+.guide-filters select { flex: 0 1 200px; min-width: 0; }
+.guide-filters input { flex: 1 1 160px; min-width: 0; }
+.guide-sentinel { height: 1px; }

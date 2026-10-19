@@ -1,10 +1,12 @@
+import { classify, TOPIC_NAMES } from './livecats.js';
+
 // TV guide grid: channels down the side, a 6-hour timeline across, a line at "now".
 // Rows load their programmes only when scrolled into view.
 
 const PX_PER_MIN = 4;          // 30 minutes = 120 px
 const HOURS = 6;
 const LABEL_W = 170;
-const ROW_LIMIT = 300;
+const PAGE = 60; // rows added each time the bottom comes into view
 
 const fmt = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 
@@ -26,6 +28,22 @@ export class GuideView {
         if (e.isIntersecting) { this.visible.add(id); this.renderRow(id); } else this.visible.delete(id);
       }
     }, { root: this.scroll, rootMargin: '300px 0px' });
+    this.f = { region: '', topic: '', q: '' };
+    this.bar = document.createElement('div');
+    this.bar.className = 'guide-filters';
+    this.bar.innerHTML = `<select class="gv-region" aria-label="Region"></select>
+      <select class="gv-topic" aria-label="Topic"></select>
+      <input class="gv-search" type="search" placeholder="Search channels…" autocomplete="off">`;
+    root.querySelector('.guide-head').after(this.bar);
+    const apply = () => {
+      this.f = { region: this.bar.querySelector('.gv-region').value, topic: this.bar.querySelector('.gv-topic').value, q: this.bar.querySelector('.gv-search').value.trim().toLowerCase() };
+      this.build();
+    };
+    this.bar.querySelector('.gv-region').onchange = apply;
+    this.bar.querySelector('.gv-topic').onchange = apply;
+    this.bar.querySelector('.gv-search').oninput = apply;
+    // Rows arrive a page at a time as the bottom of the grid scrolls into view.
+    this.more = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) this.addRows(); }, { root: this.scroll, rootMargin: '400px 0px' });
     root.querySelector('.guide-close').onclick = () => this.close();
     root.querySelector('.guide-now').onclick = () => this.scrollToNow();
     addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.isOpen()) this.close(); });
@@ -42,7 +60,28 @@ export class GuideView {
   close() {
     this.root.classList.add('hidden');
     this.observer.disconnect();
+    this.more.disconnect();
     this.detail.classList.add('hidden');
+  }
+
+  // Region/topic menus list only what's present, with counts.
+  fillMenus(all) {
+    const count = (key) => { const m = new Map(); for (const c of all) { const v = classify(c)[key]; m.set(v, (m.get(v) || 0) + 1); } return m; };
+    const fill = (sel, map, label, order) => {
+      const names = [...map.keys()].sort(order);
+      sel.innerHTML = `<option value="">${label} (${all.length.toLocaleString()})</option>` + names.map((n) => `<option value="${n}">${n} (${map.get(n).toLocaleString()})</option>`).join('');
+    };
+    const regions = count('region');
+    const topics = count('topic');
+    const r = this.bar.querySelector('.gv-region');
+    const t = this.bar.querySelector('.gv-topic');
+    // Keep the menus from the full list; counts don't shift while filtering.
+    if (this.menuFor !== all) {
+      this.menuFor = all;
+      fill(r, regions, 'All regions', (a, b) => (a === 'United States' ? -1 : b === 'United States' ? 1 : regions.get(b) - regions.get(a)));
+      fill(t, topics, 'All topics', (a, b) => TOPIC_NAMES.indexOf(a) - TOPIC_NAMES.indexOf(b));
+      r.value = this.f.region; t.value = this.f.topic;
+    }
   }
 
   build() {
@@ -69,9 +108,31 @@ export class GuideView {
     }
     this.grid.append(ruler);
 
-    const list = this.channels();
-    const shown = list.slice(0, ROW_LIMIT);
-    for (const ch of shown) {
+    const all = this.channels();
+    this.fillMenus(all);
+    const { region, topic, q } = this.f;
+    this.list = all.filter((c) => {
+      if (region || topic) { const k = classify(c); if ((region && k.region !== region) || (topic && k.topic !== topic)) return false; }
+      return !q || c.name.toLowerCase().includes(q) || (c.group || '').toLowerCase().includes(q);
+    });
+    this.shown = 0;
+    this.sentinel = document.createElement('div');
+    this.sentinel.className = 'guide-sentinel';
+    this.grid.append(this.sentinel);
+    this.addRows();
+
+    this.nowLine = document.createElement('div');
+    this.nowLine.className = 'guide-nowline';
+    this.grid.append(this.nowLine);
+    this.tick();
+  }
+
+  // Appends the next page of rows above the sentinel; the sentinel's visibility asks for more.
+  addRows() {
+    const list = this.list;
+    const next = list.slice(this.shown, this.shown + PAGE);
+    this.shown += next.length;
+    for (const ch of next) {
       const row = document.createElement('div');
       row.className = 'guide-row';
       row.dataset.id = ch.id;
@@ -91,19 +152,16 @@ export class GuideView {
       const track = document.createElement('div');
       track.className = 'guide-track';
       row.append(label, track);
-      this.grid.append(row);
+      this.sentinel.before(row);
       this.rows.set(ch.id, { el: row, track, ch });
       this.observer.observe(row);
     }
-
-    this.nowLine = document.createElement('div');
-    this.nowLine.className = 'guide-nowline';
-    this.grid.append(this.nowLine);
-    this.tick();
-    this.info.textContent = list.length > ROW_LIMIT
-      ? `First ${ROW_LIMIT} of ${list.length} channels. Pick a group to narrow down.`
-      : `${list.length} channel${list.length === 1 ? '' : 's'}`;
-    if (!shown.length) this.grid.insertAdjacentHTML('beforeend', '<p class="muted guide-empty">No live channels in the current list.</p>');
+    this.info.textContent = `${Math.min(this.shown, list.length).toLocaleString()} of ${list.length.toLocaleString()} channel${list.length === 1 ? '' : 's'}`;
+    this.grid.querySelector('.guide-empty')?.remove();
+    if (!list.length) this.grid.insertAdjacentHTML('beforeend', '<p class="muted guide-empty">No live channels match.</p>');
+    // Re-arm: if the sentinel is still on screen after a page, the observer fires again.
+    this.more.disconnect();
+    if (this.shown < list.length) this.more.observe(this.sentinel);
   }
 
   x(t) { return ((t - this.t0) / 60000) * PX_PER_MIN; }
