@@ -74,12 +74,13 @@ export class StreamPlayer {
       if (i > 0) plans.unshift(...plans.splice(i, 1));
     }
     let refused = false;
+    let directRefused = false;
     if (!plans.length) this.report.push(`✗ unsupported format: this browser can’t play ${list[0]?.hint?.split('?')[0].split('.').pop().toUpperCase() || 'this'} files`);
     const deadSources = new Set();
     for (const [i, { source, engine }] of plans.entries()) {
       const { src, hint, label } = source;
       if (token !== this.token) return false;
-      if (deadSources.has(source)) continue;
+      if (deadSources.has(source) || (directRefused && !label)) continue;
       this.step = `${ENGINE_NAMES[engine]}${label ? ' via proxy' : ''}${plans.length > 1 ? ` (try ${i + 1} of ${plans.length})` : ''}`;
       this.progress(token, reconnect ? 'Reconnecting' : 'Connecting');
       try {
@@ -113,7 +114,12 @@ export class StreamPlayer {
         this.destroy();
         // A refusal (bad login, connection limit) won't change with another variant, and
         // every extra try counts against the account.
-        if (/HTTP (401|403|456|458)\b/.test(err.message)) { refused = true; break; }
+        // A direct request can be refused just for coming from a browser (its Origin header or
+        // user agent), so skip the other direct tries but still give the proxy its turn.
+        if (/HTTP (401|403|456|458)\b/.test(err.message)) {
+          if (!label && plans.some((p) => p.source.label)) { directRefused = true; continue; }
+          refused = true; break;
+        }
         // Not there at all: other engines would only ask again for the same missing file.
         if (/HTTP (404|410)\b|manifestParsingError/.test(err.message)) deadSources.add(source);
       }
