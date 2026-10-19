@@ -16,13 +16,13 @@ let bufferLevel = BUFFER_LEVELS.normal;
 export const setBufferLevel = (k) => { bufferLevel = BUFFER_LEVELS[k] || BUFFER_LEVELS.normal; };
 
 export class StreamPlayer {
-  constructor(video, { onStatus = () => {}, onError = () => {}, onWarn = () => {}, onLog = () => {} } = {}) {
+  constructor(video, { onStatus = () => {}, onError = () => {}, onWarn = () => {}, onLog = () => {}, onSlow = () => {} } = {}) {
     this.video = video;
     this.onStatus = onStatus;
     this.onError = onError;
     this.onWarn = onWarn;
     this.onLog = onLog; // (report) after each new line, so the playback log stays live
-    this.health = new Health(video, (line) => this.log(line));
+    this.health = new Health(video, (line) => this.log(line), () => onSlow());
     this.hls = null;
     this.ts = null;
     this.token = 0;
@@ -374,9 +374,10 @@ const ENGINE_NAMES = { hlsjs: 'HLS', mpegts: 'MPEG-TS', native: 'built-in player
 // Playback health for the log: every stall with its length and the buffer it ran down from,
 // and every 30 s the buffer, resolution, download speed vs bitrate, and dropped frames.
 class Health {
-  constructor(video, log) {
+  constructor(video, log, onSlow) {
     this.video = video;
     this.log = log;
+    this.onSlow = onSlow;
     this.onWaiting = () => {
       if (this.stallStart) return;
       this.stallStart = performance.now();
@@ -388,12 +389,14 @@ class Health {
       this.stallStart = 0;
       this.stallTime += secs;
       if (secs >= 0.3) this.log(`⏸ buffering ${secs.toFixed(1)}s (stall #${this.stalls}${this.rateText()})`);
+      // Three stalls adding up to 8 s: the connection isn't keeping up, so say so once.
+      if (!this.slowSaid && this.stalls >= 3 && this.stallTime >= 8) { this.slowSaid = true; this.onSlow(); }
     };
   }
 
   start(engine, player) {
     this.stop();
-    Object.assign(this, { engine, player, stalls: 0, stallTime: 0, stallStart: 0, bytes: 0, loadMs: 0, media: 0, lastSpeed: 0, bufMark: null, notes: new Map(), began: performance.now() });
+    Object.assign(this, { engine, player, stalls: 0, stallTime: 0, slowSaid: false, stallStart: 0, bytes: 0, loadMs: 0, media: 0, lastSpeed: 0, bufMark: null, notes: new Map(), began: performance.now() });
     this.video.addEventListener('waiting', this.onWaiting);
     this.video.addEventListener('playing', this.onPlaying);
     this.timer = setInterval(() => this.report(), 30000);

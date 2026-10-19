@@ -28,7 +28,7 @@ const DEFAULTS = {
   mode: 'xr3d', relief: 0.18, parallax: 0.8, convergence: 0.5, contrast: 1.4, smooth: 0.006,
   invert: false, showDepth: false, swap: false, view: 'mono',
   size: 6, distance: 5, height: 1.8, curve: 0.15, bright: 1, env: 'cinema', ambient: true,
-  volume: 1, muted: false, proxy: 'auto', proxyUrl: '', display: 'auto', hlsEngine: 'auto',
+  volume: 1, muted: false, proxy: 'auto', proxyUrl: '', vodPlayer: 'builtin', display: 'auto', hlsEngine: 'auto',
 };
 const settings = { ...DEFAULTS, ...store.get('settings', {}) };
 settings.contentFilter = { ...FILTER_DEFAULTS, ...settings.contentFilter };
@@ -330,6 +330,10 @@ const LAYOUT = { mono: 0, sbs: 1, tab: 2 }; // must match xr3d.js
 const player = new StreamPlayer(video, {
   onStatus: (s, { loading = false, frac = null } = {}) => (loading ? showLoading(s, frac) : (hideLoading(), setStatus(s))),
   onWarn: (m) => toast(m, true),
+  onSlow: () => {
+    const ch = state.current;
+    if (ch && settings.vodPlayer === 'slow' && kindOf(ch) !== 'live') offerExternal(ch, 'This is downloading slower than it plays.');
+  },
   // The log updates while playing (stalls, buffer, speed), not only after a failure.
   onLog: (report) => {
     clearTimeout(logTimer);
@@ -421,7 +425,12 @@ function externalPlayers(url) {
       ['VLC', `vlc://${url}`],
     ];
   }
-  return [['VLC', `vlc://${url}`]];
+  // Desktop: these apps register URL schemes when installed.
+  return [
+    ['IINA', `iina://weblink?url=${e}`],
+    ['VLC', `vlc://${url}`],
+    ['Infuse', `infuse://x-callback-url/play?url=${e}`],
+  ];
 }
 
 function offerExternal(ch, why = '') {
@@ -1161,6 +1170,13 @@ async function play(ch, { startAt = resumePoint(ch) } = {}) {
     theater.setPlaceholder('Stream blocked', ch.name);
     return;
   }
+  // Movies and episodes go straight to a player app when that's the chosen setting.
+  if (settings.vodPlayer === 'external' && kindOf(ch) !== 'live') {
+    setStatus('Playing in another app');
+    theater.setPlaceholder(ch.name, 'Opened in a player app');
+    offerExternal(ch);
+    return;
+  }
   if (startAt) toast(`Resuming at ${fmtDuration(startAt)}`);
   const ok = await player.load(sources, { startAt });
   if (ok && state.current === ch) {
@@ -1549,6 +1565,14 @@ for (const b of $('displaySeg').children) {
     settings.display = b.dataset.display;
     saveSettings();
     location.reload();
+  };
+}
+for (const b of $('vodSeg').children) {
+  b.classList.toggle('active', b.dataset.vod === settings.vodPlayer);
+  b.onclick = () => {
+    settings.vodPlayer = b.dataset.vod;
+    saveSettings();
+    for (const x of $('vodSeg').children) x.classList.toggle('active', x === b);
   };
 }
 for (const b of $('hlsSeg').children) {
