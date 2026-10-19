@@ -24,7 +24,13 @@ export class Similar {
     // v3 keys are 32 hex characters and go in the query; v4 read tokens are long JWTs.
     const v3 = /^[0-9a-f]{32}$/i.test(key);
     const q = new URLSearchParams({ ...params, ...(v3 ? { api_key: key } : {}) });
-    const res = await this.fetcher(`${API}${path}?${q}`, v3 ? undefined : { headers: { Authorization: `Bearer ${key}` } });
+    let res;
+    for (let attempt = 0; ; attempt++) {
+      res = await this.fetcher(`${API}${path}?${q}`, v3 ? undefined : { headers: { Authorization: `Bearer ${key}` } });
+      // Rate limited: wait as told (or a moment) and try again, a few times.
+      if (res.status !== 429 || attempt >= 3) break;
+      await new Promise((r) => setTimeout(r, (+res.headers.get('retry-after') || 1) * 1000));
+    }
     const d = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(d.status_message || `HTTP ${res.status}`);
     return d;

@@ -130,6 +130,8 @@ function send(res, status, msg, extra = {}) {
   res.end(msg);
 }
 
+const SYNC_URL = process.env.SYNC_URL || '';
+
 // Profile storage for server.js: a JSON file next to the app (DATA_DIR to move it).
 const DATA_FILE = path.join(process.env.DATA_DIR || path.join(ROOT, 'data'), 'profiles.json');
 const fileStore = (() => {
@@ -159,6 +161,17 @@ async function api(req, res, pathname) {
     for await (const c of req) { size += c.length; if (size > 1024 * 1024) return send(res, 413, 'Too large'); chunks.push(c); }
     try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { body = null; }
   }
+  // SYNC_URL: keep profiles on another deployment (e.g. the Cloudflare Worker) instead of
+  // this machine, so a local copy of the app shares the same profiles as the hosted one.
+  if (SYNC_URL) {
+    const up = await fetch(new URL(pathname, SYNC_URL), {
+      method: req.method,
+      headers: body ? { 'content-type': 'application/json' } : {},
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    res.writeHead(up.status, { ...CORS, 'content-type': up.headers.get('content-type') || 'application/json', 'cache-control': 'no-store' });
+    return res.end(Buffer.from(await up.arrayBuffer()));
+  }
   const out = await handleProfileApi({ method: req.method, path: pathname, body, ip: req.socket.remoteAddress }, fileStore);
   if (out.status === 204) { res.writeHead(204, CORS); return res.end(); }
   res.writeHead(out.status, { ...CORS, 'content-type': 'application/json', 'cache-control': 'no-store' });
@@ -183,6 +196,7 @@ const server = tls ? https.createServer(tls, handler) : http.createServer(handle
 server.listen(PORT, HOST, () => {
   const scheme = tls ? 'https' : 'http';
   console.log(`Tuner on ${scheme}://localhost:${PORT} (proxy at /proxy)`);
+  if (SYNC_URL) console.log(`  profiles sync through ${SYNC_URL}`);
   if (HOST === '0.0.0.0') {
     const lan = Object.values(os.networkInterfaces()).flat().filter((i) => i && i.family === 'IPv4' && !i.internal);
     for (const i of lan) console.log(`  on your network: ${scheme}://${i.address}:${PORT}`);

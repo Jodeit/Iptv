@@ -8,7 +8,7 @@
 //
 // The synced document (one per profile, plus a device-only one for "no profile"):
 //   { v, playlists: [{ key, name, url, at }], playlistsRemoved: { key: ts },
-//     favs: { id: ts }, favsRemoved: { id: ts }, contentFilter, omdbKey, tmdbKey, last, updatedAt }
+//     favs: { id: ts }, favsRemoved: { id: ts }, contentFilter, omdbKey, tmdbKey, tmdbMeta, last, updatedAt }
 // Merging takes the union of playlists/favorites minus anything deleted later (tombstones),
 // so edits made on two devices at once both survive.
 
@@ -28,7 +28,7 @@ const write = (k, v) => { try { localStorage.setItem(`o3xr.${k}`, JSON.stringify
 const remove = (k) => { try { localStorage.removeItem(`o3xr.${k}`); } catch { /* ignore */ } };
 
 export const emptyDoc = () => ({
-  v: 1, playlists: [], playlistsRemoved: {}, favs: {}, favsRemoved: {}, contentFilter: null, omdbKey: null, tmdbKey: null, last: null, updatedAt: 0,
+  v: 1, playlists: [], playlistsRemoved: {}, favs: {}, favsRemoved: {}, contentFilter: null, omdbKey: null, tmdbKey: null, tmdbMeta: {}, last: null, updatedAt: 0,
 });
 
 export function mergeDocs(a, b) {
@@ -64,9 +64,20 @@ export function mergeDocs(a, b) {
     contentFilter: newer.contentFilter ?? older.contentFilter ?? null,
     omdbKey: newer.omdbKey ?? older.omdbKey ?? null,
     tmdbKey: newer.tmdbKey ?? older.tmdbKey ?? null,
+    tmdbMeta: capMeta({ ...older.tmdbMeta, ...newer.tmdbMeta }),
     last: newer.last ?? older.last ?? null,
     updatedAt: Math.max(a.updatedAt || 0, b.updatedAt || 0),
   };
+}
+
+// TMDB age ratings and popularity, shared so other devices skip the lookups:
+// { 'm:<tmdb id or title|year>': [cert, popularity, lookedUpAt] }. The newest few thousand
+// keep the profile small; it's all public data, but still encrypted with the rest.
+export const META_CAP = 6000;
+export function capMeta(meta = {}) {
+  const entries = Object.entries(meta);
+  if (entries.length <= META_CAP) return meta;
+  return Object.fromEntries(entries.sort((x, y) => (y[1][2] || 0) - (x[1][2] || 0)).slice(0, META_CAP));
 }
 
 const sameDoc = (x, y) => JSON.stringify(x) === JSON.stringify(y);

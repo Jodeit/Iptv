@@ -5,7 +5,7 @@ import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, 
 import { XtreamLibrary } from './xtream.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
 import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
-import { Profiles, emptyDoc, canSync } from './profiles.js';
+import { Profiles, emptyDoc, canSync, capMeta } from './profiles.js';
 import { Guide } from './epg.js';
 import { GuideView } from './guide-view.js';
 import { Ratings, parseTitle } from './ratings.js';
@@ -236,6 +236,30 @@ const ratings = new Ratings({
 // browsers to call it directly, so no proxy is involved.
 const similar = new Similar({ fetcher: (u, init) => fetch(u, init), getKey: () => profiles.doc.tmdbKey || '' });
 
+// Age rating and popularity for a title, from the profile if any device looked it up already
+// (within 30 days), else from TMDB. New results are saved to the profile in batches.
+const META_TTL = 30 * 86400000;
+const metaKey = (item) => {
+  const { title, year } = parseTitle(item.name);
+  return `${item.kind === 'series' ? 't' : 'm'}:${item.tmdb || `${title.toLowerCase()}|${year || ''}`}`;
+};
+let metaBatch = {}, metaTimer = 0;
+async function tmdbMeta(item) {
+  const key = metaKey(item);
+  const have = profiles.doc.tmdbMeta?.[key] || metaBatch[key];
+  if (have && Date.now() - have[2] < META_TTL) return { cert: have[0], pop: have[1] };
+  const ref = await similar.tmdbId(item);
+  const meta = ref ? await similar.meta(ref) : { cert: '', pop: 0 };
+  metaBatch[key] = [meta.cert, Math.round(meta.pop * 10) / 10, Date.now()];
+  clearTimeout(metaTimer);
+  metaTimer = setTimeout(() => {
+    const batch = metaBatch;
+    metaBatch = {};
+    profiles.update((d) => { d.tmdbMeta = capMeta({ ...d.tmdbMeta, ...batch }); });
+  }, 3000);
+  return meta;
+}
+
 // Title index of the provider's movies or series, to check recommendations against. With the
 // Xtream API that means every category the content filter keeps, fetched once a day.
 const catalogs = new Map(); // kind → { key, promise }
@@ -314,13 +338,7 @@ const gallery = new GalleryView($('gallery'), {
   isFav: (id) => state.favs.has(id),
   toggleFav: (item) => toggleFav(item),
   external: (item) => offerExternal(item),
-  get tmdbMeta() {
-    if (!similar.enabled()) return null;
-    return async (item) => {
-      const ref = await similar.tmdbId(item);
-      return ref ? similar.meta(ref) : null;
-    };
-  },
+  get tmdbMeta() { return similar.enabled() ? tmdbMeta : null; },
   imageUrl: (url) => (proxy.available && /^https?:/.test(url) && !url.includes('/proxy?') ? proxied(url) : ''),
 });
 

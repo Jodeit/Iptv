@@ -220,7 +220,7 @@ export class GalleryView {
         if (performance.now() - last > 1500) { last = performance.now(); this.rerender(); }
       }
     };
-    await Promise.all(Array.from({ length: 6 }, worker));
+    await Promise.all(Array.from({ length: 16 }, worker)); // TMDB allows ~40 requests a second
     if (this.metaRun !== run) return;
     this.metaPending = false;
     this.rerender();
