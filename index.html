@@ -21,24 +21,29 @@
 <body>
   <div id="stage"></div>
 
-  <!-- Side panel -->
-  <aside id="panel" class="panel">
-    <header class="panel-head">
-      <div class="brand"><span class="logo" title="Tuner"><svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><path d="M5 16C9 9 19 8 24 14L29 9 27.5 16 29 23 24 18C19 24 9 23 5 16ZM13 10.6 16 6 18.4 10ZM14 21.4 16 25.5 18.4 22Z" fill="#000"/><circle cx="9.5" cy="15" r="1.3" fill="#3de0ff"/></svg></span><span>Tuner</span></div>
-      <button id="profileChip" class="profile-chip" title="Profiles"><span class="avatar" id="chipAvatar">·</span><span id="chipName">This device</span></button>
-      <button id="panelToggle" class="icon-btn" title="Hide panel (H)">⟨</button>
-    </header>
-    <p id="accountInfo" class="muted small account-info hidden"><span id="accountText"></span><button id="accountRefresh" class="icon-btn" title="Check again. The provider counts open connections, including ones it hasn’t released yet.">↻</button></p>
-
-    <div class="seg primary-nav hidden" id="kindSeg">
+  <!-- Top bar: Live (the guide), Movies, Shows; settings live in the drawer behind ⚙ -->
+  <header id="topbar" class="topbar">
+    <div class="brand"><span class="logo" title="Tuner"><svg viewBox="0 0 32 32" width="24" height="24" aria-hidden="true"><path d="M5 16C9 9 19 8 24 14L29 9 27.5 16 29 23 24 18C19 24 9 23 5 16ZM13 10.6 16 6 18.4 10ZM14 21.4 16 25.5 18.4 22Z" fill="#000"/><circle cx="9.5" cy="15" r="1.3" fill="#3de0ff"/></svg></span><span>Tuner</span></div>
+    <nav class="seg primary-nav" id="kindSeg">
       <button data-kind="" class="active">All</button>
       <button data-kind="live">Live</button>
       <button data-kind="movie">Movies</button>
       <button data-kind="series">Shows</button>
-    </div>
+    </nav>
+    <button id="profileChip" class="profile-chip" title="Profiles"><span class="avatar" id="chipAvatar">·</span><span id="chipName">This device</span></button>
+    <button id="panelOpen" class="icon-btn" title="Settings (H)">⚙</button>
+  </header>
+
+  <!-- Settings drawer -->
+  <aside id="panel" class="panel collapsed">
+    <header class="panel-head">
+      <h2 class="drawer-title">Settings</h2>
+      <button id="panelToggle" class="icon-btn" title="Close (H)">✕</button>
+    </header>
+    <p id="accountInfo" class="muted small account-info hidden"><span id="accountText"></span><button id="accountRefresh" class="icon-btn" title="Check again. The provider counts open connections, including ones it hasn’t released yet.">↻</button></p>
 
     <nav class="tabs secondary" role="tablist">
-      <button class="tab active" data-tab="channels">Channels</button>
+      <button class="tab active" data-tab="channels" id="channelsTab">Channels</button>
       <button class="tab" data-tab="xr3d">XR3D</button>
       <button class="tab" data-tab="theater">Theater</button>
       <button class="tab" data-tab="sources">Sources</button>
@@ -281,7 +286,7 @@
       <h2>Guide</h2>
       <span class="guide-info muted small"></span>
       <button class="guide-now chip">Now</button>
-      <button class="guide-close icon-btn" title="Close (Esc)">✕</button>
+      <button class="guide-close chip" title="Watch full size (Esc)">⛶ Full size</button>
     </header>
     <div class="guide-scroll"><div class="guide-grid"></div></div>
     <div class="guide-detail hidden"></div>
@@ -297,8 +302,6 @@
     <button id="miniFull" class="icon-btn" title="Close the guide and watch full size">⛶</button>
     <button id="miniClose" class="icon-btn" title="Hide player">✕</button>
   </div>
-
-  <button id="panelOpen" class="fab hidden" title="Show panel (H)">☰</button>
 
   <!-- Now playing bar -->
   <div id="bar" class="bar">

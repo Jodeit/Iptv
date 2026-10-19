@@ -617,6 +617,8 @@ function setChannels(channels, label, source = null) {
   guide.setSource({ xtream: source?.url ? parseXtream(source.url) : null, tvgUrl: source?.tvgUrl || channels.tvgUrl || null });
   guide.setChannels(channels);
   $('guideBtn').classList.toggle('hidden', !guide.available());
+  // With a guide, Live is the guide; the channel list stays in the drawer only for playlists without one.
+  $('channelsTab').classList.toggle('hidden', guide.available());
   $('refreshList').classList.toggle('hidden', !source?.url);
   state.channels = channels;
   state.group = '';
@@ -625,7 +627,10 @@ function setChannels(channels, label, source = null) {
   toast(`${label}: ${state.library.length.toLocaleString()} channels${state.library.length < channels.length ? ' after filter' : ''}`);
   // Jump to the list after loading from Sources, but not when a profile switch or sync
   // reloads the playlist while you're on another tab.
-  if (document.querySelector('.tab.active')?.dataset.tab === 'sources') setTab('channels');
+  if (document.querySelector('.tab.active')?.dataset.tab === 'sources') {
+    if (guide.available()) togglePanel(false); else setTab('channels');
+  }
+  if (guide.available() && document.querySelector('.tab.active')?.dataset.tab === 'channels') setTab('sources');
 }
 
 const ago = (t) => {
@@ -951,9 +956,9 @@ function rebuildLibrary() {
 
   const xl = state.xlib;
   const hasVod = xl ? !!(xl.cats.movie.length || xl.cats.series.length) : lib.some((c) => kindOf(c) !== 'live');
-  $('kindSeg').classList.toggle('hidden', !hasVod);
+  for (const k of ['', 'movie', 'series']) $('kindSeg').querySelector(`[data-kind="${k}"]`).classList.toggle('hidden', !hasVod);
   // With the Xtream API, movies and series are browsed separately, so there's no "All".
-  $('kindSeg').querySelector('[data-kind=""]').classList.toggle('hidden', !!xl);
+  if (xl) $('kindSeg').querySelector('[data-kind=""]').classList.add('hidden');
   if (!hasVod) state.kind = '';
   if (xl && !state.kind) state.kind = 'live';
   for (const b of $('kindSeg').children) b.classList.toggle('active', b.dataset.kind === state.kind);
@@ -1315,11 +1320,16 @@ for (const t of document.querySelectorAll('.tab')) t.onclick = () => setTab(t.da
 
 function togglePanel(show = $('panel').classList.contains('collapsed')) {
   $('panel').classList.toggle('collapsed', !show);
-  document.body.classList.toggle('panel-hidden', !show);
-  $('panelOpen').classList.toggle('hidden', show);
 }
 $('panelToggle').onclick = () => togglePanel(false);
-$('panelOpen').onclick = () => togglePanel(true);
+$('panelOpen').onclick = () => togglePanel();
+// It's a drawer: clicking anywhere outside it closes it.
+addEventListener('pointerdown', (e) => {
+  if (!$('panel').classList.contains('collapsed') && !e.target.closest('#panel, #panelOpen, #profileChip, .toast')) togglePanel(false);
+});
+// The video can start after a channel switch already moved on, or while it's a thumbnail:
+// whenever it's actually playing, nothing should cover it.
+video.addEventListener('playing', () => { if (state.current) theater.setVideoActive(true); });
 
 $('search').oninput = (e) => { state.query = e.target.value; applyFilter(); };
 $('groupFilter').onchange = (e) => { state.group = e.target.value; state.seriesOpen = null; applyFilter(); };
@@ -1352,9 +1362,8 @@ for (const b of $('kindSeg').children) {
     state.kind = b.dataset.kind;
     for (const x of $('kindSeg').children) x.classList.toggle('active', x === b);
     rebuildGroups();
-    setTab('channels');
     if (galleryKind()) { guideView.close(); gallery.open(state.kind, state.group || undefined); } // movies and series open as posters
-    else { gallery.close(); if (guide.available()) guideView.open(); }
+    else { gallery.close(); if (guide.available()) guideView.open(); else { togglePanel(true); setTab('channels'); } }
   };
 }
 $('miniClose').onclick = () => { miniHidden = true; syncMini(); };

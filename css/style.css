@@ -33,9 +33,22 @@ button, input, select { font: inherit; color: inherit; }
 .small { font-size: 12px; }
 
 /* ---------- Panel ---------- */
+/* ---------- Top bar ---------- */
+.topbar {
+  position: fixed; top: 12px; left: 12px; right: 12px; height: 52px; z-index: 32;
+  display: flex; align-items: center; gap: 14px; padding: 0 10px 0 14px;
+  background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--line); border-radius: var(--radius);
+}
+.topbar .primary-nav { margin: 0 auto 0 12px; }
+.topbar .primary-nav button { padding: 7px 18px; }
+.topbar .profile-chip { margin: 0; }
+#panelOpen { font-size: 18px; }
+
+/* ---------- Settings drawer ---------- */
 .panel {
   position: fixed;
-  top: 12px; left: 12px; bottom: 88px;
+  top: 76px; left: 12px; bottom: 88px;
   width: 360px;
   display: flex; flex-direction: column;
   background: var(--panel);
@@ -43,7 +56,8 @@ button, input, select { font: inherit; color: inherit; }
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  z-index: 10;
+  z-index: 35;
+  box-shadow: 0 20px 60px rgba(0,0,0,.6);
   transition: transform .25s ease, opacity .25s ease;
 }
 .panel.collapsed { transform: translateX(calc(-100% - 24px)); opacity: 0; pointer-events: none; }
@@ -52,6 +66,7 @@ button, input, select { font: inherit; color: inherit; }
   display: flex; align-items: center; justify-content: space-between;
   padding: 12px 14px 6px;
 }
+.drawer-title { margin: 0; font-size: 16px; }
 .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; letter-spacing: .02em; }
 .logo {
   display: inline-grid; place-items: center;
@@ -180,10 +195,9 @@ body.flat .tab[data-tab="theater"],
 body.flat #enterVR,
 body.flat #enterAR { display: none !important; }
 #flatStage {
-  position: fixed; top: 12px; right: 12px; bottom: 88px; left: 384px;
+  position: fixed; top: 76px; right: 12px; bottom: 88px; left: 12px;
   background: #000; border-radius: var(--radius); overflow: hidden;
 }
-body.panel-hidden #flatStage { left: 12px; }
 #flatStage video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
 .flat-overlay {
   position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -193,8 +207,7 @@ body.panel-hidden #flatStage { left: 12px; }
 .flat-title { font-size: 22px; font-weight: 700; }
 .flat-sub { color: var(--muted); }
 @media (max-width: 720px) {
-  #flatStage { top: 8px; left: 8px; right: 8px; bottom: auto; height: 34vh; }
-  body.flat .panel { height: auto; top: calc(34vh + 16px); }
+  #flatStage { top: 64px; left: 8px; right: 8px; bottom: 132px; }
 }
 
 /* ---------- Guide ---------- */
@@ -203,7 +216,7 @@ body.panel-hidden #flatStage { left: 12px; }
 .channel-list .ch-prog i { display: block; height: 100%; width: 0; background: var(--accent); }
 
 .guide {
-  position: fixed; inset: 12px 12px 88px; z-index: 30; display: flex; flex-direction: column;
+  position: fixed; inset: 76px 12px 88px; z-index: 30; display: flex; flex-direction: column;
   background: var(--panel-solid); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
   --guide-label-w: 260px; /* read by guide-view.js to place the timeline */
 }
@@ -240,7 +253,7 @@ body.panel-hidden #flatStage { left: 12px; }
 .guide-detail-text { flex: 1; min-width: 0; }
 .guide-detail-text p { margin: 4px 0 0; font-size: 13px; color: var(--muted); max-height: 3.2em; overflow: auto; }
 @media (max-width: 720px) {
-  .guide { inset: 8px 8px 132px; }
+  .guide, .gallery { inset: 64px 8px 132px; }
   .guide { --guide-label-w: 140px; }
 }
 
@@ -320,8 +333,11 @@ body.panel-hidden #flatStage { left: 12px; }
 
 /* ---------- Phone layout ---------- */
 @media (max-width: 720px) {
-  .panel { top: auto; left: 8px; right: 8px; bottom: 132px; width: auto; height: 52vh; }
-  .panel.collapsed { transform: translateY(calc(100% + 140px)); }
+  .topbar { top: 8px; left: 8px; right: 8px; height: 48px; gap: 6px; padding: 0 6px; }
+  .topbar .brand > span:last-child, .topbar .profile-chip, .primary-nav [data-kind=""] { display: none; }
+  .topbar .primary-nav { margin-left: 0; }
+  .topbar .primary-nav button { padding: 6px 10px; }
+  .panel { top: 64px; left: 8px; right: 8px; bottom: 132px; width: auto; }
   .bar { left: 8px; right: 8px; bottom: 8px; height: auto; flex-wrap: wrap; padding: 8px; gap: 8px; }
   .bar-controls { width: 100%; justify-content: space-between; flex-wrap: wrap; }
   #volume { width: 70px; }
@@ -330,7 +346,7 @@ body.panel-hidden #flatStage { left: 12px; }
 
 /* ---------- Gallery (movies & series) ---------- */
 .gallery {
-  position: fixed; inset: 12px 12px 88px; z-index: 30; display: flex; flex-direction: column;
+  position: fixed; inset: 76px 12px 88px; z-index: 30; display: flex; flex-direction: column;
   background: var(--panel-solid); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
 }
 .gallery-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
@@ -404,7 +420,7 @@ body.panel-hidden #flatStage { left: 12px; }
 @media (max-width: 640px) {
   .pv-more { padding: 0 16px 28px; }
   .pv-row { grid-auto-columns: 104px; }
-  .gallery { inset: 0 0 76px; border-radius: 0; border: 0; }
+  .gallery { border-radius: 0; border: 0; }
   .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px 8px; }
   .pv-body { flex-direction: column; padding: 0 16px 32px; gap: 14px; }
   .pv-poster { flex: none; width: 140px; }
