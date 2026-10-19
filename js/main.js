@@ -569,21 +569,36 @@ function renderProxyStatus() {
 
 // ---------- Playlists ----------
 // Expiry, status and device limit from the Xtream panel; hidden for other sources.
-async function showAccount(source) {
+let accountSeq = 0;
+async function showAccount(source = state.source, { quiet = false } = {}) {
   const el = $('accountInfo');
-  el.classList.add('hidden');
   const xt = source?.url && parseXtream(source.url);
-  if (!xt) return;
+  if (!xt) { el.classList.add('hidden'); return; }
+  if (!quiet) el.classList.add('hidden');
+  const seq = ++accountSeq;
+  $('accountRefresh').classList.add('spin');
   try {
     const a = await xtreamAccount(xt, proxyPlan(xt.server) === 'direct' ? undefined : proxied);
-    if (state.source !== source) return;
+    if (seq !== accountSeq || state.source !== source) return;
     const days = a.expires ? Math.ceil((a.expires - Date.now()) / 864e5) : null;
-    el.textContent = `Account ${a.status} · expires ${a.expires ? `${a.expires.toLocaleDateString()} (${days} d)` : 'never'}`
-      + ` · ${a.active ?? '?'} of ${a.max ?? '?'} devices in use`;
-    el.classList.toggle('warn', !/^active$/i.test(a.status) || (days != null && days <= 7));
+    const over = a.active != null && a.max != null && a.active > a.max;
+    const conns = a.max != null
+      ? `${a.active ?? '?'} of ${a.max} connection${a.max === 1 ? '' : 's'} open${over ? ' (over the limit)' : ''}`
+      : `${a.active ?? '?'} connection${a.active === 1 ? '' : 's'} open`;
+    $('accountText').textContent = `Account ${a.status} · expires ${a.expires ? `${a.expires.toLocaleDateString()} (${days} d)` : 'never'} · ${conns}`
+      + ` · checked ${new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}`;
+    el.classList.toggle('warn', !/^active$/i.test(a.status) || (days != null && days <= 7) || over);
     el.classList.remove('hidden');
-  } catch { /* panel offers no account API: stay hidden */ }
+  } catch { if (seq === accountSeq && !quiet) el.classList.add('hidden'); /* no account API on this panel */ } finally {
+    if (seq === accountSeq) $('accountRefresh').classList.remove('spin');
+  }
 }
+$('accountRefresh').onclick = () => showAccount(state.source, { quiet: true });
+// The provider's count follows playback, so re-read it shortly after a stream starts (it can
+// take a few seconds to register) and when you come back to the tab.
+let accountTimer = 0;
+video.addEventListener('playing', () => { clearTimeout(accountTimer); accountTimer = setTimeout(() => showAccount(state.source, { quiet: true }), 6000); });
+document.addEventListener('visibilitychange', () => { if (!document.hidden) showAccount(state.source, { quiet: true }); });
 
 function setChannels(channels, label, source = null) {
   state.source = source;

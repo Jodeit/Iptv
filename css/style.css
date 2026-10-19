@@ -427,3 +427,7 @@ body.panel-hidden #flatStage { left: 12px; }
 .guide-filters select { flex: 0 1 200px; min-width: 0; }
 .guide-filters input { flex: 1 1 160px; min-width: 0; }
 .guide-sentinel { height: 1px; }
+.account-info { display: flex; align-items: center; gap: 6px; }
+.account-info #accountText { flex: 1; min-width: 0; }
+.account-info .icon-btn.spin { animation: acct-spin 1s linear infinite; }
+@keyframes acct-spin { to { transform: rotate(360deg); } }
