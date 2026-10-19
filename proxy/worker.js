@@ -9,6 +9,8 @@
 
 // IPTV panels often allow only known players. Try these in order when one is refused,
 // and remember what worked per host (for the life of this isolate).
+import { xtreamDemo } from './xtream-demo.js';
+
 const UAS = [
   'VLC/3.0.20 LibVLC/3.0.20',
   'okhttp/4.12.0',
@@ -35,6 +37,8 @@ export default {
     if (allowed.length && caller && !allowed.includes(caller)) return text('Origin not allowed', 403, { 'x-proxy-error': 'origin-not-allowed' });
 
     if (pathname === '/proxy/health') return text('ok');
+    const demo = xtreamDemo(new URL(request.url));
+    if (demo) return new Response(demo.body || null, { status: demo.status, headers: demo.headers });
     if (pathname !== '/proxy') return text('Not found', 404);
 
     let target;

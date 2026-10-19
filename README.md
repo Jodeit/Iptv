@@ -63,6 +63,17 @@ You can leave off `http://`. The app recognises the link and fills in the Xtream
 first, then the panel's HLS (`/live/user/pass/id.m3u8`) and TS variants. HLS is the most widely supported format,
 including in Quest Browser and Safari.
 
+### Test link
+
+`server.js` and the Cloudflare deployment include a demo Xtream panel (`proxy/xtream-demo.js`) backed by free public
+test streams. Use the **Xtream demo** button in Sources, or paste:
+
+```
+https://<your-app>/get.php?username=demo&password=demo&type=m3u_plus
+```
+
+If the demo plays but your provider's link doesn't, the app works and the provider is refusing the connection.
+
 Proxy modes (Sources tab):
 
 - **Auto** (default): goes direct when the server allows it and switches to the proxy once a host blocks the browser.
@@ -136,6 +147,7 @@ Tuning (XR3D tab):
 server.js         Static server + CORS/HLS-rewriting proxy (zero dependencies)
 proxy/worker.js   Same proxy as a Cloudflare Worker (used by wrangler.toml)
 wrangler.toml     Cloudflare deploy config: static app + /proxy Worker
+proxy/xtream-demo.js  Built-in demo Xtream panel (demo / demo) for testing
 index.html        UI shell + CDN import map
 css/style.css     Panel / bar styling (phone layout included)
 js/main.js        App state, playlists, settings, UI + keyboard wiring

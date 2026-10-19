@@ -14,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { fileURLToPath } from 'node:url';
+import { xtreamDemo } from './proxy/xtream-demo.js';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = +process.env.PORT || 8080;
@@ -126,6 +127,8 @@ function handler(req, res) {
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }
   if (pathname === '/proxy/health') return send(res, 200, 'ok');
   if (pathname === '/proxy') return proxy(req, res, searchParams.get('url'));
+  const demo = xtreamDemo(new URL(req.url, `${tls ? 'https' : 'http'}://${req.headers.host}`));
+  if (demo) { res.writeHead(demo.status, demo.headers); return res.end(demo.body); }
   serveStatic(req, res, pathname);
 }
 

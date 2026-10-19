@@ -610,6 +610,15 @@ vrPanel = new VRPanel(theater, {
 applyAll();
 renderSaved();
 await detectProxy();
+// server.js and the Cloudflare deployment include a demo Xtream panel (proxy/xtream-demo.js).
+if (proxy.available && !settings.proxyUrl) {
+  const b = document.createElement('button');
+  b.className = 'chip';
+  b.textContent = 'Xtream demo';
+  b.title = 'Built-in test panel: get.php?username=demo&password=demo';
+  b.onclick = () => loadPlaylistUrl(new URL('get.php?username=demo&password=demo&type=m3u_plus', location.href).href, 'Xtream demo');
+  $('presets').prepend(b);
+}
 const last = store.get('last', null);
 if (last?.url) loadPlaylistUrl(last.url, last.name);
 else if (last?.local && store.get('localText', null)) setChannels(parseM3U(store.get('localText', '')), last.local);
