@@ -64,7 +64,7 @@ export async function fetchPlaylist(url, { proxify = (u) => u } = {}) {
     e.blocked = true;
     throw e;
   }
-  if (!res.ok) throw new Error(httpReason(res.status, url));
+  if (!res.ok) throw new Error(httpReason(res, url));
   const text = await res.text();
   if (!text.includes('#EXTINF') && !text.trim().startsWith('#EXTM3U')) {
     // A bare stream manifest rather than a channel list: treat it as one channel.
@@ -85,9 +85,28 @@ function blockedReason(url) {
   return 'The browser blocked the request, most likely because the server doesn’t allow cross-origin (CORS) access. Run server.js to route it through the proxy.';
 }
 
-function httpReason(status, url) {
-  if (parseXtream(url) && (status === 401 || status === 403 || status === 512 || status === 884)) {
-    return `The Xtream server refused the login (HTTP ${status}). Check the username and password, and whether the account is active.`;
+// Proxies tag their responses, so we can tell who refused: the proxy itself, or the
+// provider answering the proxy (and from which kind of network).
+function httpReason(res, url) {
+  const status = res.status;
+  const proxyError = res.headers.get('x-proxy-error');
+  const kind = res.headers.get('x-proxy-kind');
+  const upstream = res.headers.get('x-proxy-upstream');
+  if (proxyError === 'origin-not-allowed') {
+    return 'The proxy refused this page. Add this site’s address to the Worker’s ALLOWED_ORIGINS variable.';
+  }
+  if (proxyError === 'upstream-unreachable') {
+    return 'The proxy couldn’t connect to the provider. The server may be down, or the address or port wrong.';
+  }
+  const refused = [401, 403, 406, 451, 512, 884].includes(status);
+  if (refused && upstream && kind === 'cloudflare') {
+    return `The provider refused the Cloudflare proxy (HTTP ${status}), even when it identified as VLC and other IPTV players. `
+      + 'Most IPTV providers block cloud servers. Run “node server.js” on your home network and point Sources → Proxy URL at it. '
+      + 'If it still fails from home, the login or account is the problem.';
+  }
+  if (refused && parseXtream(url)) {
+    return `The Xtream server refused the request (HTTP ${status}). Check the username and password, whether the account is active, `
+      + 'and whether it’s locked to another IP address or device.';
   }
   return `HTTP ${status} loading playlist`;
 }

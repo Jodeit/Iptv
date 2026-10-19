@@ -18,8 +18,16 @@ import { fileURLToPath } from 'node:url';
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
 const PORT = +process.env.PORT || 8080;
 const HOST = process.env.HOST || '0.0.0.0';
-// Many IPTV panels reject browser user agents; present as a media player instead.
-const UA = process.env.UPSTREAM_UA || 'VLC/3.0.20 LibVLC/3.0.20';
+// IPTV panels often allow only known players. Try these in order when one is refused,
+// and remember what worked per host.
+const UAS = [
+  process.env.UPSTREAM_UA || 'VLC/3.0.20 LibVLC/3.0.20',
+  'okhttp/4.12.0',
+  'IPTVSmartersPro',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36',
+];
+const uaByHost = new Map();
+const REFUSED = new Set([401, 403, 406, 451]);
 
 const MIME = {
   '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8',
@@ -30,7 +38,8 @@ const MIME = {
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': 'range, content-type',
-  'access-control-expose-headers': 'content-length, content-range, content-type, x-final-url',
+  'access-control-expose-headers': 'content-length, content-range, content-type, x-final-url, x-proxy-kind, x-proxy-upstream, x-proxy-error',
+  'x-proxy-kind': 'server',
 };
 
 async function proxy(req, res, target) {
@@ -40,20 +49,26 @@ async function proxy(req, res, target) {
 
   const ac = new AbortController();
   res.on('close', () => ac.abort());
-  const headers = { 'user-agent': UA, accept: '*/*' };
-  if (req.headers.range) headers.range = req.headers.range;
+  const base = { accept: '*/*' };
+  if (req.headers.range) base.range = req.headers.range;
+  const known = uaByHost.get(url.host);
+  const order = known ? [known, ...UAS.filter((u) => u !== known)] : UAS;
 
   let up;
-  try {
-    up = await fetch(url, { headers, redirect: 'follow', signal: ac.signal });
-  } catch (err) {
-    if (!ac.signal.aborted) send(res, 502, `Upstream error: ${err.cause?.code || err.message}`);
-    return;
+  for (const ua of order) {
+    try {
+      up = await fetch(url, { headers: { ...base, 'user-agent': ua }, redirect: 'follow', signal: ac.signal });
+    } catch (err) {
+      if (!ac.signal.aborted) send(res, 502, `Upstream error: ${err.cause?.code || err.message}`, { 'x-proxy-error': 'upstream-unreachable' });
+      return;
+    }
+    if (!REFUSED.has(up.status)) { uaByHost.set(url.host, ua); break; }
+    if (ua !== order.at(-1)) await up.body?.cancel().catch(() => {}); // keep the last refusal to pass on
   }
 
   const type = up.headers.get('content-type') || '';
   const finalUrl = up.url || url.href;
-  const out = { ...CORS, 'cache-control': 'no-store', 'x-final-url': finalUrl };
+  const out = { ...CORS, 'cache-control': 'no-store', 'x-final-url': finalUrl, 'x-proxy-upstream': String(up.status) };
   for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
     const v = up.headers.get(h);
     if (v) out[h] = v;
@@ -100,9 +115,9 @@ function serveStatic(req, res, pathname) {
   });
 }
 
-function send(res, status, msg) {
+function send(res, status, msg, extra = {}) {
   if (res.headersSent) return res.end();
-  res.writeHead(status, { ...CORS, 'content-type': 'text/plain; charset=utf-8' });
+  res.writeHead(status, { ...CORS, ...extra, 'content-type': 'text/plain; charset=utf-8' });
   res.end(msg);
 }
 
