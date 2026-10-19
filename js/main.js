@@ -314,6 +314,13 @@ const gallery = new GalleryView($('gallery'), {
   isFav: (id) => state.favs.has(id),
   toggleFav: (item) => toggleFav(item),
   external: (item) => offerExternal(item),
+  get tmdbMeta() {
+    if (!similar.enabled()) return null;
+    return async (item) => {
+      const ref = await similar.tmdbId(item);
+      return ref ? similar.meta(ref) : null;
+    };
+  },
   imageUrl: (url) => (proxy.available && /^https?:/.test(url) && !url.includes('/proxy?') ? proxied(url) : ''),
 });
 

@@ -5,10 +5,19 @@ const PAGE = 120; // cards rendered per "Show more"
 
 const SORTS = {
   added: { label: 'Recently added', fn: (a, b) => (b.added || 0) - (a.added || 0) },
+  popular: { label: 'Most popular', fn: null }, // needs TMDB; set in constructor
   rt: { label: 'Rotten Tomatoes', fn: null }, // needs ratings; set in constructor
   rating: { label: 'Top rated', fn: (a, b) => (b.rating || 0) - (a.rating || 0) },
   year: { label: 'Newest', fn: (a, b) => (b.year || 0) - (a.year || 0) },
   title: { label: 'A–Z', fn: (a, b) => cleanName(a.name).localeCompare(cleanName(b.name)) },
+};
+
+// Age levels: the highest US film/TV certification each one allows.
+const AGE = {
+  G: 1, 'TV-Y': 1, 'TV-Y7': 1, 'TV-Y7-FV': 1, 'TV-G': 1,
+  PG: 2, 'TV-PG': 2,
+  'PG-13': 3, 'TV-14': 3,
+  R: 4, 'NC-17': 5, 'TV-MA': 4, NR: 5,
 };
 
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -25,6 +34,8 @@ export class GalleryView {
     this.kind = 'movie';
     this.sort = 'added';
     this.query = '';
+    SORTS.popular.fn = (a, b) => (this.meta.get(b.id)?.pop ?? -1) - (this.meta.get(a.id)?.pop ?? -1);
+    this.meta = new Map(); // item id → { cert, pop } from TMDB
     SORTS.rt.fn = (a, b) => (app.ratings.peek(b)?.rt ?? -1) - (app.ratings.peek(a)?.rt ?? -1);
     root.innerHTML = `
       <header class="gallery-head">
@@ -36,6 +47,7 @@ export class GalleryView {
       </header>
       <div class="gallery-filters">
         <label>Rating <select class="gf-rating"><option value="0">Any</option><option value="5">5+</option><option value="6">6+</option><option value="7">7+</option><option value="8">8+</option><option value="9">9+</option></select></label>
+        <label>Age <select class="gf-age"><option value="0">Any</option><option value="1">Kids</option><option value="2">Up to PG</option><option value="3">Up to PG-13</option><option value="4">Up to R</option></select></label>
         <label>Year <select class="gf-year"><option value="">Any</option><option value="2020">2020s</option><option value="2010">2010s</option><option value="2000">2000s</option><option value="1990">1990s</option><option value="1980">1980s</option><option value="old">Before 1980</option></select></label>
         <label class="gf-genre-wrap hidden">Genre <select class="gf-genre"><option value="">Any</option></select></label>
         <label class="check"><input type="checkbox" class="gf-fav"> Favorites</label>
@@ -65,17 +77,17 @@ export class GalleryView {
     for (const b of root.querySelectorAll('.gallery-kind button')) b.onclick = () => this.open(b.dataset.kind);
     root.querySelector('.gallery-cat').onchange = (e) => this.showCategory(e.target.value);
     root.querySelector('.gallery-search').oninput = (e) => this.search(e.target.value);
-    this.filters = { rating: 0, year: '', genre: '', fav: false, unwatched: false };
+    this.filters = { age: 0, rating: 0, year: '', genre: '', fav: false, unwatched: false };
     const f = (cls) => root.querySelector(cls);
     const sync = () => {
-      this.filters = { rating: +f('.gf-rating').value, year: f('.gf-year').value, genre: f('.gf-genre').value, fav: f('.gf-fav').checked, unwatched: f('.gf-unwatched').checked };
+      this.filters = { age: +f('.gf-age').value, rating: +f('.gf-rating').value, year: f('.gf-year').value, genre: f('.gf-genre').value, fav: f('.gf-fav').checked, unwatched: f('.gf-unwatched').checked };
       this.limit = PAGE;
       this.render();
     };
-    for (const c of ['.gf-rating', '.gf-year', '.gf-genre']) f(c).onchange = sync;
+    for (const c of ['.gf-age', '.gf-rating', '.gf-year', '.gf-genre']) f(c).onchange = sync;
     for (const c of ['.gf-fav', '.gf-unwatched']) f(c).onchange = sync;
     f('.gf-reset').onclick = () => {
-      f('.gf-rating').value = '0'; f('.gf-year').value = ''; f('.gf-genre').value = '';
+      f('.gf-age').value = '0'; f('.gf-rating').value = '0'; f('.gf-year').value = ''; f('.gf-genre').value = '';
       f('.gf-fav').checked = false; f('.gf-unwatched').checked = false;
       sync();
     };
@@ -162,10 +174,18 @@ export class GalleryView {
     const everywhere = q.length >= 2 && this.pool?.[this.kind];
     let list = (everywhere ? this.pool[this.kind] : this.items).filter((i) => !q || i.name.toLowerCase().includes(q));
     for (const i of list) this.itemsById.set(i.id, i);
+    const needMeta = this.filters.age || this.sort === 'popular';
+    if (needMeta && !this.quiet) this.fetchMeta(list);
     list = this.applyFilters(list);
     if (SORTS[this.sort].fn) list = [...list].sort(SORTS[this.sort].fn);
     this.note.classList.toggle('hidden', this.app.ratings.enabled());
-    if (everywhere) {
+    if (needMeta && !this.app.tmdbMeta) {
+      this.note.classList.remove('hidden');
+      this.note.innerHTML = 'Age ratings and popularity come from TMDB: add a free key in <b>Sources → Ratings</b>.';
+    } else if (needMeta && this.metaPending) {
+      this.note.classList.remove('hidden');
+      this.note.textContent = `Looking up age ratings and popularity… ${this.metaDone.toLocaleString()} of ${this.metaTotal.toLocaleString()}`;
+    } else if (everywhere) {
       this.note.classList.remove('hidden');
       this.note.textContent = `${list.length.toLocaleString()} result${list.length === 1 ? '' : 's'} across all categories`;
     } else this.note.innerHTML = 'Add a free OMDb key in <b>Sources → Ratings</b> to see Rotten Tomatoes, IMDb and Metacritic scores.';
@@ -182,6 +202,38 @@ export class GalleryView {
       b.onclick = () => { this.limit += PAGE; this.render(); };
       this.more.append(b);
     }
+  }
+
+  // Looks up TMDB age ratings and popularity for a list, a few at a time, re-rendering as they arrive.
+  async fetchMeta(list) {
+    if (!this.app.tmdbMeta) return;
+    const todo = list.filter((i) => !this.meta.has(i.id)).slice(0, 2000);
+    const run = (this.metaRun = (this.metaRun || 0) + 1);
+    if (!todo.length) { this.metaPending = false; return; }
+    Object.assign(this, { metaPending: true, metaDone: 0, metaTotal: todo.length });
+    let next = 0, last = performance.now();
+    const worker = async () => {
+      while (next < todo.length && this.metaRun === run) {
+        const item = todo[next++];
+        try { this.meta.set(item.id, (await this.app.tmdbMeta(item)) || { cert: '', pop: 0 }); } catch { this.meta.set(item.id, { cert: '', pop: 0 }); }
+        this.metaDone++;
+        if (performance.now() - last > 1500) { last = performance.now(); this.rerender(); }
+      }
+    };
+    await Promise.all(Array.from({ length: 6 }, worker));
+    if (this.metaRun !== run) return;
+    this.metaPending = false;
+    this.rerender();
+  }
+
+  // Re-render without kicking off another lookup round or losing the scroll position.
+  rerender() {
+    if (!this.isOpen() || !this.preview.classList.contains('hidden')) return;
+    const scroll = this.root.querySelector('.gallery-scroll');
+    const top = scroll.scrollTop;
+    this.quiet = true;
+    try { this.render(); } finally { this.quiet = false; }
+    scroll.scrollTop = top;
   }
 
   // Best available score on a 0–10 scale: IMDb or Rotten Tomatoes if looked up, else the panel's own.
@@ -205,10 +257,11 @@ export class GalleryView {
       f.genre = sel.value;
     }
     this.root.querySelector('.gf-genre-wrap').classList.toggle('hidden', !names.length);
-    const active = f.rating || f.year || f.genre || f.fav || f.unwatched;
+    const active = f.age || f.rating || f.year || f.genre || f.fav || f.unwatched;
     this.root.querySelector('.gf-reset').classList.toggle('hidden', !active);
     if (!active) return list;
     return list.filter((i) => {
+      if (f.age) { const lvl = AGE[this.meta.get(i.id)?.cert]; if (!lvl || lvl > f.age) return false; } // unknown counts as too old
       if (f.rating && this.score(i) < f.rating) return false;
       if (f.year) {
         if (!i.year) return false;

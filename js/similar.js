@@ -60,6 +60,23 @@ export class Similar {
     return id ? { type, id } : null;
   }
 
+  // US age rating and popularity for a title: { cert: 'PG-13' | 'TV-14' | '', pop: number }.
+  async meta({ type, id }) {
+    const key = `tmdb-meta:${type}:${id}`;
+    const cached = await cacheGet(key);
+    if (cached && Date.now() - cached.at < 30 * 86400000) return cached.meta;
+    const d = await this.api(`/${type}/${id}`, { append_to_response: type === 'tv' ? 'content_ratings' : 'release_dates' });
+    let cert = '';
+    if (type === 'tv') cert = d.content_ratings?.results?.find((r) => r.iso_3166_1 === 'US')?.rating || '';
+    else {
+      const us = d.release_dates?.results?.find((r) => r.iso_3166_1 === 'US')?.release_dates || [];
+      cert = us.map((r) => r.certification).find(Boolean) || '';
+    }
+    const meta = { cert, pop: +d.popularity || 0 };
+    cachePut(key, { at: Date.now(), meta });
+    return meta;
+  }
+
   // TMDB's picks for a title, best first: [{ id, title, year }].
   async recommendations({ type, id }) {
     const key = `tmdb-recs:${type}:${id}`;
