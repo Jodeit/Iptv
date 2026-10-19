@@ -550,11 +550,17 @@ video.addEventListener('play', syncPlayButton);
 video.addEventListener('pause', syncPlayButton);
 video.addEventListener('resize', updateAspect);
 video.addEventListener('waiting', () => setStatus('Buffering…'));
-video.addEventListener('playing', () => {
+function liveStatus() {
   const q = video.videoHeight ? `${video.videoHeight}p` : '';
-  setStatus(['Live', q, video.muted ? 'muted (tap 🔊)' : ''].filter(Boolean).join(' · '));
-  syncMute();
-});
+  const ahead = player.bufferedAhead();
+  const buf = ahead >= 1 ? `${Math.round(ahead)}s buffered` : '';
+  return ['Live', q, buf, video.muted ? 'muted (tap 🔊)' : ''].filter(Boolean).join(' · ');
+}
+video.addEventListener('playing', () => { setStatus(liveStatus()); syncMute(); });
+// Keep the buffer readout fresh while playing, so you can see whether the cushion holds.
+setInterval(() => {
+  if (!video.paused && !loading.active && state.status.startsWith('Live')) setStatus(liveStatus());
+}, 2000);
 
 // ---------- 3D mode + settings ----------
 const MODES = ['2d', 'xr3d', 'sbs', 'tab'];

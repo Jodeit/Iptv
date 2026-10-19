@@ -2,7 +2,10 @@
 // refuses: bare IP addresses (error 1003) and non-standard ports (e.g. :25461). Xtream
 // panels commonly redirect live streams to exactly those.
 //
-// It supports GET with Content-Length, chunked, or read-until-close bodies, and http or https.
+// It speaks HTTP/1.0 so servers send plain bodies (no chunked encoding) and close when done.
+// Long live streams then pass from the socket to the client natively, without JavaScript
+// touching each chunk: that matters because Workers limit CPU time per request, and a live
+// stream is one request that can run for hours. Chunked responses still work (decoded in JS).
 
 import { connect } from 'cloudflare:sockets';
 
@@ -16,7 +19,7 @@ export async function socketFetch(url, headers = {}) {
   );
 
   const request = [
-    `GET ${url.pathname}${url.search} HTTP/1.1`,
+    `GET ${url.pathname}${url.search} HTTP/1.0`,
     `Host: ${url.host}`,
     'Connection: close',
     'Accept-Encoding: identity',
@@ -46,8 +49,33 @@ export async function socketFetch(url, headers = {}) {
     if (i > 0) resHeaders.append(line.slice(0, i).trim(), line.slice(i + 1).trim());
   }
 
-  const close = () => { reader.cancel().catch(() => {}); socket.close().catch(() => {}); };
   const leftover = buf.subarray(end + 4);
+  const chunked = /chunked/i.test(resHeaders.get('transfer-encoding') || '');
+  const length = resHeaders.has('content-length') ? +resHeaders.get('content-length') : null;
+  const empty = status === 204 || status === 304 || (status >= 300 && status < 400);
+  if (empty) {
+    reader.cancel().catch(() => {});
+    socket.close().catch(() => {});
+    return new Response(null, { status, headers: resHeaders });
+  }
+
+  // Plain body: hand the socket to the runtime and let it stream natively.
+  if (!chunked && length == null && typeof IdentityTransformStream !== 'undefined') {
+    reader.releaseLock();
+    const { readable, writable } = new IdentityTransformStream();
+    (async () => {
+      if (leftover.length) {
+        const w = writable.getWriter();
+        await w.write(leftover);
+        w.releaseLock();
+      }
+      await socket.readable.pipeTo(writable);
+    })().catch(() => socket.close().catch(() => {}));
+    return new Response(readable, { status, headers: resHeaders });
+  }
+
+  // Short bodies (playlists, segments) and chunked ones go through a small JS stream.
+  const close = () => { reader.cancel().catch(() => {}); socket.close().catch(() => {}); };
   let body = new ReadableStream({
     start(c) { if (leftover.length) c.enqueue(leftover); },
     async pull(c) {
@@ -59,15 +87,13 @@ export async function socketFetch(url, headers = {}) {
     cancel: close,
   });
 
-  if (/chunked/i.test(resHeaders.get('transfer-encoding') || '')) {
+  if (chunked) {
     body = body.pipeThrough(dechunk());
     resHeaders.delete('transfer-encoding');
-  } else if (resHeaders.has('content-length')) {
-    body = body.pipeThrough(limit(+resHeaders.get('content-length')));
+  } else if (length != null) {
+    body = body.pipeThrough(limit(length));
   }
-  const empty = status === 204 || status === 304 || (status >= 300 && status < 400);
-  if (empty) body.cancel().catch(() => {});
-  return new Response(empty ? null : body, { status, headers: resHeaders });
+  return new Response(body, { status, headers: resHeaders });
 }
 
 // Decodes Transfer-Encoding: chunked.

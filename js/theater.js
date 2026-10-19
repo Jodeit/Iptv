@@ -199,7 +199,10 @@ export class Theater {
   }
 
   sampleAmbient(now) {
-    if (now - this.lastSample < 150) return;
+    // Reading a video frame back from the GPU is costly, especially on a headset where
+    // it competes with video decoding; the light only needs to drift, not track every cut.
+    const interval = this.renderer.xr.isPresenting ? 1000 : 400;
+    if (now - this.lastSample < interval) return;
     this.lastSample = now;
     if (!this.ambientOn || !this.videoActive || this.video.readyState < 2) {
       this.ambientTarget.set(this.videoActive ? 0x223344 : 0x334466);
@@ -346,7 +349,7 @@ export class Theater {
   tick(t, frame) {
     const dt = this.clock.getDelta();
     this.sampleAmbient(t);
-    this.ambientColor.lerp(this.ambientTarget, Math.min(1, dt * 4));
+    this.ambientColor.lerp(this.ambientTarget, Math.min(1, dt * 2));
     this.screenLight.color.copy(this.ambientColor);
     this.glow.material.color.copy(this.ambientColor);
 

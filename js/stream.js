@@ -144,10 +144,14 @@ export class StreamPlayer {
       if (!window.Hls || !Hls.isSupported()) return reject(new Error('hls.js unsupported'));
       const hls = new Hls({
         enableWorker: true,
+        // Buffer generously and sit further behind the live edge: every segment travels
+        // provider → proxy → headset, so a deeper cushion absorbs slow ones.
         backBufferLength: 30,
-        maxBufferLength: 30,
-        // Start a little further behind the live edge: more headroom against slow segments.
-        liveSyncDurationCount: 4,
+        maxBufferLength: 60,
+        maxMaxBufferLength: 120,
+        liveSyncDurationCount: 5,
+        liveMaxLatencyDurationCount: Infinity, // don't skip ahead after a stall
+        startFragPrefetch: true,
         // Fail fast on the playlist: other sources are waiting their turn.
         manifestLoadPolicy: {
           default: {
