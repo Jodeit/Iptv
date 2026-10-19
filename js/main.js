@@ -66,7 +66,13 @@ const video = $('video');
 const theater = new Theater($('stage'), video);
 const player = new StreamPlayer(video, {
   onStatus: (s) => setStatus(s),
-  onError: (e) => { setStatus(e); toast(e, true); theater.setVideoActive(false); theater.setPlaceholder('Stream unavailable', state.current?.name || ''); },
+  onError: (e, report) => {
+    setStatus(e);
+    toast(e, true);
+    theater.setVideoActive(false);
+    theater.setPlaceholder('Stream unavailable', state.current?.name || '');
+    if (report) renderPlaybackLog(report);
+  },
 });
 
 // ---------- Helpers ----------
@@ -84,6 +90,28 @@ function setStatus(s) {
   state.status = s;
   $('npStatus').textContent = s;
   vrPanel?.draw();
+}
+
+// ---------- Playback log ----------
+// Every failed attempt and stream probe, with Xtream passwords masked so it's safe to share.
+const secrets = new Set();
+
+function mask(text) {
+  let out = text;
+  for (const s of secrets) if (s.length >= 3) out = out.split(s).join('••••').split(encodeURIComponent(s)).join('••••');
+  return out;
+}
+
+function renderPlaybackLog(report) {
+  const lines = [
+    `Channel: ${state.current?.name || '?'}`,
+    `App: ${location.origin} · proxy ${proxy.available ? proxy.base : 'none'} (${settings.proxy})`,
+    `Browser: ${navigator.userAgent}`,
+    '',
+    ...report,
+  ];
+  $('playbackLog').textContent = mask(lines.join('\n'));
+  $('playbackLogBox').classList.remove('hidden');
 }
 
 // ---------- CORS proxy ----------
@@ -111,6 +139,7 @@ async function detectProxy() {
 const hostOf = (u) => { try { return new URL(u, location.href).host; } catch { return ''; } };
 const isCrossOrigin = (u) => { try { return new URL(u, location.href).origin !== location.origin; } catch { return false; } };
 const isMixed = (u) => location.protocol === 'https:' && /^http:/i.test(u);
+const isHls = (u) => /\.m3u8(\?|$)/i.test(u);
 const proxied = (u) => `${proxy.base}?url=${encodeURIComponent(u)}`;
 
 // 'direct' | 'proxy-first' | 'proxy-fallback'
@@ -127,7 +156,9 @@ function markBlocked(url) {
 
 // Every way to reach a channel, in the order worth trying.
 function streamCandidates(ch) {
-  const urls = [ch.url, ...(ch.alts || [])];
+  // HLS first: it's what Xtream web players use, works with hls.js everywhere, and uses
+  // short requests instead of one long TS connection that counts against account limits.
+  const urls = [ch.url, ...(ch.alts || [])].sort((a, b) => isHls(b) - isHls(a));
   const direct = urls.filter((u) => !isMixed(u)).map((u) => ({ src: u, hint: u }));
   const via = urls.map((u) => ({ src: proxied(u), hint: u, label: 'proxy' }));
   switch (proxyPlan(ch.url)) {
@@ -170,6 +201,7 @@ function setChannels(channels, label) {
 async function loadPlaylistUrl(url, name) {
   const xt = parseXtream(url);
   if (xt) {
+    secrets.add(xt.password);
     name = name || `Xtream · ${xt.username}@${hostOf(xt.server)}`;
     $('xtServer').value = xt.server;
     $('xtUser').value = xt.username;
@@ -503,6 +535,10 @@ $('xtLoad').onclick = () => {
   if (!server || !user) return toast('Enter server and username', true);
   if (!/^https?:\/\//i.test(server)) server = `http://${server}`;
   loadPlaylistUrl(xtreamUrl(server, user, pass));
+};
+$('copyLog').onclick = async () => {
+  try { await navigator.clipboard.writeText($('playbackLog').textContent); toast('Playback log copied'); }
+  catch { toast('Couldn’t copy. Select the text and copy it manually.', true); }
 };
 $('playDirect').onclick = () => playDirect($('directUrl').value.trim());
 $('directUrl').onkeydown = (e) => { if (e.key === 'Enter') $('playDirect').click(); };

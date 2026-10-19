@@ -3,6 +3,8 @@
 
 /* global Hls, mpegts */
 
+import { probe, describeProbe } from './diagnose.js';
+
 export class StreamPlayer {
   constructor(video, { onStatus = () => {}, onError = () => {} } = {}) {
     this.video = video;
@@ -11,6 +13,7 @@ export class StreamPlayer {
     this.hls = null;
     this.ts = null;
     this.token = 0;
+    this.report = [];
   }
 
   destroy() {
@@ -29,6 +32,7 @@ export class StreamPlayer {
     const token = ++this.token;
     this.destroy();
     const list = (Array.isArray(sources) ? sources : [sources]).map((s) => (typeof s === 'string' ? { src: s, hint: s } : s));
+    this.report = [];
     let n = 0;
     for (const { src, hint, label } of list) {
       n++;
@@ -47,11 +51,21 @@ export class StreamPlayer {
           return true;
         } catch (err) {
           console.warn(`[stream] ${engine} failed for ${hint || src}`, err);
+          this.report.push(`✗ ${engine}${label ? ` (${label})` : ''} ${hint || src}: ${err.message}`);
           this.destroy();
         }
       }
     }
-    if (token === this.token) this.onError('Stream failed to load. It may be offline, geo-blocked, or block browser playback.');
+    if (token !== this.token) return false;
+    this.onError('Stream failed to load. Checking why…', this.report);
+    // Look at what each address actually returns (one probe per distinct source).
+    const seen = new Set();
+    for (const { src, hint } of list) {
+      if (seen.has(src) || seen.size >= 4 || token !== this.token) continue;
+      seen.add(src);
+      this.report.push(`? ${hint || src} → ${describeProbe(await probe(src))}`);
+    }
+    if (token === this.token) this.onError(summarise(this.report), this.report);
     return false;
   }
 
@@ -64,7 +78,7 @@ export class StreamPlayer {
       hls.on(Hls.Events.MANIFEST_PARSED, () => { ready = true; resolve(); });
       hls.on(Hls.Events.ERROR, (_, data) => {
         if (!data.fatal) return;
-        if (!ready) return reject(new Error(data.details));
+        if (!ready) return reject(new Error(`${data.details}${data.response?.code ? ` (HTTP ${data.response.code})` : ''}`));
         if (token !== this.token) return;
         if (data.type === Hls.ErrorTypes.NETWORK_ERROR) { this.onStatus('Network hiccup, retrying…'); hls.startLoad(); }
         else if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { this.onStatus('Recovering media…'); hls.recoverMediaError(); }
@@ -98,12 +112,34 @@ export class StreamPlayer {
       const ok = () => { cleanup(); resolve(); };
       const cleanup = () => { v.removeEventListener('loadedmetadata', ok); clearTimeout(t); };
       const t = setTimeout(() => { cleanup(); reject(new Error('mpegts timeout')); }, 15000);
-      p.on(mpegts.Events.ERROR, (type, detail) => { cleanup(); reject(new Error(`${type}: ${detail}`)); });
+      p.on(mpegts.Events.ERROR, (type, detail, info) => {
+        cleanup();
+        const extra = info?.code > 0 ? ` (HTTP ${info.code})` : info?.msg ? ` (${info.msg})` : '';
+        reject(new Error(`${type}: ${detail}${extra}`));
+      });
       v.addEventListener('loadedmetadata', ok);
       p.attachMediaElement(v);
       p.load();
     });
   }
+}
+
+// Turns the attempt/probe log into one actionable sentence.
+function summarise(report) {
+  const text = report.join('\n');
+  if (/⚠ ([^\n·]+)/.test(text)) return `Stream found, but ${text.match(/⚠ ([^\n·]+)/)[1].trim()}`;
+  if (/proxy error “port-unsupported”/.test(text)) {
+    return 'The stream server uses a port Cloudflare can’t connect to. Use server.js at home as the proxy for this provider.';
+  }
+  if (/provider answered (401|403|406|451|456|458)|HTTP (401|403|406|451|456|458)\b/.test(text)) {
+    return 'The provider refused the stream. Close other players using this account (many allow one connection at a time), then retry. '
+      + 'If it keeps failing through Cloudflare, use server.js at home as the proxy.';
+  }
+  const page = text.match(/(?:HTML page|JSON|text) \(not video\) · “([^”]+)”/);
+  if (page) return `The provider sent a message instead of video: “${page[1].slice(0, 100)}”`;
+  if (/no data within/.test(text)) return 'The stream connected but sent no data. The channel may be offline.';
+  if (/request blocked or failed/.test(text)) return 'The browser couldn’t reach the stream. A proxy is needed (Sources → Proxy).';
+  return 'Stream failed to load. See Sources → Playback log for details.';
 }
 
 function orderEngines(url) {

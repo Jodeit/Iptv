@@ -20,6 +20,28 @@ const UAS = [
 const uaByHost = new Map();
 const REFUSED = new Set([401, 403, 406, 451]);
 
+// Ports Cloudflare Workers can fetch. Xtream stream servers often redirect to others
+// (e.g. :25461), which Workers can't reach.
+const HTTP_PORTS = new Set(['', '80', '8080', '8880', '2052', '2082', '2086', '2095']);
+const HTTPS_PORTS = new Set(['', '443', '8443', '2053', '2083', '2087', '2096']);
+const portOk = (u) => (u.protocol === 'https:' ? HTTPS_PORTS : HTTP_PORTS).has(u.port);
+
+class PortError extends Error {}
+
+// Follows redirects by hand so every hop's port can be checked.
+async function fetchFollow(url, headers) {
+  let current = url;
+  for (let hop = 0; hop < 6; hop++) {
+    if (!portOk(current)) throw new PortError(current.host);
+    const res = await fetch(current, { headers, redirect: 'manual' });
+    const location = res.headers.get('location');
+    if (res.status < 300 || res.status >= 400 || !location) return { res, finalUrl: current.href };
+    await res.body?.cancel().catch(() => {});
+    current = new URL(location, current);
+  }
+  throw new Error('too many redirects');
+}
+
 const CORS = {
   'access-control-allow-origin': '*',
   'access-control-allow-headers': 'range, content-type',
@@ -52,17 +74,20 @@ export default {
     const order = known ? [known, ...UAS.filter((u) => u !== known)] : UAS;
 
     let up;
+    let finalUrl;
     for (const ua of order) {
       try {
-        up = await fetch(target, { headers: { ...base, 'user-agent': ua }, redirect: 'follow' });
+        ({ res: up, finalUrl } = await fetchFollow(target, { ...base, 'user-agent': ua }));
       } catch (err) {
+        if (err instanceof PortError) {
+          return text(`Cloudflare Workers can't connect to port ${err.message}`, 502, { 'x-proxy-error': 'port-unsupported', 'x-final-url': `http://${err.message}/` });
+        }
         return text(`Upstream error: ${err.message}`, 502, { 'x-proxy-error': 'upstream-unreachable' });
       }
       if (!REFUSED.has(up.status)) { uaByHost.set(target.host, ua); break; }
       if (ua !== order.at(-1)) await up.body?.cancel().catch(() => {}); // keep the last refusal to pass on
     }
 
-    const finalUrl = up.url || target.href;
     const out = new Headers({ ...CORS, 'cache-control': 'no-store', 'x-final-url': finalUrl, 'x-proxy-upstream': String(up.status) });
     for (const h of ['content-type', 'content-length', 'content-range', 'accept-ranges']) {
       const v = up.headers.get(h);

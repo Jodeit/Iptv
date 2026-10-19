@@ -95,6 +95,9 @@ function httpReason(res, url) {
   if (proxyError === 'origin-not-allowed') {
     return 'The proxy refused this page. Add this site’s address to the Worker’s ALLOWED_ORIGINS variable.';
   }
+  if (proxyError === 'port-unsupported') {
+    return 'The provider redirects to a port Cloudflare can’t connect to. Use server.js at home as the proxy (Sources → Proxy URL).';
+  }
   if (proxyError === 'upstream-unreachable') {
     return 'The proxy couldn’t connect to the provider. The server may be down, or the address or port wrong.';
   }
