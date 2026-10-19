@@ -27,13 +27,14 @@ const AGE_MENU = {
   series: [[1, 'Little kids (TV-Y)'], [2, 'Kids (TV-Y7, TV-G)'], [3, 'Up to TV-PG'], [4, 'Up to TV-14'], [5, 'Up to TV-MA']],
 };
 
+const pad = (n) => String(n || 0).padStart(2, '0');
 const esc = (s) => String(s ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const cleanName = (n) => n.replace(/^\s*(\d{1,3}\s*[-.)]\s+|\|?[A-Z]{2,4}\|\s*|[A-Z]{2,4}\s*[-:|]\s+)/, '');
 const fmtTime = (s) => (s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}` : `${Math.floor(s / 60)}`) + `:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 
 export class GalleryView {
   // app: { library(), categories(kind), loadCategory(kind, id), episodes(series), movieInfo(item),
-  //        ratings, play(item, startAt), progress(id), isFav(id), toggleFav(item), external(item),
+  //        ratings, play(item, startAt), progress(item), isFav(id), toggleFav(item), external(item),
   //        imageUrl(url) → proxied fallback, parseTitle }
   constructor(root, app) {
     this.root = root;
@@ -297,7 +298,7 @@ export class GalleryView {
       }
       if (f.genre && !String(i.genre || '').split(/[,/]/).some((g) => g.trim() === f.genre)) return false;
       if (f.fav && !this.app.isFav(i.id)) return false;
-      if (f.unwatched) { const p = this.app.progress(i.id); if (p && p.d && p.t / p.d > 0.9) return false; }
+      if (f.unwatched) { const p = this.app.progress(i); if (p && p.d && p.t / p.d > 0.9) return false; }
       return true;
     });
   }
@@ -312,7 +313,7 @@ export class GalleryView {
       <div class="gmeta"><span>${item.year || year || ''}</span><span class="gbadges"></span></div>
       <div class="ginfo"></div>`;
     if (item.logo) this.poster(el.querySelector('.gposter'), item.logo);
-    const prog = this.app.progress(item.id);
+    const prog = this.app.progress(item);
     if (prog && prog.d) el.querySelector('.gposter').insertAdjacentHTML('beforeend', `<i class="gprog" style="width:${Math.min(100, (prog.t / prog.d) * 100)}%"></i>`);
     if (this.app.isFav(item.id)) el.querySelector('.gposter').insertAdjacentHTML('beforeend', '<span class="gfav">★</span>');
     this.badges(el, item);
@@ -521,7 +522,7 @@ export class GalleryView {
       (d.cast || item.cast || r.actors) && `<div><span class="muted">Cast</span> ${esc(trimList(d.cast || item.cast || r.actors, 6))}</div>`,
       r.awards && `<div><span class="muted">Awards</span> ${esc(r.awards)}</div>`,
     ].filter(Boolean).join('');
-    const prog = this.app.progress(item.id);
+    const prog = this.app.progress(item);
     const canResume = item.kind === 'movie' && prog && prog.t > 30 && prog.t < prog.d - 60;
     const trailer = youtubeId(d.trailer || item.trailer);
 
@@ -572,14 +573,26 @@ export class GalleryView {
     const seasons = [...new Set(this.episodes.map((e) => e.season))].sort((a, b) => a - b);
     if (!seasons.includes(this.season)) {
       // Open the season you were last watching, else the first.
-      const watched = this.episodes.filter((e) => this.app.progress(e.id)).pop();
+      const watched = this.episodes.filter((e) => this.app.progress(e)).pop();
       this.season = watched ? watched.season : seasons[0];
     }
-    box.innerHTML = `<div class="seg pv-seasons">${seasons.map((s) => `<button data-s="${s}" class="${s === this.season ? 'active' : ''}">Season ${s}</button>`).join('')}</div><ol class="pv-eplist"></ol>`;
+    // Where to carry on: the episode you were in the middle of, else the one after the last you finished.
+    const show = this.app.progress(this.previewItem);
+    let next = this.episodes[0], label = `▶ Play S${pad(next.season)}E${pad(next.episode)}`, at = 0;
+    const i = show?.season != null ? this.episodes.findIndex((e) => e.season === show.season && e.episode === show.episode) : -1;
+    if (i >= 0) {
+      const ep = this.episodes[i], p = this.app.progress(ep) || show;
+      if (p.t < p.d - 60) { next = ep; at = p.t > 30 ? p.t : 0; label = `▶ Continue S${pad(ep.season)}E${pad(ep.episode)}${at ? ` · ${fmtTime(at)}` : ''}`; }
+      else if (this.episodes[i + 1]) { next = this.episodes[i + 1]; label = `▶ Next: S${pad(next.season)}E${pad(next.episode)}`; }
+      else label = '✓ Watched all · Play S01E01 again';
+    }
+    box.innerHTML = `<div class="pv-continue"><button class="btn pv-next">${esc(label)}</button>${next.title ? ` <span class="muted small">${esc(next.title)}</span>` : ''}</div>
+      <div class="seg pv-seasons">${seasons.map((s) => `<button data-s="${s}" class="${s === this.season ? 'active' : ''}">Season ${s}</button>`).join('')}</div><ol class="pv-eplist"></ol>`;
+    box.querySelector('.pv-next').onclick = () => { this.app.play(next, at); this.close(); };
     for (const b of box.querySelectorAll('.pv-seasons button')) b.onclick = () => { this.season = +b.dataset.s; this.renderEpisodes(); };
     const ol = box.querySelector('.pv-eplist');
     for (const ep of this.episodes.filter((e) => e.season === this.season)) {
-      const prog = this.app.progress(ep.id);
+      const prog = this.app.progress(ep);
       const li = document.createElement('li');
       li.innerHTML = `<button class="pv-ep">
           <span class="pv-epnum">${ep.episode || ''}</span>

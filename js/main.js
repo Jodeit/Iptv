@@ -5,7 +5,7 @@ import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, 
 import { XtreamLibrary } from './xtream.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
 import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
-import { Profiles, emptyDoc, canSync, capMeta } from './profiles.js';
+import { Profiles, emptyDoc, canSync, capMeta, mergeProgress } from './profiles.js';
 import { Guide } from './epg.js';
 import { GuideView } from './guide-view.js';
 import { Ratings, parseTitle } from './ratings.js';
@@ -163,6 +163,8 @@ function legacyDoc() {
   };
 }
 
+// Resume points; declared before profiles so a profile update can merge into it at any time.
+const progress = store.get('progress', {});
 const profiles = new Profiles({
   apiBase,
   migrate: legacyDoc,
@@ -178,6 +180,8 @@ const setLast = (last) => {
 
 // Another device changed the profile, or the user switched profiles.
 function applyDoc(doc, reason) {
+  Object.assign(progress, mergeProgress(progress, doc.progress));
+  store.set('progress', progress);
   state.favs = new Set(Object.keys(doc.favs));
   $('omdbKey').value = doc.omdbKey || '';
   $('tmdbKey').value = doc.tmdbKey || '';
@@ -197,10 +201,27 @@ function applyDoc(doc, reason) {
   }
 }
 // ---------- Resume points (films and episodes) ----------
-// Kept on this device: positions change every few seconds, too often to sync.
-const progress = store.get('progress', {});
-const getProgress = (id) => progress[id];
+// Kept on this device and synced through the profile (at most once a minute, and on pause).
+// Episodes also update their show's entry ('xtream-series:<id>'), which says where to continue.
+Object.assign(progress, mergeProgress(progress, profiles.doc.progress));
+// Keyed by what's being watched, not where it's listed, so progress survives switching
+// provider, server address or duplicate listing: title|year for films and shows, plus
+// season and episode for episodes. Anything else (live, direct links) keeps its own id.
+function progressKey(item) {
+  const show = (name) => { const { title, year } = parseTitle(name || ''); return title ? `${title.toLowerCase()}|${year || ''}` : ''; };
+  const kind = item.kind || kindOf(item);
+  if (kind === 'episode' && item.seriesName && item.season != null) {
+    const s = show(item.seriesName);
+    if (s) return `s:${s}:S${item.season}E${item.episode}`;
+  }
+  if (kind === 'series') { const s = show(item.name); if (s) return `s:${s}`; }
+  if (kind === 'movie') { const s = show(item.name); if (s) return `m:${s}`; }
+  return item.id;
+}
+// (Falls back to the old per-listing entry for resume points saved before this change.)
+const getProgress = (item) => progress[progressKey(item)] || progress[item.id];
 let progressSavedAt = 0;
+let progressSyncedAt = 0;
 
 function saveProgress(force = false) {
   const ch = state.current;
@@ -210,7 +231,18 @@ function saveProgress(force = false) {
   if (!Number.isFinite(d) || d < 120 || video.currentTime < 5) return;
   if (!force && performance.now() - progressSavedAt < 10000) return;
   progressSavedAt = performance.now();
-  progress[ch.id] = { t: Math.floor(video.currentTime), d: Math.floor(d), at: Date.now() };
+  const at = Date.now();
+  const key = progressKey(ch);
+  progress[key] = { t: Math.floor(video.currentTime), d: Math.floor(d), at };
+  // The show's own entry: which episode to continue from.
+  if (kind === 'episode' && ch.seriesName) {
+    progress[progressKey({ kind: 'series', name: ch.seriesName, id: `series:${ch.seriesId}` })] = { ...progress[key], season: ch.season, episode: ch.episode };
+  }
+  if (force || at - progressSyncedAt > 60000) {
+    progressSyncedAt = at;
+    const snapshot = { ...progress };
+    profiles.update((doc) => { doc.progress = mergeProgress(doc.progress, snapshot); });
+  }
   const ids = Object.keys(progress);
   if (ids.length > 300) {
     ids.sort((a, b) => progress[a].at - progress[b].at);
@@ -221,7 +253,7 @@ function saveProgress(force = false) {
 
 // Where to pick a film up again: mid-way through only (not the first half minute or the credits).
 function resumePoint(ch) {
-  const p = getProgress(ch.id);
+  const p = getProgress(ch);
   return p && p.t > 30 && p.t < p.d - 60 ? p.t : 0;
 }
 
@@ -1261,7 +1293,7 @@ function renderEpMenu(season = state.current?.season) {
   for (const e of eps.filter((x) => x.season === season)) {
     const li = document.createElement('li');
     li.className = e.id === cur?.id ? 'playing' : '';
-    const p = getProgress(e.id);
+    const p = getProgress(e);
     li.innerHTML = `<span class="ep-num"></span><span class="ep-name"></span><span class="ep-meta muted small"></span>`;
     li.children[0].textContent = e.episode || '';
     li.children[1].textContent = e.title || e.name;

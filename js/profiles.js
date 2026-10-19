@@ -8,7 +8,7 @@
 //
 // The synced document (one per profile, plus a device-only one for "no profile"):
 //   { v, playlists: [{ key, name, url, at }], playlistsRemoved: { key: ts },
-//     favs: { id: ts }, favsRemoved: { id: ts }, contentFilter, omdbKey, tmdbKey, tmdbMeta, last, updatedAt }
+//     favs: { id: ts }, favsRemoved: { id: ts }, contentFilter, omdbKey, tmdbKey, tmdbMeta, progress, last, updatedAt }
 // Merging takes the union of playlists/favorites minus anything deleted later (tombstones),
 // so edits made on two devices at once both survive.
 
@@ -28,7 +28,7 @@ const write = (k, v) => { try { localStorage.setItem(`o3xr.${k}`, JSON.stringify
 const remove = (k) => { try { localStorage.removeItem(`o3xr.${k}`); } catch { /* ignore */ } };
 
 export const emptyDoc = () => ({
-  v: 1, playlists: [], playlistsRemoved: {}, favs: {}, favsRemoved: {}, contentFilter: null, omdbKey: null, tmdbKey: null, tmdbMeta: {}, last: null, updatedAt: 0,
+  v: 1, playlists: [], playlistsRemoved: {}, favs: {}, favsRemoved: {}, contentFilter: null, omdbKey: null, tmdbKey: null, tmdbMeta: {}, progress: {}, last: null, updatedAt: 0,
 });
 
 export function mergeDocs(a, b) {
@@ -65,9 +65,19 @@ export function mergeDocs(a, b) {
     omdbKey: newer.omdbKey ?? older.omdbKey ?? null,
     tmdbKey: newer.tmdbKey ?? older.tmdbKey ?? null,
     tmdbMeta: capMeta({ ...older.tmdbMeta, ...newer.tmdbMeta }),
+    progress: mergeProgress(a.progress, b.progress),
     last: newer.last ?? older.last ?? null,
     updatedAt: Math.max(a.updatedAt || 0, b.updatedAt || 0),
   };
+}
+
+// Resume points: { id: { t, d, at, … } }, newest entry per id wins; the latest 300 are kept.
+export function mergeProgress(a = {}, b = {}) {
+  const out = { ...(a || {}) };
+  for (const [id, p] of Object.entries(b || {})) if (!out[id] || (p.at || 0) > (out[id].at || 0)) out[id] = p;
+  const ids = Object.keys(out);
+  if (ids.length <= 300) return out;
+  return Object.fromEntries(ids.sort((x, y) => out[y].at - out[x].at).slice(0, 300).map((id) => [id, out[id]]));
 }
 
 // TMDB age ratings and popularity, shared so other devices skip the lookups:

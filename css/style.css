@@ -509,3 +509,4 @@ body.mini-on #video {
 .ep-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @media (max-width: 720px) { .ep-menu { bottom: 132px; right: 8px; } }
 .ep-seasons .chip.on { color: var(--accent); border-color: var(--accent); }
+.pv-continue { display: flex; align-items: center; gap: 10px; margin: 6px 0 12px; }
