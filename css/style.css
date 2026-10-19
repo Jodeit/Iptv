@@ -417,3 +417,7 @@ body.panel-hidden #flatStage { left: 12px; }
 /* Profile tab: buttons wrap instead of forcing a horizontal scroll */
 .tab-body { overflow-x: hidden; }
 .row:has(#pfSignOut) { flex-wrap: wrap; }
+
+.gallery-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 14px; padding: 6px 14px; border-bottom: 1px solid var(--line); font-size: 13px; }
+.gallery-filters label { display: flex; align-items: center; gap: 6px; color: var(--muted); }
+.gallery-filters select { width: auto; }

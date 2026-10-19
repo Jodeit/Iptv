@@ -34,6 +34,14 @@ export class GalleryView {
         <select class="gallery-sort" aria-label="Sort">${Object.entries(SORTS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}</select>
         <button class="gallery-close icon-btn" title="Close (Esc)">✕</button>
       </header>
+      <div class="gallery-filters">
+        <label>Rating <select class="gf-rating"><option value="0">Any</option><option value="5">5+</option><option value="6">6+</option><option value="7">7+</option><option value="8">8+</option><option value="9">9+</option></select></label>
+        <label>Year <select class="gf-year"><option value="">Any</option><option value="2020">2020s</option><option value="2010">2010s</option><option value="2000">2000s</option><option value="1990">1990s</option><option value="1980">1980s</option><option value="old">Before 1980</option></select></label>
+        <label class="gf-genre-wrap hidden">Genre <select class="gf-genre"><option value="">Any</option></select></label>
+        <label class="check"><input type="checkbox" class="gf-fav"> Favorites</label>
+        <label class="check"><input type="checkbox" class="gf-unwatched"> Hide watched</label>
+        <button class="chip gf-reset hidden">Clear filters</button>
+      </div>
       <div class="gallery-note muted small hidden"></div>
       <div class="gallery-scroll"><div class="gallery-grid"></div><div class="gallery-more"></div></div>
       <div class="gallery-preview hidden"></div>`;
@@ -57,6 +65,20 @@ export class GalleryView {
     for (const b of root.querySelectorAll('.gallery-kind button')) b.onclick = () => this.open(b.dataset.kind);
     root.querySelector('.gallery-cat').onchange = (e) => this.showCategory(e.target.value);
     root.querySelector('.gallery-search').oninput = (e) => this.search(e.target.value);
+    this.filters = { rating: 0, year: '', genre: '', fav: false, unwatched: false };
+    const f = (cls) => root.querySelector(cls);
+    const sync = () => {
+      this.filters = { rating: +f('.gf-rating').value, year: f('.gf-year').value, genre: f('.gf-genre').value, fav: f('.gf-fav').checked, unwatched: f('.gf-unwatched').checked };
+      this.limit = PAGE;
+      this.render();
+    };
+    for (const c of ['.gf-rating', '.gf-year', '.gf-genre']) f(c).onchange = sync;
+    for (const c of ['.gf-fav', '.gf-unwatched']) f(c).onchange = sync;
+    f('.gf-reset').onclick = () => {
+      f('.gf-rating').value = '0'; f('.gf-year').value = ''; f('.gf-genre').value = '';
+      f('.gf-fav').checked = false; f('.gf-unwatched').checked = false;
+      sync();
+    };
     root.querySelector('.gallery-sort').onchange = (e) => { this.sort = e.target.value; this.render(); };
     root.querySelector('.gallery-close').onclick = () => this.close();
     addEventListener('keydown', (e) => {
@@ -138,6 +160,7 @@ export class GalleryView {
     const everywhere = q.length >= 2 && this.pool?.[this.kind];
     let list = (everywhere ? this.pool[this.kind] : this.items).filter((i) => !q || i.name.toLowerCase().includes(q));
     for (const i of list) this.itemsById.set(i.id, i);
+    list = this.applyFilters(list);
     if (SORTS[this.sort].fn) list = [...list].sort(SORTS[this.sort].fn);
     this.note.classList.toggle('hidden', this.app.ratings.enabled());
     if (everywhere) {
@@ -157,6 +180,43 @@ export class GalleryView {
       b.onclick = () => { this.limit += PAGE; this.render(); };
       this.more.append(b);
     }
+  }
+
+  // Best available score on a 0–10 scale: IMDb or Rotten Tomatoes if looked up, else the panel's own.
+  score(item) {
+    const r = this.app.ratings.peek(item);
+    const imdb = parseFloat(r?.imdb);
+    if (imdb > 0) return imdb;
+    if (r?.rt != null) return r.rt / 10;
+    return +item.rating || 0;
+  }
+
+  applyFilters(list) {
+    const f = this.filters;
+    const genres = new Set();
+    for (const i of this.pool?.[this.kind] && this.query.length >= 2 ? this.pool[this.kind] : this.items) for (const g of String(i.genre || '').split(/[,/]/)) if (g.trim()) genres.add(g.trim());
+    const sel = this.root.querySelector('.gf-genre');
+    const names = [...genres].sort((a, b) => a.localeCompare(b));
+    if (sel.options.length - 1 !== names.length) {
+      sel.innerHTML = '<option value="">Any</option>' + names.map((g) => `<option>${esc(g)}</option>`).join('');
+      sel.value = names.includes(f.genre) ? f.genre : '';
+      f.genre = sel.value;
+    }
+    this.root.querySelector('.gf-genre-wrap').classList.toggle('hidden', !names.length);
+    const active = f.rating || f.year || f.genre || f.fav || f.unwatched;
+    this.root.querySelector('.gf-reset').classList.toggle('hidden', !active);
+    if (!active) return list;
+    return list.filter((i) => {
+      if (f.rating && this.score(i) < f.rating) return false;
+      if (f.year) {
+        if (!i.year) return false;
+        if (f.year === 'old' ? i.year >= 1980 : i.year < +f.year || i.year >= +f.year + 10) return false;
+      }
+      if (f.genre && !String(i.genre || '').split(/[,/]/).some((g) => g.trim() === f.genre)) return false;
+      if (f.fav && !this.app.isFav(i.id)) return false;
+      if (f.unwatched) { const p = this.app.progress(i.id); if (p && p.d && p.t / p.d > 0.9) return false; }
+      return true;
+    });
   }
 
   card(item) {
