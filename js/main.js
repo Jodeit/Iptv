@@ -552,6 +552,23 @@ function renderProxyStatus() {
 }
 
 // ---------- Playlists ----------
+// Expiry, status and device limit from the Xtream panel; hidden for other sources.
+async function showAccount(source) {
+  const el = $('accountInfo');
+  el.classList.add('hidden');
+  const xt = source?.url && parseXtream(source.url);
+  if (!xt) return;
+  try {
+    const a = await xtreamAccount(xt, proxyPlan(xt.server) === 'direct' ? undefined : proxied);
+    if (state.source !== source) return;
+    const days = a.expires ? Math.ceil((a.expires - Date.now()) / 864e5) : null;
+    el.textContent = `Account ${a.status} · expires ${a.expires ? `${a.expires.toLocaleDateString()} (${days} d)` : 'never'}`
+      + ` · ${a.active ?? '?'} of ${a.max ?? '?'} devices in use`;
+    el.classList.toggle('warn', !/^active$/i.test(a.status) || (days != null && days <= 7));
+    el.classList.remove('hidden');
+  } catch { /* panel offers no account API: stay hidden */ }
+}
+
 function setChannels(channels, label, source = null) {
   state.source = source;
   guide.setSource({ xtream: source?.url ? parseXtream(source.url) : null, tvgUrl: source?.tvgUrl || channels.tvgUrl || null });
@@ -561,6 +578,7 @@ function setChannels(channels, label, source = null) {
   state.channels = channels;
   state.group = '';
   rebuildLibrary();
+  showAccount(source);
   toast(`${label}: ${state.library.length.toLocaleString()} channels${state.library.length < channels.length ? ' after filter' : ''}`);
   // Jump to the list after loading from Sources, but not when a profile switch or sync
   // reloads the playlist while you're on another tab.

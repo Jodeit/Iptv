@@ -410,3 +410,6 @@ body.panel-hidden #flatStage { left: 12px; }
   .pv-info h2 { font-size: 22px; }
   .pv-backdrop { height: 260px; }
 }
+
+.account-info { margin: 0; padding: 4px 14px; }
+.account-info.warn { color: #ff9f43; }
