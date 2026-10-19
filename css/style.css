@@ -510,3 +510,15 @@ body.mini-on #video {
 @media (max-width: 720px) { .ep-menu { bottom: 132px; right: 8px; } }
 .ep-seasons .chip.on { color: var(--accent); border-color: var(--accent); }
 .pv-continue { display: flex; align-items: center; gap: 10px; margin: 6px 0 12px; }
+.gcontinue { margin-bottom: 18px; }
+.gcontinue h3 { margin: 0 0 10px; font-size: 15px; }
+.mini-grip {
+  position: fixed; z-index: 42; width: 18px; height: 18px; cursor: nesw-resize; touch-action: none;
+  right: calc(var(--mini-r) + var(--mini-w) - 18px); bottom: var(--mini-b);
+  background: linear-gradient(45deg, var(--accent) 0 2px, transparent 2px 5px, var(--accent) 5px 7px, transparent 7px);
+  border-bottom-left-radius: var(--radius); opacity: .7;
+}
+.mini-grip:hover { opacity: 1; }
+.stage-pip { position: absolute; top: 10px; right: 10px; z-index: 2; background: rgba(0,0,0,.55); border-radius: 8px; opacity: .7; }
+.stage-pip:hover { opacity: 1; }
+body.mini-on .stage-pip { display: none; }

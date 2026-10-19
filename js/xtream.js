@@ -217,6 +217,7 @@ export class XtreamLibrary {
           kind: 'episode',
           seriesId: series.seriesId,
           seriesName: series.name,
+          seriesLogo: series.logo || '',
           season: +season,
           episode: +e.episode_num || 0,
           title: e.title || '',

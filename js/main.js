@@ -122,6 +122,7 @@ function syncMini() {
   const on = (guideView.isOpen() || gallery.isOpen()) && !miniHidden;
   document.body.classList.toggle('mini-on', on);
   $('miniBar').classList.toggle('hidden', !on);
+  $('miniGrip').classList.toggle('hidden', !on);
   $('miniTitle').textContent = state.current?.name || 'Nothing playing';
 }
 
@@ -234,9 +235,12 @@ function saveProgress(force = false) {
   const at = Date.now();
   const key = progressKey(ch);
   progress[key] = { t: Math.floor(video.currentTime), d: Math.floor(d), at };
-  // The show's own entry: which episode to continue from.
+  // Movies keep enough to play again from Continue watching.
+  if (kind === 'movie') progress[key].item = { id: ch.id, url: ch.url, name: ch.name, logo: ch.logo || '', kind: 'movie', year: ch.year || 0, tmdb: ch.tmdb || '' };
+  // The show's own entry: which episode to continue from, and the show to open.
   if (kind === 'episode' && ch.seriesName) {
-    progress[progressKey({ kind: 'series', name: ch.seriesName, id: `series:${ch.seriesId}` })] = { ...progress[key], season: ch.season, episode: ch.episode };
+    const show = { id: `xtream-series:${ch.seriesId}`, seriesId: ch.seriesId, name: ch.seriesName, logo: ch.seriesLogo || ch.logo || '', kind: 'series' };
+    progress[progressKey(show)] = { t: progress[key].t, d: progress[key].d, at, season: ch.season, episode: ch.episode, item: show };
   }
   if (force || at - progressSyncedAt > 60000) {
     progressSyncedAt = at;
@@ -380,6 +384,12 @@ const gallery = new GalleryView($('gallery'), {
   parseTitle,
   play: (item, startAt) => play(item, { startAt }),
   progress: getProgress,
+  // Part-way films (or shows, for the Shows tab), newest first.
+  continueList: (kind) => Object.values(progress)
+    .filter((p) => p.item?.kind === kind && p.d && (kind === 'series' || p.t < p.d - 60))
+    .sort((a, b) => b.at - a.at)
+    .slice(0, 20)
+    .map((p) => ({ item: p.item, p })),
   isFav: (id) => state.favs.has(id),
   toggleFav: (item) => toggleFav(item),
   external: (item) => offerExternal(item),
@@ -1515,12 +1525,38 @@ for (const b of $('kindSeg').children) {
     else { gallery.close(); if (guide.available()) guideView.open(); else { togglePanel(true); setTab('channels'); } }
   };
 }
+// Picture-in-picture: the browser's own floating window, which stays on top of other apps.
+// It's off in the video's overflow menu (disablePictureInPicture) and offered by a corner button.
+async function popOut() {
+  try {
+    if (document.pictureInPictureElement) return await document.exitPictureInPicture();
+    video.disablePictureInPicture = false;
+    await video.requestPictureInPicture();
+  } catch (err) {
+    video.disablePictureInPicture = true;
+    toast(`Can’t pop out here: ${err.message}`, true);
+  }
+}
+// Re-hide it from the overflow menu once the pop-out closes (doing it earlier would close it).
+video.addEventListener('leavepictureinpicture', () => { video.disablePictureInPicture = true; });
+video.disablePictureInPicture = true;
+for (const b of document.querySelectorAll('.pip-btn')) {
+  b.classList.toggle('hidden', !document.pictureInPictureEnabled);
+  b.onclick = (e) => { e.stopPropagation(); popOut(); };
+}
 $('miniClose').onclick = () => { miniHidden = true; syncMini(); };
 $('miniFull').onclick = () => { miniHidden = false; guideView.close(); gallery.close(); };
-$('miniSize').onclick = () => {
-  const sizes = [280, 360, 520], root = document.documentElement.style;
-  const cur = parseInt(root.getPropertyValue('--mini-w')) || 360;
-  root.setProperty('--mini-w', `${sizes[(sizes.indexOf(cur) + 1) % sizes.length]}px`);
+// Resize the pop-out from its bottom-left corner (it's anchored bottom-right).
+$('miniGrip').onpointerdown = (e) => {
+  e.preventDefault();
+  const root = document.documentElement.style, sx = e.clientX;
+  const w0 = parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--mini-w')) || 360;
+  const move = (m) => {
+    const grow = sx - m.clientX;
+    root.setProperty('--mini-w', `${Math.round(Math.max(200, Math.min(innerWidth - 40, w0 + grow)))}px`);
+  };
+  const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); };
+  addEventListener('pointermove', move); addEventListener('pointerup', up);
 };
 // Drag the pop-out by its title bar.
 $('miniBar').onpointerdown = (e) => {

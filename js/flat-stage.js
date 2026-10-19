@@ -16,7 +16,13 @@ export class FlatStage {
     video.setAttribute('x-webkit-airplay', 'allow');
     // No WebGL here, so the video needn't be CORS-clean: direct streams play without the proxy.
     video.removeAttribute('crossorigin');
-    this.root.append(video, this.overlay);
+    // Pop-out lives in the corner instead of the controls' overflow menu.
+    video.disablePictureInPicture = true;
+    this.pip = document.createElement('button');
+    this.pip.className = 'icon-btn pip-btn stage-pip';
+    this.pip.title = 'Pop out into its own window';
+    this.pip.textContent = '⧉';
+    this.root.append(video, this.overlay, this.pip);
     document.body.append(this.root);
 
     this.screen = { set() {}, get: () => 0 };

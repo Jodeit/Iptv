@@ -47,7 +47,6 @@ export class GalleryView {
     SORTS.rt.fn = (a, b) => (app.ratings.peek(b)?.rt ?? -1) - (app.ratings.peek(a)?.rt ?? -1);
     root.innerHTML = `
       <header class="gallery-head">
-        <div class="seg gallery-kind"><button data-kind="movie">Movies</button><button data-kind="series">Series</button></div>
         <select class="gallery-cat" aria-label="Category"></select>
         <input class="gallery-search" type="search" placeholder="Search all categories…">
         <select class="gallery-sort" aria-label="Sort">${Object.entries(SORTS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}</select>
@@ -63,7 +62,7 @@ export class GalleryView {
         <button class="chip gf-reset hidden">Clear filters</button>
       </div>
       <div class="gallery-note muted small hidden"></div>
-      <div class="gallery-scroll"><div class="gallery-grid"></div><div class="gallery-more"></div></div>
+      <div class="gallery-scroll"><section class="gcontinue hidden"><h3>Continue watching</h3><div class="pv-row"></div></section><div class="gallery-grid"></div><div class="gallery-more"></div></div>
       <div class="gallery-preview hidden"></div>`;
     this.grid = root.querySelector('.gallery-grid');
     this.more = root.querySelector('.gallery-more');
@@ -207,6 +206,7 @@ export class GalleryView {
       this.note.classList.remove('hidden');
       this.note.textContent = `${list.length.toLocaleString()} result${list.length === 1 ? '' : 's'} across all categories`;
     } else this.note.innerHTML = 'Add a free OMDb key in <b>Sources → Ratings</b> to see Rotten Tomatoes, IMDb and Metacritic scores.';
+    this.renderContinue(!q && !everywhere);
     const frag = document.createDocumentFragment();
     for (const item of list.slice(0, this.limit)) frag.append(this.card(item));
     this.grid.innerHTML = '';
@@ -348,6 +348,31 @@ export class GalleryView {
     else if (r?.imdb) out.push(`<span class="badge imdb">IMDb ${esc(r.imdb)}</span>`);
     else if (item.rating) out.push(`<span class="badge star">★ ${(+item.rating).toFixed(1)}</span>`);
     el.querySelector('.gbadges').innerHTML = out.join('');
+  }
+
+  // Films and shows you're part-way through, newest first, above the posters.
+  renderContinue(show) {
+    const box = this.root.querySelector('.gcontinue');
+    const entries = show && this.app.continueList ? this.app.continueList(this.kind) : [];
+    box.classList.toggle('hidden', !entries.length);
+    const row = box.querySelector('.pv-row');
+    row.innerHTML = '';
+    for (const { item, p } of entries) {
+      const el = document.createElement('button');
+      el.className = 'gcard';
+      const { title } = this.app.parseTitle(item.name);
+      const sub = item.kind === 'series'
+        ? `S${pad(p.season)}E${pad(p.episode)}${p.t < p.d - 60 ? ` · ${fmtTime(p.d - p.t)} left` : ' · next up'}`
+        : `${fmtTime(p.d - p.t)} left`;
+      el.innerHTML = `<div class="gposter"><span class="ginitial">${esc((title || item.name).charAt(0))}</span><i class="gprog" style="width:${Math.min(100, (p.t / p.d) * 100)}%"></i></div>
+        <div class="gtitle">${esc(title || item.name)}</div><div class="ginfo">${esc(sub)}</div>`;
+      if (item.logo) this.poster(el.querySelector('.gposter'), item.logo);
+      el.onclick = () => {
+        if (item.kind === 'series') this.showPreview(item);
+        else { this.app.play(item, p.t > 30 ? p.t : 0); this.close(); }
+      };
+      row.append(el);
+    }
   }
 
   // What tells one listing of a title from another: its category (language, quality), how
