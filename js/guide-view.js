@@ -44,7 +44,6 @@ export class GuideView {
     this.bar.querySelector('.gv-search').oninput = apply;
     // Rows arrive a page at a time as the bottom of the grid scrolls into view.
     this.more = new IntersectionObserver((entries) => { if (entries.some((e) => e.isIntersecting)) this.addRows(); }, { root: this.scroll, rootMargin: '400px 0px' });
-    root.querySelector('.guide-close').onclick = () => this.close();
     root.querySelector('.guide-now').onclick = () => this.scrollToNow();
     addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.isOpen()) this.close(); });
   }

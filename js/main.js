@@ -123,6 +123,8 @@ function syncMini() {
   document.body.classList.toggle('mini-on', on);
   $('miniBar').classList.toggle('hidden', !on);
   $('miniGrip').classList.toggle('hidden', !on);
+  // Full-size player: a way back to the guide.
+  $('guideOpen').classList.toggle('hidden', guideView.isOpen() || gallery.isOpen() || !guide.available());
   $('miniTitle').textContent = state.current?.name || 'Nothing playing';
 }
 
@@ -706,6 +708,7 @@ function setChannels(channels, label, source = null) {
   guide.setSource({ xtream: source?.url ? parseXtream(source.url) : null, tvgUrl: source?.tvgUrl || channels.tvgUrl || null });
   guide.setChannels(channels);
   $('guideBtn').classList.toggle('hidden', !guide.available());
+  syncMini();
   // With a guide, Live is the guide; the channel list stays in the drawer only for playlists without one.
   $('channelsTab').classList.toggle('hidden', guide.available());
   $('refreshList').classList.toggle('hidden', !source?.url);
@@ -1544,6 +1547,7 @@ for (const b of document.querySelectorAll('.pip-btn')) {
   b.classList.toggle('hidden', !document.pictureInPictureEnabled);
   b.onclick = (e) => { e.stopPropagation(); popOut(); };
 }
+$('guideOpen').onclick = () => { gallery.close(); guideView.open(); };
 $('miniClose').onclick = () => { miniHidden = true; syncMini(); };
 $('miniFull').onclick = () => { miniHidden = false; guideView.close(); gallery.close(); };
 // Resize the pop-out from its bottom-left corner (it's anchored bottom-right).
