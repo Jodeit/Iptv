@@ -182,6 +182,22 @@ export function xtreamAlternates(streamUrl, { username, password }) {
   return [`${base}.m3u8`, `${base}.ts`].filter((x) => x !== streamUrl);
 }
 
+// Account status from the panel's API: { status, expires, active, max }. Not a stream, so it
+// doesn't count against the connection limit.
+export async function xtreamAccount(xt, proxify = (u) => u) {
+  const q = new URLSearchParams({ username: xt.username, password: xt.password });
+  const res = await fetch(proxify(`${xt.server}/player_api.php?${q}`));
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const info = (await res.json())?.user_info;
+  if (!info) throw new Error('no account info');
+  return {
+    status: info.status || '?',
+    expires: info.exp_date ? new Date(info.exp_date * 1000) : null,
+    active: info.active_cons != null ? +info.active_cons : null,
+    max: info.max_connections != null ? +info.max_connections : null,
+  };
+}
+
 // Identity of a playlist source: one entry per Xtream account however its link is written
 // (output=, parameter order, http:// or not); otherwise the normalised URL.
 export function playlistKey(link) {

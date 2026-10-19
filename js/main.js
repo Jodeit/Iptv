@@ -1,7 +1,7 @@
 import { Theater } from './theater.js';
 import { LAYOUT } from './xr3d.js';
 import { StreamPlayer } from './stream.js';
-import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey } from './m3u.js';
+import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, xtreamAccount } from './m3u.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
 import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
 import { VRPanel } from './vr-panel.js';
@@ -71,13 +71,14 @@ const video = $('video');
 const theater = new Theater($('stage'), video);
 const player = new StreamPlayer(video, {
   onStatus: (s, { loading = false, frac = null } = {}) => (loading ? showLoading(s, frac) : (hideLoading(), setStatus(s))),
-  onError: (e, report) => {
+  onError: (e, report, { refused = false } = {}) => {
     hideLoading();
     setStatus(e);
     toast(e, true);
     theater.setVideoActive(false);
     theater.setPlaceholder('Stream unavailable', state.current?.name || '');
     if (report) renderPlaybackLog(report);
+    if (refused) explainRefusal(report);
   },
 });
 
@@ -149,6 +150,34 @@ function renderPlaybackLog(report) {
   ];
   $('playbackLog').textContent = mask(lines.join('\n'));
   $('playbackLogBox').classList.remove('hidden');
+}
+
+// After a refused stream, ask the Xtream panel why: expired account, or connections in use.
+async function explainRefusal(report) {
+  const xt = state.source?.url && parseXtream(state.source.url);
+  if (!xt) return;
+  const channel = state.current;
+  try {
+    const acct = await xtreamAccount(xt, proxyPlan(xt.server) === 'direct' ? undefined : proxied);
+    if (state.current !== channel) return;
+    const exp = acct.expires ? acct.expires.toLocaleDateString() : 'unknown';
+    report.push(`ℹ account: status ${acct.status}, connections ${acct.active ?? '?'} of ${acct.max ?? '?'}, expires ${exp}`);
+    renderPlaybackLog(report);
+    let msg;
+    if (!/^active$/i.test(acct.status)) msg = `The provider says this account is “${acct.status}” (expires ${exp}).`;
+    else if (acct.max != null && acct.active >= acct.max) {
+      msg = `Your account is using ${acct.active} of ${acct.max} allowed connection${acct.max === 1 ? '' : 's'}. `
+        + 'Close other players or wait a minute for the last stream to be released, then retry.';
+    } else {
+      msg = `The provider refused the stream although the account is active (${acct.active ?? '?'} of ${acct.max ?? '?'} connections in use). `
+        + 'It may be temporarily blocking this connection; wait a minute and retry.';
+    }
+    setStatus(msg);
+    toast(msg, true);
+  } catch (err) {
+    report.push(`ℹ account check failed: ${err.message}`);
+    renderPlaybackLog(report);
+  }
 }
 
 // ---------- CORS proxy ----------
@@ -780,6 +809,7 @@ vrPanel = new VRPanel(theater, {
   mode: () => state.activeMode,
   cycleMode,
   adjust,
+  exitVR: () => theater.renderer.xr.getSession()?.end(),
 });
 
 // ---------- Boot ----------

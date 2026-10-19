@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
-const W = 768, H = 1024, ROWS = 10;
+const W = 768, H = 1024, ROWS = 9;
 const C = {
   bg: 'rgba(14,16,24,0.94)', line: 'rgba(255,255,255,0.10)', text: '#e8eaf2', muted: '#8a90a6',
   accent: '#3de0ff', accent2: '#ff3d7f', hover: 'rgba(255,255,255,0.10)', active: 'rgba(61,224,255,0.20)',
@@ -96,6 +96,14 @@ export class VRPanel {
       if (region) hoverKey = region.key;
     }
     if (hoverKey !== this.hoverKey) { this.hoverKey = hoverKey; this.draw(); }
+
+    // B/Y brings the panel back (it may have been hidden with the grip).
+    for (const src of frame.session.inputSources) {
+      const pressed = !!src.gamepad?.buttons?.[5]?.pressed;
+      const key = `by:${src.handedness}`;
+      if (pressed && !this[key]) { this.mesh.visible = true; this.draw(); }
+      this[key] = pressed;
+    }
 
     // Thumbstick up/down pages through channels.
     this.stickCooldown -= dt;
@@ -228,6 +236,9 @@ export class VRPanel {
     this.button(32 + (bw + 12), cy2, bw, 56, 'Depth +', 'rel+', () => app.adjust('relief', 0.03));
     this.button(32 + (bw + 12) * 2, cy2, bw, 56, 'Pop −', 'pop-', () => app.adjust('parallax', -0.1));
     this.button(32 + (bw + 12) * 3, cy2, bw, 56, 'Pop +', 'pop+', () => app.adjust('parallax', 0.1));
+    const cy3 = cy2 + 68, half = (W - 64 - 12) / 2;
+    this.button(32, cy3, half, 56, 'Hide panel (B/Y shows it)', 'hide', () => { this.mesh.visible = false; });
+    this.button(32 + half + 12, cy3, half, 56, 'Exit VR', 'exit', () => app.exitVR(), true);
 
     this.texture.needsUpdate = true;
   }

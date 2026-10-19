@@ -19,7 +19,8 @@ const UAS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0 Safari/537.36',
 ];
 const uaByHost = new Map();
-const REFUSED = new Set([401, 403, 406, 451]);
+// 401 is left out: for Xtream it means login or connection limit, and retrying only uses up connections.
+const REFUSED = new Set([403, 406, 451]);
 
 // Ports Cloudflare Workers' fetch() can reach. Xtream stream servers often redirect to
 // others (e.g. :25461); those hops go over a raw TCP socket instead.
