@@ -264,6 +264,20 @@ async function moreLike(item, details, onProgress) {
 const galleryGroups = (kind) => [...new Set(state.library.filter((c) => kindOf(c) === kind).map((c) => c.group))]
   .sort((a, b) => a.localeCompare(b)).map((g) => ({ id: g, name: g }));
 
+// Every movie/series of a kind, for searching across categories. Honours the content filter.
+async function allOfKind(kind) {
+  if (!state.xlib) return state.library.filter((c) => kindOf(c) === kind);
+  const lib = state.xlib;
+  const before = state.status;
+  let items;
+  try {
+    showLoading('Loading the full list to search it…');
+    items = await lib.all(kind, (p) => showLoading(`Loading the full list · ${mb(p.received)}`));
+  } finally { hideLoading(); setStatus(before); }
+  const allowed = new Set(vodCategories(kind).map((c) => c.id));
+  return items.filter((i) => allowed.has(i.catId));
+}
+
 const gallery = new GalleryView($('gallery'), {
   categories: (kind) => (state.xlib ? vodCategories(kind) : galleryGroups(kind)),
   loadCategory: async (kind, catId) => {
@@ -277,6 +291,7 @@ const gallery = new GalleryView($('gallery'), {
       return await lib.category(kind, catId, (p) => showLoading(`Loading ${lib.catName(kind, catId)} · ${mb(p.received)}`));
     } finally { hideLoading(); setStatus(before); }
   },
+  searchAll: (kind) => allOfKind(kind),
   episodes: (series) => state.xlib.seriesEpisodes(series),
   movieInfo: (item) => (state.xlib ? state.xlib.movieInfo(item) : {}),
   moreLike,
@@ -785,9 +800,21 @@ async function showVod() {
   if (state.seriesOpen) {
     state.filtered = state.seriesOpen.episodes.filter((e) => !q || e.name.toLowerCase().includes(q));
   } else if (!state.group) {
-    state.listMode = 'categories';
-    state.vodCats = vodCategories(kind).filter((c) => !q || c.name.toLowerCase().includes(q));
-    state.filtered = [];
+    if (q.length >= 2) {
+      // Searching with no category open: look through every category.
+      state.listMode = 'loading';
+      state.filtered = [];
+      renderList();
+      let all = [];
+      try { all = await allOfKind(kind); } catch (err) { toast(`Couldn’t search everything: ${err.message}`, true); }
+      if (state.query.toLowerCase() !== q || state.kind !== kind || state.group || state.seriesOpen) return;
+      state.listMode = 'items';
+      state.filtered = all.filter((c) => (!state.favOnly || state.favs.has(c.id)) && c.name.toLowerCase().includes(q));
+    } else {
+      state.listMode = 'categories';
+      state.vodCats = vodCategories(kind).filter((c) => !q || c.name.toLowerCase().includes(q));
+      state.filtered = [];
+    }
   } else {
     const catId = state.group;
     let items = lib.items[kind].get(catId);

@@ -30,7 +30,7 @@ export class GalleryView {
       <header class="gallery-head">
         <div class="seg gallery-kind"><button data-kind="movie">Movies</button><button data-kind="series">Series</button></div>
         <select class="gallery-cat" aria-label="Category"></select>
-        <input class="gallery-search" type="search" placeholder="Search this category…">
+        <input class="gallery-search" type="search" placeholder="Search all categories…">
         <select class="gallery-sort" aria-label="Sort">${Object.entries(SORTS).map(([k, v]) => `<option value="${k}">${v.label}</option>`).join('')}</select>
         <button class="gallery-close icon-btn" title="Close (Esc)">✕</button>
       </header>
@@ -56,7 +56,7 @@ export class GalleryView {
 
     for (const b of root.querySelectorAll('.gallery-kind button')) b.onclick = () => this.open(b.dataset.kind);
     root.querySelector('.gallery-cat').onchange = (e) => this.showCategory(e.target.value);
-    root.querySelector('.gallery-search').oninput = (e) => { this.query = e.target.value.toLowerCase(); this.render(); };
+    root.querySelector('.gallery-search').oninput = (e) => this.search(e.target.value);
     root.querySelector('.gallery-sort').onchange = (e) => { this.sort = e.target.value; this.render(); };
     root.querySelector('.gallery-close').onclick = () => this.close();
     addEventListener('keydown', (e) => {
@@ -108,6 +108,26 @@ export class GalleryView {
     this.render();
   }
 
+  // Two or more characters search every category of this kind; clearing returns to the category.
+  async search(text) {
+    this.query = text.trim().toLowerCase();
+    const kind = this.kind;
+    this.limit = PAGE;
+    if (this.query.length >= 2 && this.app.searchAll) {
+      if (!this.pool?.[kind]) {
+        this.note.classList.remove('hidden');
+        this.note.textContent = 'Loading the full list to search it…';
+        try {
+          this.pool = { ...this.pool, [kind]: await this.app.searchAll(kind) };
+        } catch (err) {
+          this.note.textContent = `Couldn’t search everything: ${err.message}. Searching this category only.`;
+        }
+        if (this.query.length < 2 || this.kind !== kind) return this.render();
+      }
+    }
+    this.render();
+  }
+
   render() {
     this.observer.disconnect();
     for (const t of this.dwell.values()) clearTimeout(t);
@@ -115,10 +135,15 @@ export class GalleryView {
     this.app.ratings.clearQueue();
     this.cards.clear();
     const q = this.query;
-    let list = this.items.filter((i) => !q || i.name.toLowerCase().includes(q));
+    const everywhere = q.length >= 2 && this.pool?.[this.kind];
+    let list = (everywhere ? this.pool[this.kind] : this.items).filter((i) => !q || i.name.toLowerCase().includes(q));
+    for (const i of list) this.itemsById.set(i.id, i);
     if (SORTS[this.sort].fn) list = [...list].sort(SORTS[this.sort].fn);
     this.note.classList.toggle('hidden', this.app.ratings.enabled());
-    this.note.innerHTML = 'Add a free OMDb key in <b>Sources → Ratings</b> to see Rotten Tomatoes, IMDb and Metacritic scores.';
+    if (everywhere) {
+      this.note.classList.remove('hidden');
+      this.note.textContent = `${list.length.toLocaleString()} result${list.length === 1 ? '' : 's'} across all categories`;
+    } else this.note.innerHTML = 'Add a free OMDb key in <b>Sources → Ratings</b> to see Rotten Tomatoes, IMDb and Metacritic scores.';
     const frag = document.createDocumentFragment();
     for (const item of list.slice(0, this.limit)) frag.append(this.card(item));
     this.grid.innerHTML = '';

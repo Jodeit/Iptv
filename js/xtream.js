@@ -99,6 +99,19 @@ export class XtreamLibrary {
     return items;
   }
 
+  // Every movie (or series) in one request, for searching across categories. Cached for the
+  // session; item ids match the per-category ones, so favourites and progress line up.
+  async all(kind, onProgress) {
+    this.everything ??= {};
+    if (this.everything[kind]) return this.everything[kind];
+    const rows = await this.fetchJson(this.api(kind === 'movie' ? 'get_vod_streams' : 'get_series'), onProgress);
+    this.everything[kind] = (Array.isArray(rows) ? rows : []).map((s, i) => ({
+      ...this.toItem(kind, s, i, this.catName(kind, s.category_id)),
+      catId: String(s.category_id),
+    }));
+    return this.everything[kind];
+  }
+
   toItem(kind, s, i, group) {
     const auth = `${enc(this.xt.username)}/${enc(this.xt.password)}`;
     const tmdb = String(s.tmdb || s.tmdb_id || '').replace(/\D/g, '');
