@@ -69,6 +69,21 @@ engine warnings. Failed attempts and stream probes are there too. Xtream passwor
 it for sharing. **Display → HLS player** switches between hls.js (default) and the browser's own HLS player, to
 compare on a given device.
 
+## Movies and series gallery
+
+Choosing **Movies** or **Series** (or **Browse**, key B) opens a poster gallery. Pick a category, search it, and sort
+by recently added, Rotten Tomatoes, provider rating, year or title. Tapping a poster opens its preview page. That page
+has the backdrop, plot, director and cast, and the ratings: Rotten Tomatoes Tomatometer, IMDb and Metacritic. It also
+has a trailer and **Play**. For a series it lists each season's episodes instead.
+
+Films and episodes remember where you stopped, on this device. Posters show a progress bar, the preview page offers
+**Resume** or **From the start**, and playing from the list resumes too.
+
+Ratings come from [OMDb](https://www.omdbapi.com/apikey.aspx), which includes Rotten Tomatoes scores. You need a free
+key (1,000 lookups a day) under **Sources → Ratings**. It is checked before saving and syncs with your profile. Only
+posters that stay on screen are looked up, and results are cached for 30 days. Without a key, the provider's own star
+rating is shown.
+
 ## TV guide
 
 Live channels show what's on now, with a progress bar, in the channel list and the now-playing bar. **Guide**
@@ -223,6 +238,7 @@ Tuning (XR3D tab):
 | 3 | Cycle 3D mode |
 | D | Toggle depth-map view |
 | M | Mute |
+| B | Movies & series gallery |
 | H | Hide / show panel |
 | F | Fullscreen |
 | V | Enter VR |
@@ -260,6 +276,8 @@ js/flat-stage.js  Flat player for phones and tablets
 js/filter.js      Content filter (live regions, movie/series languages)
 js/epg.js         Guide data: Xtream short EPG and XMLTV
 js/guide-view.js  Guide grid
+js/gallery.js     Movies & series poster gallery and preview pages
+js/ratings.js     Rotten Tomatoes / IMDb / Metacritic via OMDb, title cleanup, cache
 js/cache.js       Saved playlist copies (IndexedDB)
 js/profiles.js    Profiles: encryption, merge, sync, device linking
 proxy/profiles-api.js  Profile storage + pairing API (Worker KV / server.js file)

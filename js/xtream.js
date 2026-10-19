@@ -99,6 +99,7 @@ export class XtreamLibrary {
         id: `${this.streamBase}/movie/${auth}/${s.stream_id}.${s.container_extension || 'mp4'}`,
         url: `${this.streamBase}/movie/${auth}/${s.stream_id}.${s.container_extension || 'mp4'}`,
         name: s.name, logo: s.stream_icon || '', group, tvgId: '', layout: null, kind: 'movie',
+        streamId: s.stream_id, rating: +s.rating || 0, added: +s.added || 0, year: +s.year || yearOf(s.name, s.releaseDate || s.release_date),
       }
       : {
         num: i + 1,
@@ -106,6 +107,9 @@ export class XtreamLibrary {
         url: `xtream-series:${s.series_id}`,
         seriesId: s.series_id,
         name: s.name, logo: s.cover || '', group, tvgId: '', layout: null, kind: 'series', plot: s.plot || '',
+        rating: +s.rating || 0, added: +s.last_modified || 0, year: yearOf(s.name, s.releaseDate || s.release_date),
+        genre: s.genre || '', cast: s.cast || '', director: s.director || '', trailer: s.youtube_trailer || '',
+        backdrop: firstOf(s.backdrop_path),
       }));
     // Keep a handful of categories in memory; older ones reload when reopened.
     cache.set(catId, items);
@@ -113,11 +117,40 @@ export class XtreamLibrary {
     return items;
   }
 
+  // Full details for a film's preview page (plot, cast, trailer…); {} if the panel has none.
+  async movieInfo(item) {
+    if (!item.streamId) return {};
+    const key = `vod:${item.streamId}`;
+    if (this.details?.has(key)) return this.details.get(key);
+    let info = {};
+    try {
+      const r = await this.fetchJson(this.api('get_vod_info', { vod_id: item.streamId }));
+      const i = r?.info || {};
+      info = {
+        plot: i.plot || i.description || '', cast: i.cast || i.actors || '', director: i.director || '', genre: i.genre || '',
+        runtime: runtimeOf(i.duration) || (i.duration_secs ? runtimeOf(+i.duration_secs) : '') || (i.episode_run_time ? `${i.episode_run_time} min` : ''),
+        released: i.releasedate || i.release_date || '', rating: +i.rating || 0, trailer: i.youtube_trailer || '',
+        poster: i.movie_image || i.cover_big || '', backdrop: firstOf(i.backdrop_path), tmdb: i.tmdb_id || '', age: i.mpaa_rating || i.age || '',
+      };
+    } catch { /* details are optional */ }
+    this.details ??= new Map();
+    this.details.set(key, info);
+    if (this.details.size > 50) this.details.delete(this.details.keys().next().value);
+    return info;
+  }
+
   async seriesEpisodes(series) {
     if (this.episodes.has(series.seriesId)) return this.episodes.get(series.seriesId);
     const info = await this.fetchJson(this.api('get_series_info', { series_id: series.seriesId }));
     const auth = `${enc(this.xt.username)}/${enc(this.xt.password)}`;
     const out = [];
+    // Series details for the preview page arrive with the episodes.
+    const si = info?.info || {};
+    Object.assign(series, {
+      plot: si.plot || series.plot, cast: si.cast || series.cast, director: si.director || series.director,
+      genre: si.genre || series.genre, trailer: si.youtube_trailer || series.trailer,
+      backdrop: firstOf(si.backdrop_path) || series.backdrop, released: si.releaseDate || si.release_date || '',
+    });
     for (const [season, eps] of Object.entries(info?.episodes || {})) {
       for (const e of eps || []) {
         const url = `${this.streamBase}/series/${auth}/${e.id}.${e.container_extension || 'mp4'}`;
@@ -131,6 +164,11 @@ export class XtreamLibrary {
           tvgId: '',
           layout: null,
           kind: 'episode',
+          season: +season,
+          episode: +e.episode_num || 0,
+          title: e.title || '',
+          plot: e.info?.plot || '',
+          runtime: runtimeOf(e.info?.duration || e.info?.duration_secs),
         });
       }
     }
@@ -141,3 +179,17 @@ export class XtreamLibrary {
 }
 
 const enc = encodeURIComponent;
+const firstOf = (v) => (Array.isArray(v) ? v[0] : v) || '';
+// "Movie Title (2019)", "Movie - 2019 [Multi]" or a release date.
+const yearOf = (name = '', date = '') => +((`${date}`.match(/\b(19|20)\d{2}\b/) || `${name}`.match(/\b(19[2-9]\d|20[0-4]\d)\b/) || [0])[0]);
+
+// "02:22:00" or 8520 (seconds) → "2h 22m"; other text passes through.
+function runtimeOf(d) {
+  let secs = typeof d === 'number' ? d : NaN;
+  const m = typeof d === 'string' && d.match(/^(\d+):(\d{2}):(\d{2})$/);
+  if (m) secs = +m[1] * 3600 + +m[2] * 60 + +m[3];
+  if (!Number.isFinite(secs)) return d || '';
+  if (!secs) return '';
+  const h = Math.floor(secs / 3600), min = Math.round((secs % 3600) / 60);
+  return h ? `${h}h ${min}m` : `${min}m`;
+}

@@ -8,6 +8,8 @@ import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
 import { Profiles, emptyDoc, canSync } from './profiles.js';
 import { Guide } from './epg.js';
 import { GuideView } from './guide-view.js';
+import { Ratings, parseTitle } from './ratings.js';
+import { GalleryView } from './gallery.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -164,6 +166,7 @@ const setLast = (last) => {
 // Another device changed the profile, or the user switched profiles.
 function applyDoc(doc, reason) {
   state.favs = new Set(Object.keys(doc.favs));
+  $('omdbKey').value = doc.omdbKey || '';
   settings.contentFilter = { ...FILTER_DEFAULTS, ...(doc.contentFilter || {}) };
   saveSettings();
   syncFilterForm();
@@ -179,6 +182,73 @@ function applyDoc(doc, reason) {
     rebuildLibrary();
   }
 }
+// ---------- Resume points (films and episodes) ----------
+// Kept on this device: positions change every few seconds, too often to sync.
+const progress = store.get('progress', {});
+const getProgress = (id) => progress[id];
+let progressSavedAt = 0;
+
+function saveProgress(force = false) {
+  const ch = state.current;
+  const kind = ch && kindOf(ch);
+  if (!ch || (kind !== 'movie' && kind !== 'episode' && kind !== 'series')) return;
+  const d = video.duration;
+  if (!Number.isFinite(d) || d < 120 || video.currentTime < 5) return;
+  if (!force && performance.now() - progressSavedAt < 10000) return;
+  progressSavedAt = performance.now();
+  progress[ch.id] = { t: Math.floor(video.currentTime), d: Math.floor(d), at: Date.now() };
+  const ids = Object.keys(progress);
+  if (ids.length > 300) {
+    ids.sort((a, b) => progress[a].at - progress[b].at);
+    for (const id of ids.slice(0, ids.length - 300)) delete progress[id];
+  }
+  store.set('progress', progress);
+}
+
+// Where to pick a film up again: mid-way through only (not the first half minute or the credits).
+function resumePoint(ch) {
+  const p = getProgress(ch.id);
+  return p && p.t > 30 && p.t < p.d - 60 ? p.t : 0;
+}
+
+// ---------- Gallery (movies & series) ----------
+const ratings = new Ratings({
+  fetcher: (u) => smartFetch(u),
+  getKey: () => profiles.doc.omdbKey || '',
+  onUpdate: (item) => gallery.updated(item),
+});
+
+// Playlists without the Xtream API: categories are the groups of that kind.
+const galleryGroups = (kind) => [...new Set(state.library.filter((c) => kindOf(c) === kind).map((c) => c.group))]
+  .sort((a, b) => a.localeCompare(b)).map((g) => ({ id: g, name: g }));
+
+const gallery = new GalleryView($('gallery'), {
+  categories: (kind) => (state.xlib ? vodCategories(kind) : galleryGroups(kind)),
+  loadCategory: async (kind, catId) => {
+    if (!state.xlib) return state.library.filter((c) => kindOf(c) === kind && c.group === catId);
+    const lib = state.xlib;
+    const have = lib.items[kind].get(catId);
+    if (have) return have;
+    const before = state.status;
+    try {
+      showLoading(`Loading ${lib.catName(kind, catId)}…`);
+      return await lib.category(kind, catId, (p) => showLoading(`Loading ${lib.catName(kind, catId)} · ${mb(p.received)}`));
+    } finally { hideLoading(); setStatus(before); }
+  },
+  episodes: (series) => state.xlib.seriesEpisodes(series),
+  movieInfo: (item) => (state.xlib ? state.xlib.movieInfo(item) : {}),
+  ratings,
+  parseTitle,
+  play: (item, startAt) => play(item, { startAt }),
+  progress: getProgress,
+  isFav: (id) => state.favs.has(id),
+  toggleFav: (item) => toggleFav(item),
+  external: (item) => offerExternal(item),
+  imageUrl: (url) => (proxy.available && /^https?:/.test(url) && !url.includes('/proxy?') ? proxied(url) : ''),
+});
+
+const galleryKind = () => (state.kind === 'movie' || state.kind === 'series') && (state.xlib || state.library.some((c) => kindOf(c) === state.kind));
+
 const video = $('video');
 // Phones and tablets without WebXR get the plain video player; the 3D theater (three.js,
 // WebGL) isn't even downloaded there.
@@ -401,6 +471,10 @@ function markBlocked(url) {
 }
 
 // Every way to reach a channel, in the order worth trying.
+// MKV plays through the in-app remuxer wherever Media Source Extensions exist, so there's no
+// need to guess at an HLS version of the film first.
+const canRemux = (url) => /\.mkv(\?|$)/i.test(url) && !!(window.ManagedMediaSource || window.MediaSource);
+
 function streamCandidates(ch) {
   // HLS first: it's what Xtream web players use, works with hls.js everywhere, and uses
   // short requests instead of one long TS connection that counts against account limits.
@@ -408,7 +482,7 @@ function streamCandidates(ch) {
   const kind = kindOf(ch);
   // Movies/episodes: some panels also serve an HLS version, which every browser can play.
   const alts = ch.alts || (xt && kind === 'live' ? xtreamAlternates(ch.url, xt)
-    : xt && (kind === 'movie' || kind === 'episode') ? [ch.url.replace(/\.\w+$/, '.m3u8')].filter((u) => u !== ch.url) : []);
+    : xt && (kind === 'movie' || kind === 'episode') && !canRemux(ch.url) ? [ch.url.replace(/\.\w+$/, '.m3u8')].filter((u) => u !== ch.url) : []);
   const urls = [ch.url, ...alts].sort((a, b) => isHls(b) - isHls(a));
   const direct = urls.filter((u) => !isMixed(u)).map((u) => ({ src: u, hint: u }));
   const via = urls.map((u) => ({ src: proxied(u), hint: u, label: 'proxy' }));
@@ -772,6 +846,7 @@ function rebuildLibrary() {
 
 function rebuildGroups() {
   state.seriesOpen = null;
+  $('browseBtn').classList.toggle('hidden', !galleryKind());
   if (isVodKind()) {
     const cats = vodCategories(state.kind);
     state.groups = cats.map((c) => c.name);
@@ -926,8 +1001,9 @@ function markPlaying() {
 }
 
 // ---------- Playback ----------
-async function play(ch) {
+async function play(ch, { startAt = resumePoint(ch) } = {}) {
   $('extSheet').classList.add('hidden');
+  saveProgress(true); // where the previous film got to
   state.current = ch;
   $('npName').textContent = ch.name;
   updateNowPlayingEpg();
@@ -947,7 +1023,8 @@ async function play(ch) {
     theater.setPlaceholder('Stream blocked', ch.name);
     return;
   }
-  const ok = await player.load(sources);
+  if (startAt) toast(`Resuming at ${fmtDuration(startAt)}`);
+  const ok = await player.load(sources, { startAt });
   if (ok && state.current === ch) {
     theater.setVideoActive(true);
     updateAspect();
@@ -992,6 +1069,10 @@ video.addEventListener('play', syncPlayButton);
 video.addEventListener('pause', syncPlayButton);
 video.addEventListener('resize', updateAspect);
 video.addEventListener('waiting', () => setStatus('Buffering…'));
+video.addEventListener('timeupdate', () => saveProgress());
+video.addEventListener('pause', () => saveProgress(true));
+addEventListener('pagehide', () => saveProgress(true));
+const fmtDuration = (s) => (s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor((s % 3600) / 60)).padStart(2, '0')}` : Math.floor(s / 60)) + `:${String(Math.floor(s % 60)).padStart(2, '0')}`;
 function liveStatus() {
   const q = video.videoHeight ? `${video.videoHeight}p` : '';
   const ahead = player.bufferedAhead();
@@ -1133,7 +1214,31 @@ $('xtLoad').onclick = () => {
   if (!/^https?:\/\//i.test(server)) server = `http://${server}`;
   loadPlaylistUrl(xtreamUrl(server, user, pass));
 };
-for (const b of $('kindSeg').children) b.onclick = () => { state.kind = b.dataset.kind; for (const x of $('kindSeg').children) x.classList.toggle('active', x === b); rebuildGroups(); };
+for (const b of $('kindSeg').children) {
+  b.onclick = () => {
+    state.kind = b.dataset.kind;
+    for (const x of $('kindSeg').children) x.classList.toggle('active', x === b);
+    rebuildGroups();
+    if (galleryKind()) gallery.open(state.kind, state.group || undefined); // movies and series open as posters
+  };
+}
+$('browseBtn').onclick = () => gallery.open(state.kind, state.group || undefined);
+
+// OMDb key for ratings: checked with one lookup before it's saved to the profile.
+$('omdbKey').value = profiles.doc.omdbKey || '';
+$('omdbSave').onclick = () => busy($('omdbSave'), async () => {
+  const key = $('omdbKey').value.trim();
+  const status = $('omdbStatus');
+  if (key) {
+    status.textContent = 'Checking…';
+    const problem = await ratings.test(key);
+    if (problem) { status.textContent = `That key didn’t work: ${problem}`; return; }
+  }
+  profiles.update((d) => { d.omdbKey = key; });
+  status.textContent = key ? 'Saved. Ratings appear in Browse as posters come into view.' : 'Removed.';
+  if (gallery.isOpen()) gallery.render();
+});
+$('omdbKey').onkeydown = (e) => { if (e.key === 'Enter') $('omdbSave').click(); };
 $('cfToggle').onclick = () => { settings.contentFilter.on = !settings.contentFilter.on; saveFilter(); syncFilterForm(); rebuildLibrary(); };
 const saveFilter = () => {
   saveSettings();
@@ -1335,6 +1440,8 @@ $('volume').oninput = (e) => { video.volume = +e.target.value; video.muted = fal
 addEventListener('keydown', (e) => {
   if (e.target.matches('input, select, textarea')) return;
   const k = e.key;
+  if (k === 'b' || k === 'B') { if (gallery.isOpen()) gallery.close(); else if (galleryKind()) gallery.open(state.kind); return; }
+  if (gallery.isOpen()) return; // its own buttons take the keys
   if (k === ' ') { e.preventDefault(); togglePlay(); }
   else if (k === 'PageDown' || k === 'ArrowDown') { e.preventDefault(); step(1); }
   else if (k === 'PageUp' || k === 'ArrowUp') { e.preventDefault(); step(-1); }
@@ -1420,4 +1527,4 @@ else if (last?.local && store.get('localText', null)) setChannels(parseM3U(store
 else loadBuiltinDemo();
 
 // Debug handle for the console.
-window.o3xr = { theater, vrPanel, state, settings, profiles };
+window.o3xr = { theater, vrPanel, state, settings, profiles, gallery, ratings };

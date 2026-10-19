@@ -45,14 +45,15 @@ export class StreamPlayer {
 
   // `sources` is a URL or a list of { src, hint } candidates tried in order. `hint` is the
   // original stream URL, used to pick engines when `src` is a proxied URL.
-  async load(sources, { reconnect = false } = {}) {
+  // `startAt` (seconds) resumes a film part-way through.
+  async load(sources, { reconnect = false, startAt = 0 } = {}) {
     const token = ++this.token;
     this.destroy();
     let list = (Array.isArray(sources) ? sources : [sources]).map((s) => (typeof s === 'string' ? { src: s, hint: s } : s));
     if (!reconnect) {
       this.sources = list;
       this.reconnects = 0;
-      this.resumeAt = 0;
+      this.resumeAt = startAt;
       this.report = [];
     } else if (this.winner) {
       // Go straight back to what worked.
@@ -87,6 +88,10 @@ export class StreamPlayer {
           return this.video.play();
         }), 25000, 'no video within 25s');
         if (token !== this.token) return false;
+        // The MKV remuxer starts at resumeAt itself; other engines jump once they're playing.
+        if (this.resumeAt > 0 && engine !== 'mkv' && Number.isFinite(this.video.duration) && this.resumeAt < this.video.duration - 5) {
+          this.video.currentTime = this.resumeAt;
+        }
         this.winner = { source };
         this.lastEngine = engine;
         this.onStatus(`Playing · ${engine}${label ? ` · ${label}` : ''}`);
@@ -102,7 +107,7 @@ export class StreamPlayer {
         // every extra try counts against the account.
         if (/HTTP (401|403|456|458)\b/.test(err.message)) { refused = true; break; }
         // Not there at all: other engines would only ask again for the same missing file.
-        if (/HTTP (404|410)\b/.test(err.message)) deadSources.add(source);
+        if (/HTTP (404|410)\b|manifestParsingError/.test(err.message)) deadSources.add(source);
       }
     }
     if (token !== this.token) return false;
@@ -233,7 +238,11 @@ export class StreamPlayer {
   native(url) {
     return new Promise((resolve, reject) => {
       const v = this.video;
-      const ok = () => { cleanup(); resolve(); };
+      const ok = () => {
+        cleanup();
+        if (this.resumeAt > 0 && this.resumeAt < v.duration - 5) v.currentTime = this.resumeAt; // before the first frame shows
+        resolve();
+      };
       const bad = () => { cleanup(); reject(new Error('native playback failed')); };
       const cleanup = () => { v.removeEventListener('loadedmetadata', ok); v.removeEventListener('error', bad); clearTimeout(t); };
       const t = setTimeout(bad, 15000);
