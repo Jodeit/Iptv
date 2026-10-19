@@ -124,10 +124,19 @@ function hideLoading() {
 
 const mb = (n) => `${(n / 1048576).toFixed(n < 10485760 ? 1 : 0)} MB`;
 
+// The VR panel is a canvas texture: every redraw re-uploads ~3 MB to the GPU and causes a
+// visible hitch in the headset. So it shows the status without the ticking parts (elapsed
+// seconds, buffer level) and only redraws when that text actually changes.
+const panelText = (s) => s.replace(/ · \d+s buffered/, '').replace(/ · \d+s$/, '');
+
 function setStatus(s) {
   state.status = s;
   $('npStatus').textContent = s;
-  vrPanel?.draw();
+  const p = panelText(s);
+  if (p !== state.panelStatus) {
+    state.panelStatus = p;
+    vrPanel?.draw();
+  }
 }
 
 // ---------- Playback log ----------
@@ -803,7 +812,7 @@ theater.onXREnd = () => { vrBtn.textContent = 'Enter VR'; arBtn.textContent = 'P
 vrPanel = new VRPanel(theater, {
   channels: () => state.filtered,
   current: () => state.current,
-  status: () => state.status,
+  status: () => state.panelStatus ?? state.status,
   groups: () => state.groups || [],
   group: () => state.group,
   setGroup: (g) => { state.group = g; $('groupFilter').value = g; applyFilter(); },

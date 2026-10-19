@@ -21,13 +21,16 @@ export class Theater {
     this.frameHooks = [];
     this.xrMode = null;
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
     renderer.setSize(innerWidth, innerHeight);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
     renderer.xr.enabled = true;
     renderer.xr.setReferenceSpaceType('local-floor');
-    renderer.xr.setFramebufferScaleFactor(1.2);
+    // Native resolution: 1.2x meant ~44% more pixels per eye, too much for a headset GPU
+    // that's also decoding video.
+    renderer.xr.setFramebufferScaleFactor(1.0);
+    renderer.xr.setFoveation(1);
     container.appendChild(renderer.domElement);
     this.renderer = renderer;
 
@@ -105,20 +108,20 @@ export class Theater {
 
     // Cinema: a dark room with a slightly glossy floor that picks up the screen light.
     const cinema = new THREE.Group();
-    const roomMat = new THREE.MeshStandardMaterial({ color: 0x14151c, roughness: 0.9, side: THREE.BackSide });
+    const roomMat = new THREE.MeshLambertMaterial({ color: 0x14151c, side: THREE.BackSide });
     const room = new THREE.Mesh(new THREE.BoxGeometry(30, 10, 34), roomMat);
     room.position.set(0, 5, -4);
     cinema.add(room);
     const floor = new THREE.Mesh(
       new THREE.PlaneGeometry(30, 34),
-      new THREE.MeshStandardMaterial({ color: 0x0c0d12, roughness: 0.35, metalness: 0.4 }),
+      new THREE.MeshLambertMaterial({ color: 0x0c0d12 }),
     );
     floor.rotation.x = -Math.PI / 2;
     floor.position.set(0, 0.001, -4);
     cinema.add(floor);
     // Stadium rows of seat silhouettes behind the viewer give the room scale.
     const seatGeo = new THREE.BoxGeometry(0.55, 0.9, 0.6);
-    const seatMat = new THREE.MeshStandardMaterial({ color: 0x1d1420, roughness: 0.8 });
+    const seatMat = new THREE.MeshLambertMaterial({ color: 0x1d1420 });
     const seats = new THREE.InstancedMesh(seatGeo, seatMat, 5 * 12);
     const m = new THREE.Matrix4();
     let n = 0;
@@ -150,7 +153,7 @@ export class Theater {
     stars.add(new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 0.25, sizeAttenuation: true })));
     const disc = new THREE.Mesh(
       new THREE.CircleGeometry(8, 64),
-      new THREE.MeshStandardMaterial({ color: 0x0b0d14, roughness: 0.3, metalness: 0.6 }),
+      new THREE.MeshLambertMaterial({ color: 0x0b0d14 }),
     );
     disc.rotation.x = -Math.PI / 2;
     stars.add(disc);
@@ -354,6 +357,7 @@ export class Theater {
     this.glow.material.color.copy(this.ambientColor);
 
     for (const fn of this.frameHooks) fn(dt, frame);
+    this.screen.updateDepth(this.renderer); // only does work when the video has a new frame
 
     if (this.renderer.xr.isPresenting) {
       this.renderer.render(this.scene, this.camera);

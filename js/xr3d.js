@@ -1,9 +1,11 @@
 // XR3D: turns a flat 2D video into stereoscopic 3D in real time.
 //
-// 1. Depth estimation: each vertex of a dense screen mesh estimates scene depth from
-//    the video frame with monocular cues: brightness, saturation, the "lower in frame is
-//    nearer" ground-plane prior and a centre bias. The result is blurred with a Gaussian kernel.
-// 2. Relief: vertices are displaced toward the viewer by that depth, so the screen is
+// 1. Depth estimation: a small depth pass (160x90) estimates scene depth from each new
+//    video frame with monocular cues: brightness, saturation, the "lower in frame is nearer"
+//    ground-plane prior and a centre bias, Gaussian-blurred and blended with the previous
+//    frame's depth so it doesn't flicker. It runs once per video frame, not once per
+//    rendered frame per eye.
+// 2. Relief: screen vertices are displaced toward the viewer by that depth, so the screen is
 //    real 3D geometry that shows motion parallax when you move your head.
 // 3. Stereo pop: each eye gets its own mesh (WebXR layers 1/2), and the fragment
 //    shader shifts the image horizontally by depth relative to the convergence plane,
@@ -16,20 +18,21 @@ import * as THREE from 'three';
 export const LAYOUT = { mono: 0, sbs: 1, tab: 2 };
 export const EYE = { mono: 0, left: -1, right: 1 };
 
-const vertexShader = /* glsl */`
+const DEPTH_W = 160;
+const DEPTH_H = 90;
+
+const depthVertexShader = 'varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy, 0.0, 1.0); }';
+
+const depthFragmentShader = /* glsl */`
   uniform sampler2D uMap;
+  uniform sampler2D uPrev;
   uniform int uLayout;
-  uniform float uDepthOn;
-  uniform float uRelief;
-  uniform float uContrast;
   uniform float uBlur;
+  uniform float uContrast;
   uniform float uInvert;
-  uniform float uWidth;
-  uniform float uHeight;
-  uniform float uCurve;
+  uniform float uBlend;
 
   varying vec2 vUv;
-  varying float vDepth;
 
   // Depth is always estimated from the left/mono view so both eyes agree.
   vec2 baseUV(vec2 uv) {
@@ -46,7 +49,8 @@ const vertexShader = /* glsl */`
     return 0.65 * l + 0.35 * sat;
   }
 
-  float estimateDepth(vec2 uv) {
+  void main() {
+    vec2 uv = vUv;
     float acc = 0.0;
     float wsum = 0.0;
     for (int i = -2; i <= 2; i++) {
@@ -62,12 +66,26 @@ const vertexShader = /* glsl */`
     float centre = 1.0 - clamp(length((uv - 0.5) * vec2(1.0, 1.4)), 0.0, 1.0);
     d = mix(d, 0.55 * ground + 0.45 * centre, 0.4);
     if (uInvert > 0.5) d = 1.0 - d;
-    return clamp((d - 0.5) * uContrast + 0.5, 0.0, 1.0);
+    d = clamp((d - 0.5) * uContrast + 0.5, 0.0, 1.0);
+    d = mix(texture2D(uPrev, uv).r, d, uBlend); // temporal smoothing
+    gl_FragColor = vec4(d, d, d, 1.0);
   }
+`;
+
+const vertexShader = /* glsl */`
+  uniform sampler2D uDepthMap;
+  uniform float uDepthOn;
+  uniform float uRelief;
+  uniform float uWidth;
+  uniform float uHeight;
+  uniform float uCurve;
+
+  varying vec2 vUv;
+  varying float vDepth;
 
   void main() {
     vUv = uv;
-    float d = uDepthOn > 0.5 ? estimateDepth(uv) : 0.5;
+    float d = uDepthOn > 0.5 ? texture2D(uDepthMap, uv).r : 0.5;
     vDepth = d;
 
     float x = (uv.x - 0.5) * uWidth;
@@ -126,13 +144,24 @@ const fragmentShader = /* glsl */`
   }
 `;
 
+// Uniforms that change the depth map, so it must be recomputed even without a new frame.
+const DEPTH_INPUTS = new Set(['uMap', 'uLayout', 'uBlur', 'uContrast', 'uInvert', 'uDepthOn']);
+
 // One mesh per view: mono (layer 0, desktop), left eye (layer 1), right eye (layer 2).
 // The eyes share every uniform except uEye.
 export class XR3DScreen {
   constructor(texture) {
     this.group = new THREE.Group();
+
+    // Depth map ping-pong targets (previous frame feeds the temporal blend).
+    const rt = () => new THREE.WebGLRenderTarget(DEPTH_W, DEPTH_H, {
+      type: THREE.HalfFloatType, depthBuffer: false, minFilter: THREE.LinearFilter, magFilter: THREE.LinearFilter,
+    });
+    this.depthTargets = [rt(), rt()];
+
     this.shared = {
       uMap: { value: texture },
+      uDepthMap: { value: this.depthTargets[0].texture },
       uLayout: { value: LAYOUT.mono },
       uDepthOn: { value: 1 },
       uRelief: { value: 0.18 },
@@ -149,8 +178,29 @@ export class XR3DScreen {
       uShowDepth: { value: 0 },
     };
 
-    // Dense grid so per-vertex depth has enough resolution; 192x108 = ~21k verts.
-    const geometry = new THREE.PlaneGeometry(1, 1, 192, 108);
+    this.depthMaterial = new THREE.ShaderMaterial({
+      uniforms: {
+        uMap: this.shared.uMap,
+        uLayout: this.shared.uLayout,
+        uBlur: this.shared.uBlur,
+        uContrast: this.shared.uContrast,
+        uInvert: this.shared.uInvert,
+        uPrev: { value: this.depthTargets[1].texture },
+        uBlend: { value: 1 },
+      },
+      vertexShader: depthVertexShader,
+      fragmentShader: depthFragmentShader,
+      depthTest: false,
+      depthWrite: false,
+    });
+    this.depthScene = new THREE.Scene();
+    this.depthScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), this.depthMaterial));
+    this.depthCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    this.depthKey = '';
+    this.depthMapId = '';
+
+    // The depth map is smooth, so a moderate grid is plenty: 128x72 = ~9k verts.
+    const geometry = new THREE.PlaneGeometry(1, 1, 128, 72);
     const make = (eye, layer) => {
       const material = new THREE.ShaderMaterial({
         uniforms: { ...this.shared, uEye: { value: eye } },
@@ -170,6 +220,32 @@ export class XR3DScreen {
     this.setStereo(false);
   }
 
+  // Recomputes the depth map when the video has a new frame (or a depth setting changed).
+  // Call once per rendered frame before drawing; it's a no-op most of the time.
+  updateDepth(renderer) {
+    if (!this.shared.uDepthOn.value) return;
+    const map = this.shared.uMap.value;
+    const key = `${map.uuid}:${map.version}`;
+    if (key === this.depthKey) return;
+    this.depthKey = key;
+
+    // New source (channel change): start fresh instead of blending from the old picture.
+    this.depthMaterial.uniforms.uBlend.value = map.uuid === this.depthMapId ? 0.5 : 1;
+    this.depthMapId = map.uuid;
+
+    const [read, write] = [this.depthTargets[1], this.depthTargets[0]];
+    this.depthMaterial.uniforms.uPrev.value = read.texture;
+    const prevTarget = renderer.getRenderTarget();
+    const xrEnabled = renderer.xr.enabled;
+    renderer.xr.enabled = false; // render offscreen even while a VR session is running
+    renderer.setRenderTarget(write);
+    renderer.render(this.depthScene, this.depthCamera);
+    renderer.setRenderTarget(prevTarget);
+    renderer.xr.enabled = xrEnabled;
+    this.shared.uDepthMap.value = write.texture;
+    this.depthTargets = [read, write]; // next frame writes into `read`, blending from this one
+  }
+
   // When stereo is on, the mono mesh hides so per-eye cameras see only their own mesh.
   setStereo(on) {
     this.mono.visible = !on;
@@ -177,7 +253,14 @@ export class XR3DScreen {
     this.right.visible = on;
   }
 
-  set(name, value) { this.shared[name].value = value; }
+  set(name, value) {
+    this.shared[name].value = value;
+    if (DEPTH_INPUTS.has(name)) {
+      this.depthKey = '';
+      this.depthMapId = ''; // a settings change shows its full effect at once, no blending
+    }
+  }
+
   get(name) { return this.shared[name].value; }
 
   setSize(width, aspect) {
