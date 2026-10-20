@@ -1,6 +1,7 @@
 import { preferFlat, device } from './device.js';
 import { FlatStage } from './flat-stage.js';
 import { StreamPlayer, setHlsPreference, setBufferLevel, setAirPlay } from './stream.js';
+import { Cast } from './cast.js';
 import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, xtreamAccount, xtreamAlternates, readBody } from './m3u.js';
 import { XtreamLibrary } from './xtream.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
@@ -1261,6 +1262,7 @@ async function play(ch, { startAt = resumePoint(ch) } = {}) {
     offerExternal(ch);
     return;
   }
+  if (castCtl.connected) return castCurrent(ch, startAt);
   if (startAt) toast(`Resuming at ${fmtDuration(startAt)}`);
   const ok = await player.load(sources, { startAt });
   if (ok && state.current === ch) {
@@ -1323,6 +1325,49 @@ $('episodesBtn').onclick = () => {
   if (!menu.classList.contains('hidden')) renderEpMenu();
 };
 $('epClose').onclick = () => $('epMenu').classList.add('hidden');
+
+// ---------- Chromecast ----------
+// The proxy that Chromecasts fetch through: this site's own when it's https, else the hosted
+// Worker (a Chromecast can't reach localhost, and its player refuses plain http).
+const HOSTED = 'https://iptv.jodeit.workers.dev';
+const castProxied = (u) => (location.protocol === 'https:' && proxy.available ? proxied(u) : `${HOSTED}/proxy?url=${encodeURIComponent(u)}`);
+
+const castCtl = new Cast({ onChange: (s) => syncCast(s) });
+let castWas = 'unavailable';
+function syncCast(s) {
+  $('castBtn').classList.toggle('hidden', s === 'unavailable');
+  $('castBtn').classList.toggle('on', s === 'connected');
+  $('castBtn').textContent = s === 'connected' ? `Casting · ${castCtl.deviceName}` : s === 'connecting' ? 'Connecting…' : 'Cast';
+  if (s === 'connected' && castWas !== 'connected' && state.current) castCurrent(state.current, kindOf(state.current) === 'live' ? 0 : Math.floor(video.currentTime));
+  // Back from the TV: carry on here from where it got to.
+  if (castWas === 'connected' && s !== 'connected' && state.current) {
+    const at = kindOf(state.current) === 'live' ? 0 : Math.floor(castCtl.lastPosition || 0);
+    play(state.current, { startAt: at });
+  }
+  // Keep the TV's position, to resume here if the session ends from Chrome's own Cast menu.
+  clearInterval(castTimer);
+  if (s === 'connected') castTimer = setInterval(() => { castCtl.lastPosition = castCtl.position() || castCtl.lastPosition; }, 5000);
+  castWas = s;
+}
+let castTimer = 0;
+
+async function castCurrent(ch, startAt = 0) {
+  player.destroy?.();
+  video.pause();
+  const live = kindOf(ch) === 'live';
+  // HLS for channels (the Chromecast can't play a raw MPEG-TS stream); the file itself otherwise.
+  const urls = streamCandidates(ch).map((s) => s.hint || s.src);
+  const pick = (live && urls.find((u) => /\.m3u8(\?|$)/i.test(u))) || ch.url;
+  if (/\.(mkv|avi)(\?|$)/i.test(pick)) toast('Chromecast may not play MKV files (especially with surround audio). If it fails, try Infuse or VLC.');
+  theater.setPlaceholder(ch.name, `Playing on ${castCtl.deviceName}`);
+  setStatus(`Casting to ${castCtl.deviceName}`);
+  try {
+    await castCtl.load({ url: castProxied(pick), title: ch.name, subtitle: ch.seriesName || ch.group || '', image: ch.logo || undefined, live, startAt });
+  } catch (err) {
+    toast(`The Chromecast couldn’t play this: ${err.message || err}`, true);
+  }
+}
+$('castBtn').onclick = () => (castCtl.connected ? (castCtl.lastPosition = castCtl.position(), castCtl.stop()) : castCtl.pick().catch(() => {}));
 
 function playDirect(url) {
   if (!url) return;

@@ -524,3 +524,4 @@ body.mini-on #video {
 body.mini-on .stage-pip { display: none; }
 .guide-open { position: fixed; top: 86px; right: 62px; z-index: 31; background: rgba(0,0,0,.6); backdrop-filter: blur(8px); }
 @media (max-width: 720px) { .guide-open { top: 74px; right: 56px; } }
+#castBtn.on { color: var(--accent); border-color: var(--accent); }
