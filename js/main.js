@@ -1,6 +1,6 @@
 import { preferFlat, device } from './device.js';
 import { FlatStage } from './flat-stage.js';
-import { StreamPlayer, setHlsPreference, setBufferLevel } from './stream.js';
+import { StreamPlayer, setHlsPreference, setBufferLevel, setAirPlay } from './stream.js';
 import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, xtreamAccount, xtreamAlternates, readBody } from './m3u.js';
 import { XtreamLibrary } from './xtream.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
@@ -1369,6 +1369,21 @@ video.addEventListener('play', syncPlayButton);
 video.addEventListener('pause', syncPlayButton);
 video.addEventListener('resize', updateAspect);
 video.addEventListener('waiting', () => setStatus('Buffering…'));
+// AirPlay: switch to a stream the Apple TV can fetch on its own (see setAirPlay).
+video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', () => {
+  const wireless = !!video.webkitCurrentPlaybackTargetIsWireless;
+  setAirPlay(wireless);
+  const ch = state.current;
+  if (!wireless || !ch || player.lastEngine === 'native') return;
+  if (/\.(mkv|avi)(\?|$)/i.test(ch.url)) {
+    toast('Apple TV can’t play this file format over AirPlay. Open it in Infuse on the Apple TV instead.', true);
+    return;
+  }
+  if (/^(localhost|127\.)/.test(location.hostname)) {
+    toast('AirPlay needs the hosted site (iptv.jodeit.workers.dev): the Apple TV can’t reach this computer’s localhost proxy.', true);
+  }
+  play(ch, { startAt: kindOf(ch) === 'live' ? 0 : Math.floor(video.currentTime) });
+});
 video.addEventListener('timeupdate', () => saveProgress());
 video.addEventListener('pause', () => saveProgress(true));
 addEventListener('pagehide', () => saveProgress(true));

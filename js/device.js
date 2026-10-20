@@ -9,13 +9,13 @@ export const device = {
   get android() { return /Android/i.test(ua) && !this.headset; },
 };
 
-// setting: 'auto' | 'flat' | 'theater'. Auto gives phones and tablets without WebXR a plain
-// video player: the 3D theater has nothing to offer them and costs memory and battery.
-// (Vision Pro looks like an iPad but supports immersive VR, so it keeps the theater.)
+// setting: 'auto' | 'flat' | 'theater'. Auto gives the plain video player to everything
+// except VR headsets (and anything else that can enter immersive VR, like Vision Pro): the
+// 3D theater only pays off there, and elsewhere costs memory and battery.
 export async function preferFlat(setting = 'auto') {
   if (setting === 'flat') return true;
   if (setting === 'theater') return false;
-  if (!device.ios && !device.android) return false;
+  if (device.headset) return false;
   try {
     if (await navigator.xr?.isSessionSupported('immersive-vr')) return false;
   } catch { /* no WebXR */ }

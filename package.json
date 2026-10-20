@@ -5,11 +5,11 @@
   "type": "module",
   "description": "WebXR IPTV player with XR3D simulated 3D",
   "scripts": {
-    "start": "node server.js",
-    "local": "SYNC_URL=https://iptv.jodeit.workers.dev node server.js",
+    "start": "SYNC_URL=${SYNC_URL-https://iptv.jodeit.workers.dev} node --use-system-ca server.js",
+    "standalone": "SYNC_URL= node server.js",
     "tunnel": "cloudflared tunnel --url http://localhost:8080"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22.15"
   }
 }

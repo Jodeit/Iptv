@@ -8,6 +8,11 @@ import { probe, describeProbe } from './diagnose.js';
 // 'auto' | 'hlsjs' | 'native': which engine plays HLS first (Sources → Display).
 let hlsPreference = 'auto';
 export const setHlsPreference = (p) => { hlsPreference = p || 'auto'; };
+// AirPlay sends the Apple TV a URL to fetch itself, so only Safari's own player (a plain src)
+// works there: hls.js, mpegts.js and the MKV remuxer feed video through Media Source, which
+// AirPlay can't carry, and the Apple TV gets audio only.
+let airPlay = false;
+export const setAirPlay = (on) => { airPlay = !!on; };
 
 // Seconds to keep buffered ahead: a bigger cushion rides out slow providers and proxies.
 // preroll = seconds to build up before a movie file starts playing.
@@ -475,6 +480,7 @@ function withTimeout(promise, ms, message) {
 
 function orderEngines(url) {
   const path = url.split('?')[0].toLowerCase();
+  if (airPlay) return /\.(m3u8?|mp4|mov|m4v)$/.test(path) || url.includes('m3u8') ? ['native'] : [];
   const canNativeHls = document.createElement('video').canPlayType('application/vnd.apple.mpegurl');
   if (path.endsWith('.m3u8') || path.endsWith('.m3u') || url.includes('m3u8')) {
     const hlsjs = !!(window.Hls && Hls.isSupported());

@@ -8,7 +8,7 @@ There's no build step: it's static files with three.js, hls.js and mpegts.js loa
 
 ```bash
 cd o3xr-iptv
-node server.js            # needs Node 18+, no npm install
+npm start                 # needs Node 22.15+, no npm install
 ```
 
 Open http://localhost:8080. `server.js` serves the app and adds a **CORS proxy** at `/proxy`.
@@ -126,7 +126,7 @@ so it opens a direct TCP connection instead (`proxy/http-socket.js`). It still c
 cloud servers outright, and the playback log says when that's the case. The fix then is to run the proxy at home,
 so your provider sees your home connection, like any IPTV app would.
 
-1. On a computer at home (Windows, Mac or Linux with [Node 18+](https://nodejs.org)):
+1. On a computer at home (Windows, Mac or Linux with [Node 22.15+](https://nodejs.org)):
    ```bash
    git clone https://github.com/Jodeit/Iptv && cd Iptv
    node server.js
