@@ -217,6 +217,9 @@ body.flat #enterAR { display: none !important; }
   background: #000; border-radius: var(--radius); overflow: hidden;
 }
 #flatStage video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
+/* iOS's long-press menu for a video offers "Download", meaningless for a stream, and a long
+   press to paste into a settings field could land on it through the drawer. */
+video { -webkit-touch-callout: none; }
 .flat-overlay {
   position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 6px; text-align: center; padding: 20px; pointer-events: none;
@@ -357,6 +360,8 @@ body.flat #enterAR { display: none !important; }
   .topbar .primary-nav::-webkit-scrollbar { display: none; }
   .topbar .primary-nav button { padding: 6px 10px; flex: 0 0 auto; }
   .panel { right: var(--edge-r); width: auto; }
+  /* The drawer covers the player here, so no touch should reach the video behind it */
+  body:not(.mini-on):has(.panel:not(.collapsed)) #flatStage { pointer-events: none; }
   .panel.collapsed { transform: translateY(16px); }
   .bar { flex-wrap: wrap; padding: 8px; gap: 4px 8px; }
   .bar-controls { width: 100%; justify-content: space-between; }
