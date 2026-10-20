@@ -99,6 +99,14 @@
       <h3>Quick sources</h3>
       <div class="presets" id="presets"></div>
 
+      <h3>Find sources</h3>
+      <div class="row">
+        <button id="findSources" class="btn ghost">Find latest</button>
+        <select id="foundSource" aria-label="Found source" disabled><option value="">No sources found</option></select>
+        <button id="loadFoundSource" class="btn" disabled>Load</button>
+      </div>
+      <p id="sourceFinderStatus" class="muted small" aria-live="polite"></p>
+
       <h3>Content filter</h3>
       <label class="check"><input id="cfOn" type="checkbox"> Only show these regions and languages</label>
       <label class="field">Live channel groups

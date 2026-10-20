@@ -12,6 +12,7 @@ import { GuideView } from './guide-view.js';
 import { Ratings, parseTitle } from './ratings.js';
 import { GalleryView } from './gallery.js';
 import { Similar, indexCatalog, matchCatalog } from './similar.js';
+import { findLatestSources } from './source-finder.js';
 
 const $ = (id) => document.getElementById(id);
 
@@ -1887,6 +1888,33 @@ for (const p of PRESETS) {
   b.onclick = () => (p.builtin ? loadBuiltinDemo() : loadPlaylistUrl(p.url, p.name));
   $('presets').append(b);
 }
+
+let foundSources = [];
+$('findSources').onclick = () => busy($('findSources'), async () => {
+  const status = $('sourceFinderStatus');
+  const select = $('foundSource');
+  const load = $('loadFoundSource');
+  status.textContent = 'Checking recent Reddit posts…';
+  select.replaceChildren(new Option('Searching…', ''));
+  select.disabled = true;
+  load.disabled = true;
+  try {
+    const result = await findLatestSources(smartFetch);
+    foundSources = result.sources;
+    select.replaceChildren(...foundSources.map((source, index) => new Option(source.name, String(index))));
+    select.disabled = false;
+    load.disabled = false;
+    status.textContent = `${foundSources.length} sources found in “${result.title}”.`;
+  } catch (err) {
+    foundSources = [];
+    select.replaceChildren(new Option('No sources found', ''));
+    status.textContent = err.message;
+  }
+});
+$('loadFoundSource').onclick = () => {
+  const source = foundSources[+$('foundSource').value];
+  if (source) loadPlaylistUrl(source.url, source.name);
+};
 
 for (const b of $('modeSeg').children) b.onclick = () => applyMode(b.dataset.mode);
 const saveProxyUrl = async () => {

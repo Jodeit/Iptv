@@ -205,7 +205,7 @@ Proxy modes (Sources tab):
 
 | Area | What you get |
 |---|---|
-| Sources | Xtream `get.php` links, M3U/M3U_PLUS URLs, local `.m3u` files, Xtream Codes login, single stream URLs, iptv-org presets |
+| Sources | Xtream `get.php` links, M3U/M3U_PLUS URLs, local `.m3u` files, Xtream Codes login, single stream URLs, iptv-org presets, Reddit/paste.sh source finder |
 | Streams | HLS (hls.js / native Safari), MPEG-TS & FLV (mpegts.js), MP4/WebM, with automatic fallback between engines |
 | Library | Group filter, search, favorites, saved playlists, last playlist restored on reload |
 | 3D modes | **2D**, **XR3D** (simulated 3D), **SBS** and **TAB** for native 3D channels. Channels with "3D SBS"/"TAB" in the name switch automatically |
