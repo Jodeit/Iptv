@@ -92,17 +92,35 @@ export function capMeta(meta = {}) {
 
 const sameDoc = (x, y) => JSON.stringify(x) === JSON.stringify(y);
 
+// Browsers only offer crypto.subtle on https pages and localhost. Elsewhere (the app opened
+// from a computer on the home network, http://192.168.…) the same SHA-256, HKDF and AES-GCM
+// come from the audited noble libraries, so profiles work there too, byte for byte the same.
+const subtle = globalThis.crypto?.subtle;
+let noble;
+const loadNoble = () => (noble ??= Promise.all([
+  import('https://cdn.jsdelivr.net/npm/@noble/hashes@1.5.0/sha256/+esm'),
+  import('https://cdn.jsdelivr.net/npm/@noble/hashes@1.5.0/hkdf/+esm'),
+  import('https://cdn.jsdelivr.net/npm/@noble/ciphers@1.0.0/aes/+esm'),
+]).then(([h, k, a]) => ({ sha256: h.sha256, hkdf: k.hkdf, gcm: a.gcm })));
+
 export function canSync() {
-  return !!globalThis.crypto?.subtle;
+  return !!globalThis.crypto?.getRandomValues;
 }
 
 async function deriveKeys(token) {
   const raw = b64u.dec(token);
-  const idBytes = await crypto.subtle.digest('SHA-256', new Uint8Array([...enc.encode('o3xr-profile-id:'), ...raw]));
+  const idInput = new Uint8Array([...enc.encode('o3xr-profile-id:'), ...raw]);
+  const salt = enc.encode('o3xr-profile'), info = enc.encode('aes-gcm-256');
+  if (!subtle) {
+    const n = await loadNoble();
+    const id = [...n.sha256(idInput)].map((b) => b.toString(16).padStart(2, '0')).join('');
+    return { id, key: { raw: n.hkdf(n.sha256, raw, salt, info, 32) } };
+  }
+  const idBytes = await subtle.digest('SHA-256', idInput);
   const id = [...new Uint8Array(idBytes)].map((b) => b.toString(16).padStart(2, '0')).join('');
-  const base = await crypto.subtle.importKey('raw', raw, 'HKDF', false, ['deriveKey']);
-  const key = await crypto.subtle.deriveKey(
-    { name: 'HKDF', hash: 'SHA-256', salt: enc.encode('o3xr-profile'), info: enc.encode('aes-gcm-256') },
+  const base = await subtle.importKey('raw', raw, 'HKDF', false, ['deriveKey']);
+  const key = await subtle.deriveKey(
+    { name: 'HKDF', hash: 'SHA-256', salt, info },
     base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt'],
   );
   return { id, key };
@@ -110,13 +128,14 @@ async function deriveKeys(token) {
 
 async function encrypt(key, obj) {
   const iv = crypto.getRandomValues(new Uint8Array(12));
-  const ct = await crypto.subtle.encrypt({ name: 'AES-GCM', iv }, key, enc.encode(JSON.stringify(obj)));
+  const pt = enc.encode(JSON.stringify(obj));
+  const ct = key.raw ? (await loadNoble()).gcm(key.raw, iv).encrypt(pt) : await subtle.encrypt({ name: 'AES-GCM', iv }, key, pt);
   return `${b64u.enc(iv)}.${b64u.enc(ct)}`;
 }
 
 async function decrypt(key, data) {
   const [iv, ct] = data.split('.');
-  const pt = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: b64u.dec(iv) }, key, b64u.dec(ct));
+  const pt = key.raw ? (await loadNoble()).gcm(key.raw, b64u.dec(iv)).decrypt(b64u.dec(ct)) : await subtle.decrypt({ name: 'AES-GCM', iv: b64u.dec(iv) }, key, b64u.dec(ct));
   return { ...emptyDoc(), ...JSON.parse(dec.decode(pt)) };
 }
 
