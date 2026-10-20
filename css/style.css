@@ -11,6 +11,20 @@
   --active: rgba(61, 224, 255, 0.14);
   --radius: 12px;
   color-scheme: dark;
+  /* Layout: the top bar and now-playing bar float at the edges; everything else fits between
+     them. Safe-area insets keep clear of the notch, Dynamic Island and home indicator.
+     --bar-h is measured by main.js, since the bar wraps to two rows on phones. */
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+  --gap: 12px;
+  --top-h: 52px;
+  --bar-h: 64px;
+  --edge-l: calc(var(--gap) + var(--sal));
+  --edge-r: calc(var(--gap) + var(--sar));
+  --content-top: calc(var(--sat) + var(--gap) * 2 + var(--top-h));
+  --content-bottom: calc(var(--sab) + var(--gap) * 2 + var(--bar-h));
 }
 
 * { box-sizing: border-box; }
@@ -22,11 +36,15 @@ html, body {
   background: var(--bg);
   color: var(--text);
   font: 14px/1.4 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  -webkit-text-size-adjust: 100%; /* Safari would otherwise enlarge text in landscape */
+  overscroll-behavior: none;
 }
 
 #stage, #stage canvas { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
 
 button, input, select { font: inherit; color: inherit; }
+/* No double-tap-to-zoom wait on controls, and no grey flash on tap */
+button, a, input, select, label, li, .gcard { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 
 .hidden { display: none !important; }
 .muted { color: var(--muted); }
@@ -35,7 +53,7 @@ button, input, select { font: inherit; color: inherit; }
 /* ---------- Panel ---------- */
 /* ---------- Top bar ---------- */
 .topbar {
-  position: fixed; top: 12px; left: 12px; right: 12px; height: 52px; z-index: 32;
+  position: fixed; top: calc(var(--sat) + var(--gap)); left: var(--edge-l); right: var(--edge-r); height: var(--top-h); z-index: 32;
   display: flex; align-items: center; gap: 14px; padding: 0 10px 0 14px;
   background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--line); border-radius: var(--radius);
@@ -48,7 +66,7 @@ button, input, select { font: inherit; color: inherit; }
 /* ---------- Settings drawer ---------- */
 .panel {
   position: fixed;
-  top: 76px; left: 12px; bottom: 88px;
+  top: var(--content-top); left: var(--edge-l); bottom: var(--content-bottom);
   width: 360px;
   display: flex; flex-direction: column;
   background: var(--panel);
@@ -82,7 +100,7 @@ button, input, select { font: inherit; color: inherit; }
 }
 .tab.active { color: var(--text); border-bottom-color: var(--accent); }
 
-.tab-body { display: none; flex: 1; overflow-y: auto; padding: 10px 14px 14px; min-height: 0; }
+.tab-body { display: none; flex: 1; overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; padding: 10px 14px 14px; min-height: 0; }
 .tab-body.active { display: flex; flex-direction: column; gap: 8px; }
 .tab-body > * { flex-shrink: 0; } /* a long channel list must not squash the controls above it */
 .tab-body h3 { margin: 10px 0 2px; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
@@ -178,7 +196,7 @@ input[type=file] { font-size: 12px; color: var(--muted); }
 
 /* ---------- Play in another app ---------- */
 .ext-sheet {
-  position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); z-index: 25;
+  position: fixed; left: 50%; bottom: var(--content-bottom); transform: translateX(-50%); z-index: 25;
   display: flex; align-items: center; gap: 12px; flex-wrap: wrap; max-width: calc(100vw - 24px);
   padding: 12px 14px; background: var(--panel-solid); border: 1px solid var(--accent); border-radius: var(--radius);
 }
@@ -186,7 +204,7 @@ input[type=file] { font-size: 12px; color: var(--muted); }
 #extClose { position: absolute; top: 6px; right: 6px; }
 .ext-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
 .ext-buttons a.btn { text-decoration: none; display: inline-block; }
-@media (max-width: 720px) { .ext-sheet { bottom: 140px; width: calc(100vw - 16px); } }
+@media (max-width: 720px) { .ext-sheet { width: calc(100vw - 16px - var(--sal) - var(--sar)); } }
 
 /* ---------- Flat player (phones/tablets) ---------- */
 body.flat #stage,
@@ -195,7 +213,7 @@ body.flat .tab[data-tab="theater"],
 body.flat #enterVR,
 body.flat #enterAR { display: none !important; }
 #flatStage {
-  position: fixed; top: 76px; right: 12px; bottom: 88px; left: 12px;
+  position: fixed; top: var(--content-top); right: var(--edge-r); bottom: var(--content-bottom); left: var(--edge-l);
   background: #000; border-radius: var(--radius); overflow: hidden;
 }
 #flatStage video { width: 100%; height: 100%; object-fit: contain; display: block; background: #000; }
@@ -206,9 +224,6 @@ body.flat #enterAR { display: none !important; }
 }
 .flat-title { font-size: 22px; font-weight: 700; }
 .flat-sub { color: var(--muted); }
-@media (max-width: 720px) {
-  #flatStage { top: 64px; left: 8px; right: 8px; bottom: 132px; }
-}
 
 /* ---------- Guide ---------- */
 .channel-list .ch-prog { height: 2px; margin-top: 3px; background: rgba(255,255,255,.08); border-radius: 2px; overflow: hidden; display: none; }
@@ -216,14 +231,14 @@ body.flat #enterAR { display: none !important; }
 .channel-list .ch-prog i { display: block; height: 100%; width: 0; background: var(--accent); }
 
 .guide {
-  position: fixed; inset: 76px 12px 88px; z-index: 30; display: flex; flex-direction: column;
+  position: fixed; inset: var(--content-top) var(--edge-r) var(--content-bottom) var(--edge-l); z-index: 30; display: flex; flex-direction: column;
   background: var(--panel-solid); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
   --guide-label-w: 260px; /* read by guide-view.js to place the timeline */
 }
 .guide-head { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .guide-head h2 { margin: 0; font-size: 16px; }
 .guide-head .guide-info { flex: 1; }
-.guide-scroll { flex: 1; overflow: auto; position: relative; }
+.guide-scroll { flex: 1; overflow: auto; position: relative; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .guide-grid { position: relative; min-height: 100%; }
 .guide-ruler { position: sticky; top: 0; z-index: 3; height: 30px; background: var(--panel-solid); border-bottom: 1px solid var(--line); }
 .guide-corner { position: sticky; left: 0; width: var(--guide-label-w); height: 30px; background: var(--panel-solid); z-index: 4; }
@@ -253,8 +268,10 @@ body.flat #enterAR { display: none !important; }
 .guide-detail-text { flex: 1; min-width: 0; }
 .guide-detail-text p { margin: 4px 0 0; font-size: 13px; color: var(--muted); max-height: 3.2em; overflow: auto; }
 @media (max-width: 720px) {
-  .guide, .gallery { inset: 64px 8px 132px; }
-  .guide { --guide-label-w: 140px; }
+  .guide { --guide-label-w: 110px; }
+  .guide-row { height: 52px; }
+  .guide-label img { display: none; }
+  .guide-detail { flex-wrap: wrap; gap: 8px; }
 }
 
 /* ---------- Profiles ---------- */
@@ -302,7 +319,7 @@ body.flat #enterAR { display: none !important; }
 
 /* ---------- Now-playing bar ---------- */
 .bar {
-  position: fixed; left: 12px; right: 12px; bottom: 12px; height: 64px;
+  position: fixed; left: var(--edge-l); right: var(--edge-r); bottom: calc(var(--sab) + var(--gap)); min-height: 64px;
   display: flex; align-items: center; gap: 12px; padding: 0 12px;
   background: var(--panel); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--line); border-radius: var(--radius); z-index: 10;
@@ -317,13 +334,13 @@ body.flat #enterAR { display: none !important; }
 .bar-controls .btn { margin-left: 8px; }
 
 .fab {
-  position: fixed; top: 12px; left: 12px; z-index: 10; width: 44px; height: 44px;
+  position: fixed; top: calc(var(--sat) + var(--gap)); left: var(--edge-l); z-index: 10; width: 44px; height: 44px;
   border-radius: 12px; border: 1px solid var(--line); background: var(--panel);
   cursor: pointer; font-size: 18px;
 }
 
 .toast {
-  position: fixed; top: 76px; left: 50%; transform: translate(-50%, -20px);
+  position: fixed; top: var(--content-top); left: 50%; transform: translate(-50%, -20px);
   background: var(--panel-solid); border: 1px solid var(--line); border-radius: 10px;
   padding: 10px 16px; opacity: 0; pointer-events: none; transition: all .25s ease; z-index: 60; /* above the top bar, drawer and guide */
   max-width: calc(100vw - 32px);
@@ -333,20 +350,74 @@ body.flat #enterAR { display: none !important; }
 
 /* ---------- Phone layout ---------- */
 @media (max-width: 720px) {
-  .topbar { top: 8px; left: 8px; right: 8px; height: 48px; gap: 6px; padding: 0 6px; }
+  :root { --gap: 8px; --top-h: 48px; --bar-h: 100px; /* until main.js measures it */ }
+  .topbar { gap: 6px; padding: 0 6px; }
   .topbar .brand > span:last-child, .topbar .profile-chip, .primary-nav [data-kind=""] { display: none; }
-  .topbar .primary-nav { margin-left: 0; }
-  .topbar .primary-nav button { padding: 6px 10px; }
-  .panel { top: 64px; left: 8px; right: 8px; bottom: 132px; width: auto; }
-  .bar { left: 8px; right: 8px; bottom: 8px; height: auto; flex-wrap: wrap; padding: 8px; gap: 8px; }
-  .bar-controls { width: 100%; justify-content: space-between; flex-wrap: wrap; }
+  .topbar .primary-nav { margin-left: 0; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+  .topbar .primary-nav::-webkit-scrollbar { display: none; }
+  .topbar .primary-nav button { padding: 6px 10px; flex: 0 0 auto; }
+  .panel { right: var(--edge-r); width: auto; }
+  .panel.collapsed { transform: translateY(16px); }
+  .bar { flex-wrap: wrap; padding: 8px; gap: 4px 8px; }
+  .bar-controls { width: 100%; justify-content: space-between; }
+  .np-logo { width: 40px; height: 30px; }
+  .np-logo:not([src]), .np-logo[src=""] { display: none; }
   #volume { width: 70px; }
-  .fab { top: auto; bottom: 132px; left: 8px; }
+  .fab { top: auto; bottom: var(--content-bottom); }
+  .toast { top: calc(var(--content-top) + 4px); }
+}
+
+/* Phone on its side: the screen is short, so the bars slim down and keep to one row. */
+@media (max-height: 500px) and (orientation: landscape) {
+  :root { --gap: 6px; --top-h: 40px; --bar-h: 48px; }
+  .topbar { gap: 8px; padding: 0 6px 0 8px; }
+  .topbar .brand > span:last-child { display: none; }
+  .topbar .primary-nav button { padding: 4px 14px; font-size: 14px; }
+  .logo { width: 26px; height: 26px; }
+  .bar { min-height: 48px; flex-wrap: nowrap; padding: 0 8px; }
+  .bar-controls { width: auto; }
+  .np-logo { display: none; }
+  .np-status { display: none; }
+  .bar .icon-btn { width: 40px; height: 40px; }
+  .guide-row { height: 46px; }
+  .gallery-head, .guide-head { padding: 6px 10px; }
+  .ep-menu { max-height: calc(100vh - var(--content-top) - var(--content-bottom)); }
+}
+
+/* iOS ignores page-set volume (the hardware buttons own it), so the slider would do nothing */
+body.ios #volume { display: none; }
+
+/* ---------- Touch screens ---------- */
+@media (pointer: coarse) {
+  /* Below 16px, Safari zooms the whole page in when a field is focused */
+  input[type=text], input[type=url], input[type=search], input[type=password], select { font-size: 16px; }
+  .icon-btn { width: 44px; height: 44px; }
+  .chip { min-height: 40px; }
+  .btn { min-height: 40px; }
+  .tabs.secondary .tab, .tabs.secondary .tab[data-tab="sources"], .tabs.secondary .tab[data-tab="profile"] { font-size: 12px; padding: 10px 2px; }
+  .channel-list li { min-height: 48px; }
+  .channel-list .fav { padding: 10px; margin: -6px -4px -6px 0; }
+  .seg button { min-height: 40px; }
+  .ep-list li { min-height: 44px; }
+  .check input { width: 20px; height: 20px; }
+  .slider input { height: 28px; }
+  /* :active stands in for :hover, which sticks after a tap on iOS */
+  .channel-list li:active, .ep-list li:active, .profile-list li:active, .pv-ep:active { background: var(--hover); }
+  .btn:active, .chip:active, .icon-btn:active, .seg button:active { filter: brightness(1.25); }
+}
+@media (hover: none) {
+  .channel-list li:hover, .profile-list li:hover, .ep-list li:hover, .pv-ep:hover, .icon-btn:hover, .guide-label:hover { background: none; }
+  .channel-list li.playing:hover { background: var(--active); }
+  .gcard:hover .gposter { transform: none; border-color: var(--line); }
+  .gcard:active .gposter { transform: scale(.97); border-color: var(--accent); }
+  .guide-cell:hover { background: rgba(255,255,255,.05); border-color: var(--line); }
+  .guide-cell.live:hover { background: var(--active); }
+  .mini-bar { opacity: 1; }
 }
 
 /* ---------- Gallery (movies & series) ---------- */
 .gallery {
-  position: fixed; inset: 76px 12px 88px; z-index: 30; display: flex; flex-direction: column;
+  position: fixed; inset: var(--content-top) var(--edge-r) var(--content-bottom) var(--edge-l); z-index: 30; display: flex; flex-direction: column;
   background: var(--panel-solid); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden;
 }
 .gallery-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
@@ -355,7 +426,7 @@ body.flat #enterAR { display: none !important; }
 .gallery-head .gallery-search { flex: 2 1 180px; min-width: 0; }
 .gallery-head .gallery-sort { flex: 0 1 160px; }
 .gallery-note { padding: 6px 14px 0; }
-.gallery-scroll { flex: 1; overflow: auto; padding: 14px; -webkit-overflow-scrolling: touch; }
+.gallery-scroll { flex: 1; overflow: auto; padding: 14px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .gallery-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 16px 12px; }
 .gallery-more { text-align: center; padding: 16px; }
 .gcard { display: flex; flex-direction: column; justify-content: flex-start; background: none; border: 0; padding: 0; color: inherit; text-align: left; cursor: pointer; min-width: 0; font: inherit; }
@@ -388,7 +459,7 @@ body.flat #enterAR { display: none !important; }
 .badge.meta.bad { background: #ff0000; color: #fff; }
 .badge.star { color: #ffd23d; }
 
-.gallery-preview { position: absolute; inset: 0; overflow: auto; background: var(--panel-solid); z-index: 2; }
+.gallery-preview { position: absolute; inset: 0; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; background: var(--panel-solid); z-index: 2; }
 .pv-backdrop { position: absolute; inset: 0 0 auto; height: 420px; overflow: hidden; pointer-events: none; }
 .pv-backdrop img { width: 100%; height: 100%; object-fit: cover; opacity: .35; }
 .pv-backdrop::after { content: ''; position: absolute; inset: 0; background: linear-gradient(to bottom, rgba(16,18,26,.2), var(--panel-solid)); }
@@ -424,7 +495,12 @@ body.flat #enterAR { display: none !important; }
 @media (max-width: 640px) {
   .pv-more { padding: 0 16px 28px; }
   .pv-row { grid-auto-columns: 104px; }
-  .gallery { border-radius: 0; border: 0; }
+  .gallery-head { padding: 8px 10px; gap: 6px; }
+  .gallery-head .gallery-kind { min-width: 0; flex: 1 1 100%; }
+  .gallery-head .gallery-cat, .gallery-head .gallery-search { flex: 1 1 100%; }
+  .gallery-head .gallery-sort { flex: 1 1 auto; }
+  .gallery-filters { padding: 6px 10px; }
+  .gallery-scroll { padding: 10px; }
   .gallery-grid { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 12px 8px; }
   .pv-body { flex-direction: column; padding: 0 16px 32px; gap: 14px; }
   .pv-poster { flex: none; width: 140px; }
@@ -494,20 +570,19 @@ body.mini-on #video {
 
 /* ---------- Episode picker ---------- */
 .ep-menu {
-  position: fixed; right: 12px; bottom: 88px; z-index: 45; width: min(420px, calc(100vw - 24px)); max-height: 60vh;
+  position: fixed; right: var(--edge-r); bottom: var(--content-bottom); z-index: 45; width: min(420px, calc(100vw - var(--gap) * 2 - var(--sal) - var(--sar))); max-height: 60vh;
   display: flex; flex-direction: column; background: var(--panel-solid); border: 1px solid var(--line);
   border-radius: var(--radius); box-shadow: 0 20px 60px rgba(0,0,0,.6);
 }
 .ep-menu header { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 10px 12px 6px; }
 .ep-seasons { display: flex; gap: 6px; overflow-x: auto; padding: 0 12px 8px; border-bottom: 1px solid var(--line); flex: none; }
 .ep-seasons .chip { flex: none; }
-.ep-list { list-style: none; margin: 0; padding: 4px; overflow: auto; }
+.ep-list { list-style: none; margin: 0; padding: 4px; overflow: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 .ep-list li { display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 8px; cursor: pointer; }
 .ep-list li:hover { background: var(--hover); }
 .ep-list li.playing { background: var(--active); color: var(--accent); }
 .ep-num { width: 24px; text-align: right; color: var(--muted); flex: none; }
 .ep-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-@media (max-width: 720px) { .ep-menu { bottom: 132px; right: 8px; } }
 .ep-seasons .chip.on { color: var(--accent); border-color: var(--accent); }
 .pv-continue { display: flex; align-items: center; gap: 10px; margin: 6px 0 12px; }
 .gcontinue { margin-bottom: 18px; }
@@ -522,6 +597,5 @@ body.mini-on #video {
 .stage-pip { position: absolute; top: 10px; right: 10px; z-index: 2; background: rgba(0,0,0,.55); border-radius: 8px; opacity: .7; }
 .stage-pip:hover { opacity: 1; }
 body.mini-on .stage-pip { display: none; }
-.guide-open { position: fixed; top: 86px; right: 62px; z-index: 31; background: rgba(0,0,0,.6); backdrop-filter: blur(8px); }
-@media (max-width: 720px) { .guide-open { top: 74px; right: 56px; } }
+.guide-open { position: fixed; top: calc(var(--content-top) + 10px); right: calc(var(--edge-r) + 50px); z-index: 31; background: rgba(0,0,0,.6); backdrop-filter: blur(8px); }
 #castBtn.on { color: var(--accent); border-color: var(--accent); }

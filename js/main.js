@@ -437,6 +437,11 @@ const video = $('video');
 // WebGL) isn't even downloaded there.
 const flat = await preferFlat(settings.display);
 document.body.classList.toggle('flat', flat);
+document.body.classList.toggle('ios', device.ios);
+// The now-playing bar wraps to two rows on phones; everything else sizes itself around it.
+new ResizeObserver(([e]) => {
+  document.documentElement.style.setProperty('--bar-h', `${Math.round(e.borderBoxSize?.[0]?.blockSize ?? e.target.offsetHeight)}px`);
+}).observe($('bar'));
 const TheaterModule = flat ? null : await import('./theater.js');
 const theater = flat ? new FlatStage(video) : new TheaterModule.Theater($('stage'), video);
 const LAYOUT = { mono: 0, sbs: 1, tab: 2 }; // must match xr3d.js
@@ -1583,7 +1588,12 @@ addEventListener('pointerdown', (e) => {
 // whenever it's actually playing, nothing should cover it.
 video.addEventListener('playing', () => { if (state.current) theater.setVideoActive(true); });
 
-$('search').oninput = (e) => { state.query = e.target.value; applyFilter(); };
+// Filtering tens of thousands of channels on every keystroke makes typing lag on a phone.
+let searchTimer = 0;
+$('search').oninput = (e) => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(() => { state.query = e.target.value; applyFilter(); }, state.library.length > 2000 ? 150 : 0);
+};
 $('groupFilter').onchange = (e) => { state.group = e.target.value; state.seriesOpen = null; applyFilter(); };
 $('favFilter').onclick = (e) => { state.favOnly = !state.favOnly; e.target.classList.toggle('on', state.favOnly); applyFilter(); };
 
