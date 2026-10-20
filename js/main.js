@@ -134,7 +134,37 @@ function updateNowPlayingEpg() {
   const nn = ch && guide.nowNext(ch);
   $('npName').textContent = ch ? (nn?.now ? `${ch.name} · ${nn.now.title}` : ch.name) : 'No channel';
   $('npName').title = nn?.now ? `${fmtTime(nn.now.start)}–${fmtTime(nn.now.stop)} ${nn.now.title}${nn.now.desc ? `\n${nn.now.desc}` : ''}` : '';
+  syncMediaSession(ch, nn?.now);
 }
+
+// ---------- Remote control (Media Session) ----------
+// What the system shows for this page's video (Control Center, lock screen, the Apple TV's
+// info panel during AirPlay) and what its remotes do. On live channels the skip buttons and
+// the Siri Remote's left/right change channel, since there's nothing to skip through.
+function syncMediaSession(ch, now) {
+  const ms = navigator.mediaSession;
+  if (!ms || !ch || typeof MediaMetadata === 'undefined') return;
+  ms.metadata = new MediaMetadata({
+    title: now?.title || ch.title || ch.name,
+    artist: now?.title ? ch.name : (ch.seriesName || ch.group || ''),
+    album: 'Tuner',
+    artwork: ch.logo ? [{ src: ch.logo, sizes: '512x512' }] : [],
+  });
+}
+
+(() => {
+  const ms = navigator.mediaSession;
+  if (!ms) return;
+  const live = () => !state.current || kindOf(state.current) === 'live';
+  const set = (action, fn) => { try { ms.setActionHandler(action, fn); } catch { /* not supported here */ } };
+  set('play', () => video.play().catch(() => {}));
+  set('pause', () => video.pause());
+  set('nexttrack', () => step(1));
+  set('previoustrack', () => step(-1));
+  set('seekforward', (d) => (live() ? step(1) : (video.currentTime += d.seekOffset || 10)));
+  set('seekbackward', (d) => (live() ? step(-1) : (video.currentTime -= d.seekOffset || 10)));
+  set('seekto', (d) => { if (!live() && Number.isFinite(d.seekTime)) video.currentTime = d.seekTime; });
+})();
 
 // Keep progress bars and "now" titles current as programmes change.
 setInterval(() => {
