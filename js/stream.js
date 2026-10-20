@@ -485,8 +485,10 @@ function orderEngines(url) {
   if (path.endsWith('.m3u8') || path.endsWith('.m3u') || url.includes('m3u8')) {
     const hlsjs = !!(window.Hls && Hls.isSupported());
     // hls.js first wherever it runs (its buffering is tuned for slow proxied segments);
-    // Safari's own player is the fallback, or first if chosen in Sources → Display.
-    if (canNativeHls && (hlsPreference === 'native' || !hlsjs)) return ['native', 'hlsjs'];
+    // Safari's own player is the fallback, or first if chosen in Sources → Display. On iPhone
+    // and iPad it's first by default: only it can be sent to an Apple TV over AirPlay.
+    const apple = /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+    if (canNativeHls && (hlsPreference === 'native' || !hlsjs || (apple && hlsPreference === 'auto'))) return ['native', 'hlsjs'];
     return ['hlsjs', 'native', 'mpegts'];
   }
   if (path.endsWith('.ts') || path.endsWith('.flv')) return ['mpegts', 'native'];
