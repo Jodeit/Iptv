@@ -96,7 +96,14 @@ export class StreamPlayer {
         await withTimeout(this[engine](src, token), 15000, 'no response within 15s');
         if (token !== this.token) return false;
         this.progress(token, 'Starting video');
-        await withTimeout(this.video.play().catch(() => {
+        await withTimeout(this.video.play().catch(async (e) => {
+          // Interrupted, not refused: Safari aborts a pending play() when playback moves to
+          // AirPlay (or the source reloads). Give it a moment and ask again.
+          if (e?.name === 'AbortError') {
+            await new Promise((r) => setTimeout(r, 800));
+            if (token !== this.token) return;
+            return this.video.play().catch((e2) => { if (e2?.name !== 'AbortError') throw e2; });
+          }
           // Autoplay with sound can be blocked until the user interacts; retry muted.
           this.video.muted = true;
           return this.video.play();
@@ -158,7 +165,8 @@ export class StreamPlayer {
     const start = v.currentTime;
     const t0 = Date.now();
     while (token === this.token && Date.now() - t0 < ms) {
-      if (v.paused || v.currentTime - start >= 0.4) return;
+      // On AirPlay the Apple TV plays it; this page's clock may not move for a while.
+      if (v.paused || v.currentTime - start >= 0.4 || v.webkitCurrentPlaybackTargetIsWireless) return;
       await new Promise((r) => setTimeout(r, 250));
     }
     if (token !== this.token) return;
@@ -175,7 +183,7 @@ export class StreamPlayer {
     this.watchdog = setInterval(() => {
       if (token !== this.token) return clearInterval(this.watchdog);
       const v = this.video;
-      if (v.paused || v.currentTime !== last) { last = v.currentTime; stalled = 0; return; }
+      if (v.paused || v.currentTime !== last || v.webkitCurrentPlaybackTargetIsWireless) { last = v.currentTime; stalled = 0; return; }
       stalled += 2;
       if (stalled >= 20) this.recover(token, 'stream stalled');
     }, 2000);
