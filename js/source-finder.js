@@ -41,7 +41,9 @@ function parseSources(text) {
 
 export async function findLatestSources(fetcher) {
   const listingResponse = await fetcher(REDDIT_URL);
-  if (!listingResponse.ok) throw new Error(`Reddit returned HTTP ${listingResponse.status}`);
+  if (!listingResponse.ok) throw new Error(listingResponse.status === 403
+    ? 'Reddit returned 403. It requires authenticated API access.'
+    : `Reddit returned HTTP ${listingResponse.status}`);
   const listing = await listingResponse.json();
   const posts = listing?.data?.children?.map((child) => child.data).filter(Boolean) || [];
 
