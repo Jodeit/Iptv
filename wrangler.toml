@@ -11,3 +11,8 @@ directory = "."
 # Profile sync storage. No id needed: Wrangler creates the namespace on first deploy.
 [[kv_namespaces]]
 binding = "PROFILES"
+
+# PR branches build with `wrangler preview`, which needs this block. Previews get no bindings
+# unless they're listed here, so profile sync is off in them (the worker answers 503) and
+# they can't touch the real profiles.
+[previews]
