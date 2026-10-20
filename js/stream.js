@@ -117,6 +117,7 @@ export class StreamPlayer {
         return true;
       } catch (err) {
         console.warn(`[stream] ${engine} failed for ${hint || src}`, err);
+        if (airPlay && engine === 'native') this.log('ℹ AirPlay is on: the Apple TV fetched this stream itself and couldn’t play it');
         this.log(`✗ ${engine}${label ? ` (${label})` : ''} ${hint || src}: ${err.message}`);
         this.destroy();
         // A refusal (bad login, connection limit) won't change with another variant, and
@@ -296,7 +297,12 @@ export class StreamPlayer {
         if (this.resumeAt > 0 && this.resumeAt < v.duration - 5) v.currentTime = this.resumeAt; // before the first frame shows
         resolve();
       };
-      const bad = () => { cleanup(); reject(new Error('native playback failed')); };
+      // MediaError codes: 2 network, 3 decode, 4 source not supported; Safari adds a message.
+      const bad = () => {
+        cleanup();
+        const e = v.error;
+        reject(new Error(`native playback failed${e ? ` (${['', 'aborted', 'network error', 'decode error', 'format not supported'][e.code] || `code ${e.code}`}${e.message ? `: ${e.message}` : ''})` : ''}`));
+      };
       const cleanup = () => { v.removeEventListener('loadedmetadata', ok); v.removeEventListener('error', bad); clearTimeout(t); };
       const t = setTimeout(bad, 15000);
       v.addEventListener('loadedmetadata', ok);
@@ -480,7 +486,10 @@ function withTimeout(promise, ms, message) {
 
 function orderEngines(url) {
   const path = url.split('?')[0].toLowerCase();
-  if (airPlay) return /\.(m3u8?|mp4|mov|m4v)$/.test(path) || url.includes('m3u8') ? ['native'] : [];
+  // AirPlay: Safari's player first (the only one the Apple TV shows video from), but keep the
+  // others as a fallback so a stream it can't take still plays (audio only on the TV).
+  if (airPlay && (/\.(m3u8?)$/.test(path) || url.includes('m3u8'))) return ['native', 'hlsjs'];
+  if (airPlay && /\.(mp4|mov|m4v)$/.test(path)) return ['native'];
   const canNativeHls = document.createElement('video').canPlayType('application/vnd.apple.mpegurl');
   if (path.endsWith('.m3u8') || path.endsWith('.m3u') || url.includes('m3u8')) {
     const hlsjs = !!(window.Hls && Hls.isSupported());
