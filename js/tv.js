@@ -1056,6 +1056,7 @@ function initTV() {
   // The centre button while watching: pause and show a bar with ⏪ ⏯ ⏩, Audio, Captions and (live) the guide.
   // Audio and Captions open a short list; OK picks, Back goes up a level, and Back from the bar resumes.
   let controlsMenu = '', pausedByUs = false, controlsTick = 0;
+  let epsData = null, epsSeason = 0, epsFocusNow = false; // the episode chooser
   const seekRange = () => { const v = T().video; return v.seekable?.length ? [v.seekable.start(0), v.seekable.end(v.seekable.length - 1)] : null; };
   function openControls() {
     const v = T().video, c = O().state.current;
@@ -1105,11 +1106,27 @@ function initTV() {
       cc: 'M19 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm-8 7H9.5v-.5h-2v3h2V13H11v1a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1zm7 0h-1.5v-.5h-2v3h2V13H18v1a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1z',
       info: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z', warn: 'M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z',
       guide: 'M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z',
+      eps: 'M3 5h14v2H3V5zm0 4h14v2H3V9zm0 4h9v2H3v-2zm12 0 6 3.5-6 3.5v-7z',
     };
     const btn = (k, icon, label, extra = '', disabled = false) => `<button class="tvc-btn" data-k="${k}"${disabled ? ' disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON[icon]}"/></svg><span>${esc(label)}</span>${extra ? `<small>${esc(extra)}</small>` : ''}</button>`;
     const r = seekRange(), canSeek = !live || (r && r[1] - r[0] > 12);
     let menu = '';
-    if (controlsMenu === 'info') {
+    if (controlsMenu === 'eps') {
+      if (!epsData) {
+        menu = '<div class="tvc-menu tvc-eps"><h3>Episodes</h3><div class="tvc-line">Loading episodes…</div></div>';
+      } else {
+        const list = epsData.list, seasons = [...new Set(list.map((e) => e.season))].sort((a, b) => a - b);
+        if (!seasons.includes(epsSeason)) epsSeason = seasons[0];
+        const cur = O().state.current;
+        menu = `<div class="tvc-menu tvc-eps"><h3>${esc(epsData.series || 'Episodes')}</h3>
+          <div class="tvd-seasons">${seasons.map((s) => `<button class="tvd-season${s === epsSeason ? ' on' : ''}" data-k="s${s}" data-s="${s}">Season ${s}</button>`).join('')}</div>
+          <div class="tvd-eps">${list.filter((e) => e.season === epsSeason).map((ep) => {
+            const p = T().vod.progress(ep), now = cur && ep.id === cur.id;
+            const st = now ? 'Now playing' : p?.d ? (p.t > p.d - 60 ? 'Watched' : `${fmtDur(p.t)} / ${fmtDur(p.d)}`) : '';
+            return `<button class="tvd-ep${now ? ' now' : ''}" data-k="e${list.indexOf(ep)}" data-e="${list.indexOf(ep)}"><span class="n">${ep.episode || ''}</span><span class="t"><b>${esc(epTitle(ep, epsData.series))}</b></span><span class="s">${esc(st)}</span><span class="p">▶</span></button>`;
+          }).join('')}</div></div>`;
+      }
+    } else if (controlsMenu === 'info') {
       const si = T().streamInfo?.() || {};
       const ENG = { native: 'Built-in player', mkv: 'MKV engine', hlsjs: 'HLS', mpegts: 'MPEG-TS' };
       const converted = (si.log || []).some((l) => /converting to AAC/i.test(l));
@@ -1146,6 +1163,7 @@ function initTV() {
         ${btn('fwd', 'fwd', '30 s', '', !canSeek)}
         ${btn('audio', 'audio', 'Audio', tr.audio.length ? on(tr.audio) || '' : 'one track', !tr.audio.length)}
         ${btn('cc', 'cc', 'Captions', tr.text.length ? on(tr.text) || 'Off' : 'none', !tr.text.length)}
+        ${c.kind === 'episode' && c.seriesId ? btn('eps', 'eps', 'Episodes', `S${pad2(c.season)}E${pad2(c.episode)}`) : ''}
         ${btn('info', silent ? 'warn' : 'info', 'Info', silent ? 'no sound' : '')}
         ${live ? btn('guide', 'guide', 'Guide') : ''}
       </div></div>`;
@@ -1155,6 +1173,25 @@ function initTV() {
     q('[data-k="fwd"]').onclick = () => { const x = T().video, rg = seekRange(); x.currentTime = Math.min(rg ? rg[1] : x.duration || x.currentTime + 30, x.currentTime + 30); paintControlsBar(); };
     q('[data-k="audio"]').onclick = () => { controlsMenu = 'audio'; paintControls(); controls.querySelector('.tvc-opt.on, .tvc-opt')?.focus(); };
     q('[data-k="cc"]').onclick = () => { controlsMenu = 'cc'; paintControls(); controls.querySelector('.tvc-opt.on, .tvc-opt')?.focus(); };
+    q('[data-k="eps"]')?.addEventListener('click', () => {
+      controlsMenu = 'eps'; epsData = null; epsFocusNow = true;
+      paintControls();
+      T().currentEpisodes?.().then((d) => {
+        if (controlsMenu !== 'eps') return;
+        epsData = d || { list: [], series: '' };
+        epsSeason = O().state.current?.season ?? 0;
+        paintControls();
+      }).catch(() => { epsData = { list: [], series: '' }; paintControls(); });
+    });
+    for (const b of controls.querySelectorAll('.tvc-eps .tvd-season')) b.onclick = () => { epsSeason = +b.dataset.s; epsFocusNow = false; paintControls(); controls.querySelector(`.tvc-eps [data-k="s${epsSeason}"]`)?.focus(); };
+    for (const b of controls.querySelectorAll('.tvc-eps .tvd-ep')) {
+      b.onclick = () => {
+        const ep = epsData.list[+b.dataset.e], p = T().vod.progress(ep);
+        closeControls(false);
+        T().vod.play(ep, p && p.t > 30 && p.t < p.d - 60 ? p.t : 0);
+      };
+    }
+    if (controlsMenu === 'eps' && epsData && epsFocusNow) { epsFocusNow = false; const row = controls.querySelector('.tvc-eps .tvd-ep.now') || controls.querySelector('.tvc-eps .tvd-ep'); row?.focus(); row?.scrollIntoView({ block: 'center' }); }
     q('[data-k="info"]').onclick = () => { controlsMenu = 'info'; paintControls(); controls.querySelector('.tvc-opt')?.focus(); };
     q('[data-k="guide"]')?.addEventListener('click', () => { closeControls(false); openHome(); });
     for (const b of controls.querySelectorAll('.tvc-opt')) {

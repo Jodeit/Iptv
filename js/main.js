@@ -2238,6 +2238,13 @@ window.o3xr = {
       peek: (item) => ratings.peek(item),
       open: (item) => gallery.openDirect(item),
       // US age rating ('PG-13', 'TV-MA'…) from TMDB, cached in the profile for 30 days
+      // The episodes of the show that is playing (the TV's episode chooser), or null if this is not an episode
+      currentEpisodes: async () => {
+        const ch = state.current;
+        if (!(ch?.kind === 'episode' && ch.seriesId && state.xlib)) return null;
+        const list = state.episodes?.[0]?.seriesId === ch.seriesId ? state.episodes : await state.xlib.seriesEpisodes({ seriesId: ch.seriesId, name: ch.seriesName });
+        return { list, series: ch.seriesName || '' };
+      },
       meta: (item) => tmdbMeta(item),
       // What is already known about a title's rating, without asking anyone (undefined if not yet): the TV reads this
       // for the whole list at once, and only looks up the rest
