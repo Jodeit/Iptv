@@ -188,6 +188,15 @@ function initTV() {
   let osdTimer = 0, osdTick = 0;
   // "EN - Stick - S02E03 - Chip Off the Old Butch" → { title: "Stick", sub: "S02E03 · Chip Off the Old Butch" }
   const stripLang = (n) => String(n || '').replace(/^\s*[A-Za-z]{2,3}\s*[-:|]\s+/, '').trim();
+  // An episode's own title for the list: "EN - Stick - S02E03 - Chip Off the Old Butch" → "Chip Off the Old Butch"
+  // (the show and the number are already on the page)
+  function epTitle(ep, show) {
+    let n = stripLang(ep.title || ep.name);
+    n = n.replace(/^(?:.*?[-–:|]\s*)?S\d+\s*E\d+\s*[-–:|]?\s*/i, ''); // everything up to and including S02E03
+    const s = stripLang(show || '');
+    if (s && n.toLowerCase().startsWith(s.toLowerCase())) n = n.slice(s.length).replace(/^[\s\-–:|]+/, '');
+    return n || (ep.episode ? `Episode ${ep.episode}` : stripLang(ep.name));
+  }
   function playLabels(c) {
     if (kindOf(c) === 'live') return { title: c.clean || cleanName(c.name), sub: '' };
     let name = stripLang(c.title || c.name), series = c.seriesName ? stripLang(c.seriesName) : '';
@@ -1226,7 +1235,7 @@ function initTV() {
         <div class="tvd-eps">${eps.filter((e) => e.season === dSeason).map((ep, k) => {
           const p = T().vod.progress(ep);
           const st = p?.d ? (p.t > p.d - 60 ? 'Watched' : `${fmtDur(p.t)} / ${fmtDur(p.d)}`) : esc(ep.runtime || '');
-          return `<button class="tvd-ep" data-k="e${k}" data-e="${eps.indexOf(ep)}"><span class="n">${ep.episode || ''}</span><span class="t"><b>${esc(ep.title || ep.name)}</b>${ep.plot ? `<small>${esc(ep.plot)}</small>` : ''}</span><span class="s">${st}</span><span class="p">▶</span></button>`;
+          return `<button class="tvd-ep" data-k="e${k}" data-e="${eps.indexOf(ep)}"><span class="n">${ep.episode || ''}</span><span class="t"><b>${esc(epTitle(ep, T().vod.title(item).title))}</b>${ep.plot ? `<small>${esc(ep.plot)}</small>` : ''}</span><span class="s">${st}</span><span class="p">▶</span></button>`;
         }).join('')}</div>`;
     }
     const fav = T().isFav(item.id);
