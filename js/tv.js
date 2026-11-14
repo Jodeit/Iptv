@@ -162,6 +162,27 @@ function initTV() {
     html.classList.toggle('tv-picture', !!v && !!O().state.current && v.readyState >= 2 && !v.ended && v.videoWidth > 0);
   }, 700);
 
+  // ---------- Background colour ----------
+  // The profile's tvWall (set on the phone) tints the plaster and the glass; the splash uses the saved copy so it matches
+  // from the first frame. Hi / lo are lighter and darker steps of it, the glass is mostly white with a touch of it.
+  const hexRgb = (h) => { const m = /^#?([0-9a-f]{6})$/i.exec(h || ''); return m ? [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16)) : null; };
+  const mix = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  const hex = (c) => `#${c.map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+  let wallSeen;
+  function applyWall(h) {
+    const root = document.documentElement.style;
+    const c = hexRgb(h);
+    const names = ['--tv-wall', '--tv-wall-hi', '--tv-wall-lo', '--tv-glass'];
+    if (!c) { for (const n of names) root.removeProperty(n); try { localStorage.removeItem('tvWallVars'); } catch { /* fine */ } return; }
+    const vars = { '--tv-wall': hex(c), '--tv-wall-hi': hex(mix(c, [255, 255, 255], 0.45)), '--tv-wall-lo': hex(mix(c, [0, 0, 0], 0.1)), '--tv-glass': mix(c, [255, 255, 255], 0.65).join(', ') };
+    for (const [k, v] of Object.entries(vars)) root.setProperty(k, v);
+    try { localStorage.setItem('tvWallVars', JSON.stringify(vars)); } catch { /* fine */ }
+  }
+  setInterval(() => {
+    const w = P()?.doc?.tvWall || '';
+    if (w !== wallSeen) { wallSeen = w; applyWall(w); }
+  }, 1000);
+
   // ---------- Updates ----------
   // The app stays open in the background, so a deploy would otherwise wait until someone closed it. Once a
   // minute (and whenever the app comes back to the screen) the deployed files are compared with the ones this

@@ -35,7 +35,7 @@ const write = (k, v) => { try { localStorage.setItem(`o3xr.${k}`, JSON.stringify
 const remove = (k) => { try { localStorage.removeItem(`o3xr.${k}`); } catch { /* ignore */ } };
 
 export const emptyDoc = () => ({
-  v: 1, playlists: [], playlistsRemoved: {}, favs: {}, favsRemoved: {}, contentFilter: null, omdbKey: null, tmdbKey: null, tmdbMeta: {}, progress: {}, last: null, updatedAt: 0,
+  v: 1, playlists: [], playlistsRemoved: {}, favs: {}, favsRemoved: {}, contentFilter: null, tvWall: '', omdbKey: null, tmdbKey: null, tmdbMeta: {}, progress: {}, last: null, updatedAt: 0,
 });
 
 export function mergeDocs(a, b) {
@@ -69,6 +69,7 @@ export function mergeDocs(a, b) {
     favsRemoved,
     name: newer.name ?? older.name ?? null,
     contentFilter: newer.contentFilter ?? older.contentFilter ?? null,
+    tvWall: newer.tvWall ?? older.tvWall ?? '', // '' = the default; "reset" must beat an older colour, so it is not null
     omdbKey: newer.omdbKey ?? older.omdbKey ?? null,
     tmdbKey: newer.tmdbKey ?? older.tmdbKey ?? null,
     tmdbMeta: capMeta({ ...older.tmdbMeta, ...newer.tmdbMeta }),
