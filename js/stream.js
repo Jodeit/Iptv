@@ -60,12 +60,15 @@ export class StreamPlayer {
   // `sources` is a URL or a list of { src, hint } candidates tried in order. `hint` is the
   // original stream URL, used to pick engines when `src` is a proxied URL.
   // `startAt` (seconds) resumes a film part-way through.
-  async load(sources, { reconnect = false, startAt = 0, keepReport = false } = {}) {
+  // engine / forceTranscode: play with that engine only (and, for the MKV engine, convert AC-3 / E-AC-3 / DTS / TrueHD audio
+  // whatever the browser claims). They stay in force for reconnects of the same source, until the next fresh load.
+  async load(sources, { reconnect = false, startAt = 0, keepReport = false, engine: only = null, forceTranscode = false } = {}) {
     const token = ++this.token;
     this.destroy();
     let list = (Array.isArray(sources) ? sources : [sources]).map((s) => (typeof s === 'string' ? { src: s, hint: s } : s));
     if (!reconnect) {
       this.sources = list;
+      this.sticky = { engine: only, force: forceTranscode };
       this.reconnects = 0;
       this.resumeAt = startAt;
       if (!keepReport) this.report = [];
@@ -77,7 +80,8 @@ export class StreamPlayer {
     }
     this.winner = null;
     let plans = list.flatMap((source) => orderEngines(source.hint || source.src).map((engine) => ({ source, engine })));
-    if (this.forceEngine && plans.some((p) => p.engine === this.forceEngine)) plans = plans.filter((p) => p.engine === this.forceEngine);
+    const wanted = this.sticky?.engine;
+    if (wanted && plans.some((p) => p.engine === wanted)) plans = plans.filter((p) => p.engine === wanted);
     if (reconnect && this.lastEngine) {
       const i = plans.findIndex((p) => p.source === list[0] && p.engine === this.lastEngine);
       if (i > 0) plans.unshift(...plans.splice(i, 1));
@@ -98,7 +102,7 @@ export class StreamPlayer {
         // A source that never answers (or streams endlessly where a playlist was expected)
         // shouldn't hold up the remaining tries.
         // The MKV engine may have to download the audio decoder first (about 32 MB), so it gets much longer when asked for
-        const startLimit = engine === 'mkv' && this.forceEngine === 'mkv' ? 150000 : 15000;
+        const startLimit = engine === 'mkv' && this.sticky?.engine === 'mkv' ? 150000 : 15000;
         await withTimeout(this[engine](src, token), startLimit, `no response within ${startLimit / 1000}s`);
         if (token !== this.token) return false;
         this.progress(token, 'Starting video');
@@ -293,10 +297,8 @@ export class StreamPlayer {
   // built-in player cannot decode). Resolves true if that engine took it.
   async switchEngine(engine, at = 0, { forceTranscode = false } = {}) {
     if (!this.sources) return false;
-    this.forceEngine = engine;
-    this.forceTranscode = forceTranscode;
-    this.log(`↻ switching to ${ENGINE_NAMES[engine] || engine} at ${Math.round(at)} s`);
-    try { return await this.load(this.sources, { startAt: at, keepReport: true }); } finally { this.forceEngine = null; this.forceTranscode = false; }
+    this.log(`↻ switching to ${ENGINE_NAMES[engine] || engine} at ${Math.round(at)} s${forceTranscode ? ' (converting audio)' : ''}`);
+    return this.load(this.sources, { startAt: at, keepReport: true, engine, forceTranscode });
   }
 
   // Remuxes MKV to fragmented MP4 in the browser (js/mkv), for Safari and anything else
@@ -311,7 +313,7 @@ export class StreamPlayer {
       onLog: (m) => this.log(m),
       onFatal: (err) => this.recover(token, `MKV: ${err.message}`),
       startAt: this.resumeAt || 0,
-      forceTranscode: !!this.forceTranscode,
+      forceTranscode: !!this.sticky?.force,
       ahead: bufferLevel.ahead,
       preroll: bufferLevel.preroll,
     });

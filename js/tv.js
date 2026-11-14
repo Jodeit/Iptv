@@ -1044,6 +1044,14 @@ function initTV() {
     }
   }, 1500);
 
+  // A small tag while the picture is paused with nothing else on screen (Back from the controls leaves it paused)
+  const pausedTag = el('div', 'tv-paused hidden', 'Paused · OK for controls');
+  document.body.append(pausedTag);
+  setInterval(() => {
+    const v = T()?.video, c = O()?.state.current;
+    pausedTag.classList.toggle('hidden', !(v && c && v.paused && v.readyState >= 2 && screen() === 'player'));
+  }, 400);
+
   // ---------- Player controls ----------
   // The centre button while watching: pause and show a bar with ⏪ ⏯ ⏩, Audio, Captions and (live) the guide.
   // Audio and Captions open a short list; OK picks, Back goes up a level, and Back from the bar resumes.
@@ -1447,7 +1455,7 @@ function initTV() {
       synthetic = false;
       return true;
     }
-    if (s === 'controls') { if (controlsMenu) { controlsMenu = ''; paintControls(); controls.querySelector('[data-k="primary"]')?.focus(); } else closeControls(true); return true; }
+    if (s === 'controls') { if (controlsMenu) { controlsMenu = ''; paintControls(); controls.querySelector('[data-k="primary"]')?.focus(); } else closeControls(false); return true; } // Back closes the bar; a paused picture stays paused
     if (s === 'detail') { closeDetail(true); return true; }
     if (s === 'home') {
       // With a picture behind it, Back returns to the picture (no channel banner). With nothing playing there is

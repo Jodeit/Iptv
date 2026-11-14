@@ -1350,7 +1350,17 @@ async function play(ch, { startAt = resumePoint(ch) } = {}) {
   }
   if (castCtl.connected) return castCurrent(ch, startAt);
   if (startAt) toast(`Resuming at ${fmtDuration(startAt)}`);
-  const ok = await player.load(sources, { startAt });
+  // A TV that has shown it cannot decode some audio formats goes straight to the MKV engine (which converts them) for a
+  // Matroska file that has one, rather than playing silent for a few seconds first.
+  let hint = {};
+  if (isTV && kindOf(ch) !== 'live' && /\.mkv(\?|$)/i.test(ch.url) && localStorage.getItem('tuner.convertAudio') === '1') {
+    const p = await probe(sources[0].src).catch(() => null);
+    const streams = (p?.content?.streams?.length ? p.content.streams : p?.content?.codecs || []).join(' ');
+    if (state.current !== ch) return;
+    if (/E-AC-3|AC-3|DTS|TrueHD/i.test(streams)) hint = { engine: 'mkv', forceTranscode: true };
+  }
+  let ok = await player.load(sources, { startAt, ...hint });
+  if (!ok && hint.engine && state.current === ch) ok = await player.load(sources, { startAt, keepReport: true }); // the MKV engine could not take it: the usual way
   if (ok && state.current === ch) {
     theater.setVideoActive(true);
     updateAspect();
@@ -2255,7 +2265,8 @@ window.o3xr = {
       const at = video.currentTime;
       import('./audio-transcode.js').then((t) => t.warmUp((l) => player.log(l))).catch(() => {}); // start the decoder download now, in parallel
       const ok = await player.switchEngine('mkv', at, { forceTranscode: true }).catch(() => false); // the built-in player just proved it cannot decode this audio
-      if (!ok) await player.switchEngine('native', at).catch(() => {});
+      if (ok) { try { localStorage.setItem('tuner.convertAudio', '1'); } catch { /* fine */ } } // remember: this TV needs it
+      else await player.switchEngine('native', at).catch(() => {});
       return !!ok;
     },
     // Reads the first bytes of the stream and says what is in it (container, video and audio codecs)
