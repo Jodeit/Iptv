@@ -1113,3 +1113,14 @@ html.tv.guide-mode .tvh-cap .cap-next b { color: var(--blue); font-size: 13px; m
 .tvc-opt { text-align: left; padding: 9px 14px; border-radius: 12px; border: 3px solid transparent; background: rgba(255,255,255,.55); font-size: 17px; color: var(--text); }
 .tvc-opt.on { font-weight: 800; background: rgba(47,93,155,.14); }
 html.tv .toast { z-index: 120; }
+
+/* No-sound notice and the Info panel */
+.tv-notice { position: fixed; top: 28px; left: 50%; transform: translateX(-50%); z-index: 96; max-width: 80vw; padding: 12px 24px; border-radius: 16px; font-size: 20px; font-weight: 700; color: #fffaf0; background: rgba(120,40,20,.92); box-shadow: 0 10px 26px rgba(40,20,10,.4); }
+.tv-notice.hidden { display: none; }
+.tvc-info { min-width: 520px; max-width: 760px; }
+.tvc-line { font-size: 15px; line-height: 1.35; color: var(--text); word-break: break-word; }
+.tvc-probe { color: #6b4a22; font-size: 14px; }
+.tvc-row { gap: 8px; }
+.tvc-btn { padding: 8px 10px; column-gap: 8px; }
+.tvc-btn i { font-size: 19px; min-width: 22px; }
+.tvc-btn span { font-size: 16px; }

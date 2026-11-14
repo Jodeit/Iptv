@@ -985,6 +985,28 @@ function initTV() {
     openDetail(item);
   }
 
+  // ---------- No-sound detection ----------
+  // Chromium counts the audio it has decoded. A stream that has played for a few seconds with the volume up and
+  // nothing decoded has a sound track this device cannot play (DTS, TrueHD, sometimes AC-3 / E-AC-3).
+  let silent = null, silentKey = '', playSince = 0;
+  const notice = el('div', 'tv-notice hidden');
+  document.body.append(notice);
+  setInterval(() => {
+    const v = T()?.video, c = O()?.state.current;
+    if (!v || !c) return;
+    const key = `${c.id}|${v.currentSrc || ''}`;
+    if (key !== silentKey) { silentKey = key; silent = null; playSince = 0; }
+    if (v.paused || v.readyState < 3 || !(v.currentTime > 0)) { playSince = 0; return; }
+    if (!playSince) playSince = Date.now();
+    if (Date.now() - playSince < 6000 || silent !== null || v.webkitAudioDecodedByteCount === undefined) return;
+    silent = !v.muted && v.volume > 0 && v.webkitAudioDecodedByteCount === 0 && v.webkitVideoDecodedByteCount > 0;
+    if (silent) {
+      notice.textContent = 'No sound from this stream. Press OK, then Info, to see why.';
+      notice.classList.remove('hidden');
+      setTimeout(() => notice.classList.add('hidden'), 9000);
+    }
+  }, 1500);
+
   // ---------- Player controls ----------
   // The centre button while watching: pause and show a bar with ⏪ ⏯ ⏩, Audio, Captions and (live) the guide.
   // Audio and Captions open a short list; OK picks, Back goes up a level, and Back from the bar resumes.
@@ -1033,7 +1055,18 @@ function initTV() {
     const btn = (k, icon, label, extra = '', disabled = false) => `<button class="tvc-btn" data-k="${k}"${disabled ? ' disabled' : ''}><i>${icon}</i><span>${esc(label)}</span>${extra ? `<small>${esc(extra)}</small>` : ''}</button>`;
     const r = seekRange(), canSeek = !live || (r && r[1] - r[0] > 12);
     let menu = '';
-    if (controlsMenu) {
+    if (controlsMenu === 'info') {
+      const si = T().streamInfo?.() || {};
+      const yn = (n) => (n === undefined ? 'unknown' : n > 0 ? 'yes' : 'no');
+      const lines = [
+        `Engine: ${si.engine || 'native'}`,
+        `Picture: ${si.w ? `${si.w}×${si.h}` : 'none yet'}${si.videoBytes !== undefined ? ` · video decoded: ${yn(si.videoBytes)}` : ''}`,
+        `Audio decoded: ${yn(si.audioBytes)}${si.muted ? ' (muted)' : ''}`,
+        ...(si.warnings || []).map((w) => `⚠ ${w}`),
+      ];
+      menu = `<div class="tvc-menu tvc-info"><h3>Stream info</h3>${lines.map((l) => `<div class="tvc-line">${esc(l)}</div>`).join('')}<div class="tvc-line tvc-probe">Reading the stream…</div><button class="tvc-opt" data-k="o:close">Close</button></div>`;
+      T().probeStream?.().then((txt) => { const p = controls.querySelector('.tvc-probe'); if (p) p.textContent = txt; }).catch((e) => { const p = controls.querySelector('.tvc-probe'); if (p) p.textContent = `Couldn’t read the stream: ${e.message}`; });
+    } else if (controlsMenu) {
       const list = controlsMenu === 'audio' ? tr.audio : [{ key: 'off', label: 'Off', on: !tr.text.some((x) => x.on) }, ...tr.text];
       menu = `<div class="tvc-menu"><h3>${controlsMenu === 'audio' ? 'Audio' : 'Captions'}</h3>${list.map((o) => `<button class="tvc-opt${o.on ? ' on' : ''}" data-k="o:${esc(o.key)}">${o.on ? '✓ ' : ''}${esc(o.label)}</button>`).join('')}</div>`;
     }
@@ -1046,6 +1079,7 @@ function initTV() {
         ${btn('fwd', '⏩', '30 s', '', !canSeek)}
         ${btn('audio', '🔊', 'Audio', tr.audio.length ? on(tr.audio) || '' : 'one track', !tr.audio.length)}
         ${btn('cc', 'CC', 'Captions', tr.text.length ? on(tr.text) || 'Off' : 'none', !tr.text.length)}
+        ${btn('info', silent ? '⚠' : 'ℹ', 'Info', silent ? 'no sound' : '')}
         ${live ? btn('guide', '☰', 'Guide') : ''}
       </div></div>`;
     const q = (s) => controls.querySelector(s);
@@ -1054,15 +1088,16 @@ function initTV() {
     q('[data-k="fwd"]').onclick = () => { const x = T().video, rg = seekRange(); x.currentTime = Math.min(rg ? rg[1] : x.duration || x.currentTime + 30, x.currentTime + 30); paintControlsBar(); };
     q('[data-k="audio"]').onclick = () => { controlsMenu = 'audio'; paintControls(); controls.querySelector('.tvc-opt.on, .tvc-opt')?.focus(); };
     q('[data-k="cc"]').onclick = () => { controlsMenu = 'cc'; paintControls(); controls.querySelector('.tvc-opt.on, .tvc-opt')?.focus(); };
+    q('[data-k="info"]').onclick = () => { controlsMenu = 'info'; paintControls(); controls.querySelector('.tvc-opt')?.focus(); };
     q('[data-k="guide"]')?.addEventListener('click', () => { closeControls(false); openHome(); });
     for (const b of controls.querySelectorAll('.tvc-opt')) {
       b.onclick = () => {
         const key = b.dataset.k.slice(2);
-        if (controlsMenu === 'audio') T().setAudio(key); else T().setText(key);
+        if (controlsMenu === 'audio') T().setAudio(key); else if (controlsMenu === 'cc') T().setText(key);
         const was = controlsMenu;
         controlsMenu = '';
         paintControls();
-        controls.querySelector(`[data-k="${was === 'audio' ? 'audio' : 'cc'}"]`)?.focus();
+        controls.querySelector(`[data-k="${was === 'audio' ? 'audio' : was === 'info' ? 'info' : 'cc'}"]`)?.focus();
       };
     }
     paintControlsBar();

@@ -1,6 +1,7 @@
 import { preferFlat, device } from './device.js';
 import { FlatStage } from './flat-stage.js';
 import { StreamPlayer, setHlsPreference, setBufferLevel, setAirPlay } from './stream.js';
+import { probe, describeProbe } from './diagnose.js';
 import { Cast } from './cast.js';
 import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, xtreamAccount, xtreamAlternates, readBody } from './m3u.js';
 import { XtreamLibrary } from './xtream.js';
@@ -452,9 +453,10 @@ new ResizeObserver(([e]) => {
 const TheaterModule = flat ? null : await import('./theater.js');
 const theater = flat ? new FlatStage(video) : new TheaterModule.Theater($('stage'), video);
 const LAYOUT = { mono: 0, sbs: 1, tab: 2 }; // must match xr3d.js
+const playWarnings = []; // what the player said about the stream being played (e.g. "the audio can't play in a browser")
 const player = new StreamPlayer(video, {
   onStatus: (s, { loading = false, frac = null } = {}) => (loading ? showLoading(s, frac) : (hideLoading(), setStatus(s))),
-  onWarn: (m) => toast(m, true),
+  onWarn: (m) => { playWarnings.push(m); toast(m, true); },
   onSlow: () => {
     const ch = state.current;
     if (ch && settings.vodPlayer === 'slow' && kindOf(ch) !== 'live') offerExternal(ch, 'This is downloading slower than it plays.');
@@ -1300,6 +1302,7 @@ function markPlaying() {
 
 // ---------- Playback ----------
 async function play(ch, { startAt = resumePoint(ch) } = {}) {
+  playWarnings.length = 0;
   $('extSheet').classList.add('hidden');
   saveProgress(true); // where the previous film got to
   state.current = ch;
@@ -2217,6 +2220,18 @@ window.o3xr = {
         : Promise.resolve(state.xlib ? state.xlib.movieInfo(item) : {})),
       play: (item, startAt) => play(item, { startAt }),
       onClosed: (f) => vodClosedListeners.add(f),
+    },
+    // What is playing, for the TV's Info panel: engine, picture, whether any audio is being decoded, and notes
+    streamInfo: () => ({
+      engine: player.lastEngine || '', w: video.videoWidth, h: video.videoHeight,
+      audioBytes: video.webkitAudioDecodedByteCount, videoBytes: video.webkitVideoDecodedByteCount,
+      muted: video.muted, volume: video.volume, warnings: [...playWarnings], log: player.report.slice(-8),
+    }),
+    // Reads the first bytes of the stream and says what is in it (container, video and audio codecs)
+    probeStream: async () => {
+      const ch = state.current;
+      const src = ch && streamCandidates(ch)[0]?.src;
+      return src ? describeProbe(await probe(src)) : 'No stream address';
     },
     // Audio and caption choices for what is playing. Only what the stream really carries is listed.
     tracks: () => {
