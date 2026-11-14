@@ -323,11 +323,14 @@ pop-out player are hidden there; setup and settings happen on the phone and sync
 
 - **Picture:** always full screen. ▲▼ change channel; OK or ◀ opens Home; ▶ shows what's on. Movies and shows: OK
   pauses, ◀▶ skip, ▲▼ show the progress bar.
-- **Home:** one screen over the playing video, with tabs Live · Movies · Shows · Phone. Live is a group column
-  (All, Favorites, each group) beside the channel list with what's on now; ◀ from the list reaches the groups, OK
-  plays, **hold OK** adds or removes a favorite. Movies and Shows open the poster gallery. Phone shows sync status,
+- **Home:** one screen over the playing video, with tabs **Channels · On now · Movies · Shows · Phone** (and the
+  version tag, which reloads the app). Channels is a group column beside the channel list with what's on now;
+  OK plays, **hold OK** adds or removes a favorite. Movies and Shows open the poster gallery. Phone shows sync status,
   your playlists and Unlink. Back returns to the picture; Back on the picture leaves the app.
-- **On now:** switch the left column from **Channels** to **On now** to browse like a cable guide, by what is airing
+- **Moving between sections** (a fixed map, so it works from anywhere in a long list): on the tab bar ◀ ▶ walk across
+  the tabs and ▼ drops into the list; from the list ◀ goes to the groups and ◀ again goes to the tab bar; ▲ from the
+  first row or first group also goes to the tab bar; ▶ from the groups goes back to the list.
+- **On now:** the second tab. Browse like a cable guide, by what is airing
   right now instead of by the provider's folders: Sports, Movies, News, Kids, Documentary, Music, Shows, each with a
   live count. Rows lead with the programme, then the channel and when it ends; the bar at the bottom adds the
   description. Programmes are classified from the guide's own category when it has one, else from the title and
