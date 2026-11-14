@@ -12,6 +12,7 @@
 //          Back on the picture leaves the app.
 
 import { kindOf } from './filter.js';
+import { VERSION } from './version.js';
 
 if (/TunerTV/.test(navigator.userAgent)) initTV();
 
@@ -37,7 +38,7 @@ function initTV() {
   home.innerHTML = '<div class="tvh-panel"><div class="tvh-tabs"></div><div class="tvh-main"><div class="tvh-chips"></div><div class="tvh-body"></div></div></div>';
   const setup = el('div', 'tv-setup hidden');
   setup.id = 'tvSetup';
-  setup.innerHTML = '<div class="tvs-card"><div id="tvsBody"></div><div class="tvs-actions"><button id="tvsSkip" class="btn ghost">Skip for now</button></div></div>';
+  setup.innerHTML = '<div class="tvs-card"><div id="tvsBody"></div><div class="tvs-actions"><button id="tvsSkip" class="btn ghost">Skip for now</button></div><div class="tvs-ver">Tuner ' + VERSION + '</div></div>';
   document.body.append(osd, home, setup);
   const tabsEl = home.querySelector('.tvh-tabs'), chipsEl = home.querySelector('.tvh-chips'), bodyEl = home.querySelector('.tvh-body');
 
@@ -117,6 +118,7 @@ function initTV() {
     if (T().hasKind('series')) defs.push(['series', 'Shows']);
     defs.push(['phone', 'Phone']);
     if (!defs.some(([k]) => k === tab)) tab = defs[0][0];
+    const ver = el('span', 'tvh-version', `Tuner ${esc(VERSION)}`);
     for (const [k, label] of defs) {
       const b = el('button', `tvh-tab${k === tab ? ' on' : ''}`, esc(label));
       b.dataset.tab = k;
@@ -127,6 +129,7 @@ function initTV() {
       b.onfocus = () => { if ((k === 'live' || k === 'phone') && k !== tab) selectTab(k, false); };
       tabsEl.append(b);
     }
+    tabsEl.append(ver);
   }
   function selectTab(k, focusBody) {
     tab = k;
@@ -202,21 +205,22 @@ function initTV() {
   }
 
   function renderPhone() {
-    const p = P(), a = p.active(), st = p.status, src = T().source();
-    const when = st.state === 'synced' ? `Synced ${Math.max(0, Math.round((Date.now() - st.at) / 60000))} min ago` : st.message || 'Synced';
+    const p = P(), a = p.active(), src = T().source();
+    const n = p.doc.playlists.length;
     bodyEl.innerHTML = `
-      <div class="tvh-profile"><span class="avatar big">${a ? esc(a.name.trim().charAt(0).toUpperCase()) : '·'}</span>
-        <div><div class="np-name">${a ? esc(a.name) : 'Not linked to a phone'}</div><div class="muted small">${a ? esc(when) : 'Link one to get your playlists'}</div></div></div>
-      <p class="muted">Playlists, filters, keys and other settings are changed on your phone: open <b>${esc(host)}</b> and they sync to this TV.</p>
-      <p class="muted small">${src ? `Showing “${esc(src.name)}”${src.savedAt ? `, downloaded ${esc(ageText(src.savedAt))}` : ''}.` : 'No channel list loaded.'}</p>
+      <div class="tvh-profile"><span class="avatar">${a ? esc(a.name.trim().charAt(0).toUpperCase()) : '·'}</span>
+        <div class="grow"><div class="tvh-pname">${a ? esc(a.name) : 'Not linked to a phone'}</div><div class="tvh-sync"></div></div></div>
+      <div class="tvh-syncbar"><u></u></div>
+      <p class="tvh-note">Change playlists and settings on your phone at <b>${esc(host)}</b>. They sync here.</p>
       <div class="tvh-actions"></div>
-      <h3>Playlists</h3><div class="tvh-lists"></div>`;
+      <p class="tvh-note dim tvh-showing"></p>
+      <h3>Playlists on your profile${a ? ` (${n})` : ''}</h3><div class="tvh-lists"></div>`;
     const actions = bodyEl.querySelector('.tvh-actions');
     const mk = (label, fn, cls = 'btn') => { const b = el('button', cls, esc(label)); b.onclick = fn; actions.append(b); return b; };
     if (a) {
-      mk('Sync now', () => P().sync().then(renderPhoneSoon));
-      if (src?.url) mk('Reload channels', () => { O().loadPlaylist(src.url, src.name, { fresh: true }); closeHome(); });
-      mk('Unlink this TV', async () => { await T().forgetCopies(); P().signOut(a.id); dismissed = false; closeHome(); runSetup(); }, 'btn ghost');
+      mk('Sync now', () => { P().sync(); paintSync(); });
+      if (src?.url) mk('Reload channels', () => { O().loadPlaylist(src.url, src.name, { fresh: true }); closeHome(); }, 'btn ghost');
+      mk('Unlink', async () => { await T().forgetCopies(); P().signOut(a.id); dismissed = false; closeHome(); runSetup(); }, 'btn ghost');
     } else {
       mk('Link a phone', () => { dismissed = false; closeHome(); runSetup(); });
     }
@@ -226,14 +230,31 @@ function initTV() {
       b.onclick = () => { O().loadPlaylist(l.url, l.name, { fresh: true }); closeHome(); };
       lists.append(b);
     }
-    if (!p.doc.playlists.length) lists.innerHTML = '<p class="muted small">None yet. Add one on your phone.</p>';
+    if (!n) lists.innerHTML = '<p class="tvh-note dim">None yet. Add one on your phone.</p>';
+    paintSync();
   }
+  // Live sync line: what it's doing now, or when it last finished and what it found.
+  function paintSync() {
+    const line = bodyEl.querySelector('.tvh-sync'), bar = bodyEl.querySelector('.tvh-syncbar');
+    if (!line) return;
+    const src = T().source();
+    bodyEl.querySelector('.tvh-showing').textContent = src ? `Showing “${src.name}”${src.savedAt ? `, downloaded ${ageText(src.savedAt)}` : ''}` : 'No channel list loaded';
+    const p = P(), a = p.active(), st = p.status;
+    if (!a) { line.textContent = 'Link a phone to get your playlists'; bar.classList.remove('on'); return; }
+    const busy = st.state === 'syncing' || st.state === 'pending';
+    const detail = `${p.doc.playlists.length} playlist${p.doc.playlists.length === 1 ? '' : 's'} · v${a.version}`;
+    line.className = `tvh-sync ${st.state === 'offline' || st.state === 'error' ? 'bad' : ''}`;
+    line.textContent = busy ? st.message || 'Syncing…'
+      : st.state === 'synced' ? `Synced ${ageText(st.at)} · ${detail}`
+      : `${st.message || 'Not synced'} · ${detail}`;
+    bar.classList.toggle('on', busy);
+  }
+  setInterval(() => { if (isOpen.home() && tab === 'phone') paintSync(); }, 400);
   const ageText = (t) => {
     const m = Math.round((Date.now() - t) / 60000);
     return m < 2 ? 'just now' : m < 120 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
   };
-  const renderPhoneSoon = () => setTimeout(() => { if (isOpen.home() && tab === 'phone') renderPhone(); }, 600);
-
+  
   function openHome() {
     if (screen() === 'setup') return;
     hideOsd();

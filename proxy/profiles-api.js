@@ -25,7 +25,7 @@
 const ID_RE = /^[0-9a-f]{64}$/;
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTUVWXYZ'; // no 0/O/1/I/L lookalikes
 const PAIR_TTL = 600;
-const MAX_DATA = 512 * 1024;
+const MAX_DATA = 2 * 1024 * 1024; // KV allows 25 MB; a heavy library (ratings, resume points) can pass 512 KB
 const MAX_CLAIM_FAILURES = 20; // per IP per 10 minutes
 
 export async function handleProfileApi({ method, path, body, ip }, store) {

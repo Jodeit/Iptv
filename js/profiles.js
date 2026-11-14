@@ -222,13 +222,15 @@ export class Profiles {
     const p = this.active();
     if (!p || this.pushing) return;
     try {
-      this.setStatus('syncing', 'Syncing…');
+      this.setStatus('syncing', 'Checking for changes…');
       const { id, key } = await this.keysFor(p);
       const r = await this.api(`profile/${id}`);
       if (r.status === 404) return this.setStatus('error', 'This profile was deleted on another device.');
       if (!r.ok) throw new Error(r.data?.error || `HTTP ${r.status}`);
       if (r.data.version !== p.version) {
+        this.setStatus('syncing', 'Downloading changes…');
         const remote = await decrypt(key, r.data.data);
+        this.setStatus('syncing', 'Merging…');
         this.adopt(p, r.data.version, mergeDocs(this.doc, remote), remote);
       }
       if (this.dirty) return this.push();
@@ -245,7 +247,7 @@ export class Profiles {
     if (this.pushing) return this.pushing;
     this.pushing = (async () => {
       try {
-        this.setStatus('syncing', 'Syncing…');
+        this.setStatus('syncing', 'Uploading your changes…');
         const { id, key } = await this.keysFor(p);
         for (let attempt = 0; attempt < 3; attempt++) {
           this.dirty = false;
