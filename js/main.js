@@ -2208,6 +2208,9 @@ window.o3xr = {
       rating: (item) => ratings.get(item),
       peek: (item) => ratings.peek(item),
       open: (item) => gallery.openDirect(item),
+      // US age rating ('PG-13', 'TV-MA'…) from TMDB, cached in the profile for 30 days
+      meta: (item) => tmdbMeta(item),
+      hasMeta: () => !!profiles.doc.tmdbKey,
       // A title's page: details for a film, the episode list for a show
       details: (item) => (kindOf(item) === 'series'
         ? (state.xlib ? state.xlib.seriesEpisodes(item) : Promise.resolve([]))
