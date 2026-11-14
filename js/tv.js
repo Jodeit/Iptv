@@ -444,14 +444,13 @@ function initTV() {
   // The highlighted channel in full: name, group, what's on and what's next. Long provider names are cut off
   // in the list, so this is where you can always tell two similar channels apart.
   function paintInfo(ch) {
-    if (!ch) { infoEl.classList.add('hidden'); return; }
+    if (!ch || scoreView()) { infoEl.classList.add('hidden'); return; } // the game tile already says everything
     const nn = T().guide.nowNext(ch);
     const parts = [`<div class="i-name">${esc((ch.clean || cleanName(ch.name)))}</div>`, `<div class="i-meta">${esc(ch.group || '')}</div>`];
     if (nn?.now) {
       const pct = Math.min(100, Math.max(0, ((Date.now() - nn.now.start) / (nn.now.stop - nn.now.start)) * 100));
       const sp = nowMap.get(ch)?.sp || nowMap.get(ch)?.sc;
       parts.push(`<div class="i-now"><b>Now</b> ${esc(sp ? `${sp.title}` : nn.now.title)} <span>${esc(sp?.status ? `${sp.status} · ` : '')}until ${esc(fmtClock(nn.now.stop))}</span></div>`);
-      if (sp) parts.push(`<div class="i-meta">${esc(nn.now.title)}</div>`);
       parts.push(`<div class="i-bar"><u style="width:${pct}%"></u></div>`);
       if (nn.next) parts.push(`<div class="i-next"><b>Next</b> ${esc(nn.next.title)} <span>${esc(fmtClock(nn.next.start))}</span></div>`);
       if (view === 'now' && nn.now.desc && nn.now.desc.length > 3) parts.push(`<div class="i-desc">${esc(nn.now.desc.slice(0, 220))}</div>`);
@@ -462,6 +461,9 @@ function initTV() {
     infoEl.innerHTML = parts.join('');
     infoEl.classList.remove('hidden');
   }
+  // Moving right into the list tucks the category column away into a thin drawer; moving left reopens it.
+  const mainEl = home.querySelector('.tvh-main');
+  home.addEventListener('focusin', (e) => { mainEl.classList.toggle('drawer', tab === 'live' && bodyEl.contains(e.target)); });
   bodyEl.addEventListener('focusin', (e) => {
     const row = e.target.closest?.('.tvh-row');
     if (row) { requestAround(+row.dataset.i); paintInfo(listCache[+row.dataset.i]); }

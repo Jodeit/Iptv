@@ -947,3 +947,11 @@ html.tv .tvh-row.game img.tl, html.tv .tvh-row.game i.tl { width: 36px; height: 
 .tvh-row.game .g-state small img { width: 28px; height: 20px; padding: 2px 4px; border-radius: 5px; box-sizing: border-box; }
 .tvh-row.game .star { position: absolute; right: 8px; top: 4px; font-size: 16px; }
 .tvh-row.game { position: relative; }
+
+/* Category column collapses to a drawer while you are in the list */
+.tvh-chips { position: relative; transition: width .18s ease, padding .18s ease; }
+.tvh-chips > * { transition: opacity .12s ease; }
+.tvh-main.drawer .tvh-chips { width: 46px; padding-right: 0; overflow: hidden; }
+.tvh-main.drawer .tvh-chips > * { opacity: 0; pointer-events: none; }
+.tvh-main.drawer .tvh-chips::before { content: '◀'; position: absolute; inset: 0; display: grid; place-items: center; font-size: 18px; color: #8a7d68;
+  background: linear-gradient(160deg, rgba(255,252,243,.5), rgba(246,238,219,.35)); border-radius: 16px; }
