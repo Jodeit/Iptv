@@ -1184,3 +1184,8 @@ html.tv .toast { z-index: 120; }
 .tvc-eps .tvd-ep .s { font-size: 13px; color: #8a7d68; }
 .tvc-menu.tvc-eps { max-height: none; overflow: visible; top: 40%; }
 .tvc-eps .tvd-eps { max-height: 40vh; }
+/* Settings tab: playlists as a plain vertical list so every profile is reachable with ▲▼ */
+.tvh-lists { flex-direction: column; flex-wrap: nowrap; align-items: stretch; }
+.tvh-lists .pl-row { display: flex; justify-content: space-between; align-items: center; width: 100%; text-align: left; }
+.tvh-lists .pl-row small { opacity: .65; font-size: .8em; }
+.tvh-lists .pl-row.cur { border-color: var(--oak, #a0693a); }
