@@ -1082,3 +1082,9 @@ html.tv.guide-mode .tvh-cap { max-height: calc(100vh - 34px - 26vw * 9 / 16 - 30
 html.tv.guide-mode .tvh-cap .cap-desc { margin: 2px 0 0; font-size: 15px; line-height: 1.4; color: var(--text); display: -webkit-box; -webkit-line-clamp: 9; -webkit-box-orient: vertical; overflow: hidden; }
 html.tv.guide-mode .tvh-cap .cap-next { font-size: 14px; color: var(--text); }
 html.tv.guide-mode .tvh-cap .cap-next b { color: var(--blue); font-size: 13px; margin-right: 6px; }
+
+/* Placeholder tiles while the first folder loads */
+.tvh-row.movie.skel { pointer-events: none; opacity: .75; }
+.tvh-row.movie.skel .pc-img { background: linear-gradient(100deg, rgba(60,50,30,.07) 30%, rgba(255,255,255,.55) 50%, rgba(60,50,30,.07) 70%); background-size: 220% 100%; animation: tvSkel 1.3s linear infinite; }
+.tvh-row.movie.skel > b, .tvh-row.movie.skel > small { background: rgba(60,50,30,.07); border-radius: 5px; color: transparent; max-width: 70%; }
+@keyframes tvSkel { from { background-position: 120% 0; } to { background-position: -120% 0; } }
