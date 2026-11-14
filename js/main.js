@@ -2,6 +2,7 @@ import { preferFlat, device } from './device.js';
 import { FlatStage } from './flat-stage.js';
 import { StreamPlayer, setHlsPreference, setBufferLevel, setAirPlay } from './stream.js';
 import { probe, describeProbe } from './diagnose.js';
+import { logEvent } from './telemetry.js';
 import { Cast } from './cast.js';
 import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, xtreamAccount, xtreamAlternates, readBody } from './m3u.js';
 import { XtreamLibrary } from './xtream.js';
@@ -470,6 +471,7 @@ const playWarnings = []; // what the player said about the stream being played (
 const player = new StreamPlayer(video, {
   onStatus: (s, { loading = false, frac = null } = {}) => (loading ? showLoading(s, frac) : (hideLoading(), setStatus(s))),
   onWarn: (m) => { playWarnings.push(m); toast(m, true); },
+  onProblem: (line) => logEvent('player', line, { engine: player.lastEngine || '' }),
   onNote: (m) => toast(m),
   onSlow: () => {
     const ch = state.current;

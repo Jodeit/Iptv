@@ -15,6 +15,7 @@ import { kindOf } from './filter.js';
 import { genreOf, GENRES } from './genre.js';
 import * as sports from './sports.js';
 import { VERSION } from './version.js';
+import { logEvent } from './telemetry.js';
 
 if (/TunerTV/.test(navigator.userAgent)) initTV();
 
@@ -1021,14 +1022,16 @@ function initTV() {
     // A Matroska file with sound the built-in player cannot decode: replay it through the MKV remuxer, which converts it
     if (Date.now() - playSince >= 3500 && !fixTried.has(c.id) && v.webkitAudioDecodedByteCount === 0 && v.webkitVideoDecodedByteCount > 0 && !v.muted && v.volume > 0 && /\.mkv(\?|$)/i.test(c.url || '') && T().fixAudio) {
       fixTried.add(c.id);
+      T().probeStream?.().then((p) => logEvent('silent', 'no audio decoded; trying the MKV engine', { file: p.container, contains: (p.streams || []).join(' + '), problems: p.problems })).catch(() => {});
       showNotice('This file’s audio format isn’t supported here. Converting it so it plays (the first time this downloads the decoder, which can take a minute)…', 150000);
-      T().fixAudio().then((ok) => { if (ok) { notice.classList.add('hidden'); } else showNotice('Couldn’t convert this audio. Press OK, then Info, to see why.'); });
+      T().fixAudio().then((ok) => { logEvent('fix', ok ? 'MKV engine took the file' : 'MKV engine could not take the file', { engine: T().streamInfo?.().engine }); if (ok) { notice.classList.add('hidden'); } else showNotice('Couldn’t convert this audio. Press OK, then Info, to see why.'); });
       return;
     }
     if (Date.now() - playSince < 6000 || silent !== null || v.webkitAudioDecodedByteCount === undefined) return;
     silent = !v.muted && v.volume > 0 && v.webkitAudioDecodedByteCount === 0 && v.webkitVideoDecodedByteCount > 0;
     if (silent) {
       showNotice('No sound from this stream. Press OK, then Info, to see why.');
+      T().probeStream?.().then((p) => logEvent('silent', 'still no audio decoded', { engine: T().streamInfo?.().engine, file: p.container, contains: (p.streams || []).join(' + ') })).catch(() => {});
     }
   }, 1500);
 

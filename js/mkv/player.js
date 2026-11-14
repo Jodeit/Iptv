@@ -148,10 +148,22 @@ export class MkvPlayer {
         if (conv && !this.dead) await this.append(this.buffers.audio, this.remux.aacFragment(conv.aus, conv.start));
         this.transcoder.logStats();
       } catch (err) {
-        if (!this.audioFailed) { this.audioFailed = true; this.onWarn(`Couldn’t convert the audio (${err.message}); playing without sound.`); }
+        if (!this.audioFailed) {
+          this.audioFailed = true;
+          this.onWarn(`Couldn’t convert the audio (${err.message}); playing without sound.`);
+          await this.dropAudio(); // an audio track that never gets any data would stall the video too
+        }
       }
     }
     for (const cue of out.cues) this.addCue(cue);
+  }
+
+  // Takes the audio track out of the player so the video can play on its own
+  async dropAudio() {
+    const sb = this.buffers.audio;
+    if (!sb) return;
+    delete this.buffers.audio;
+    try { await idle(sb); this.ms.removeSourceBuffer(sb); } catch { /* already gone */ }
   }
 
   async append(sb, data) {

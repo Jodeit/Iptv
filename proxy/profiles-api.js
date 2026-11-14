@@ -31,6 +31,29 @@ const MAX_CLAIM_FAILURES = 20; // per IP per 10 minutes
 export async function handleProfileApi({ method, path, body, ip }, store, opts = {}) {
   if (path === '/api/health') return json(200, { sync: true, store: opts.profileHandler ? 'durable' : 'kv' });
 
+  // Problems reported by the apps (see js/telemetry.js): the latest few hundred, kept for two weeks, readable at /logs.
+  // The apps strip stream addresses (they carry logins) before sending.
+  if (path === '/api/log' && method === 'POST') {
+    const list = Array.isArray(body?.entries) ? body.entries.slice(0, 20) : [];
+    // Belt and braces: addresses carry logins, so they never get stored even if an app forgot to strip them
+    const scrub = (t) => String(t || '').replace(/https?:\/\/[^\s)'"”]+/g, (u) => { const ext = u.split('?')[0].match(/\.(\w{2,5})$/)?.[1]; return `<url${ext ? ` .${ext}` : ''}>`; }).replace(/\b(token|password|pass|key|apikey)=[^&\s]+/gi, '$1=…');
+    const clean = list.map((e) => ({
+      t: Number(e?.t) || Date.now(), v: String(e?.v || '').slice(0, 20), d: String(e?.d || '').slice(0, 12), k: String(e?.k || '').slice(0, 20),
+      m: scrub(e?.m).slice(0, 700), x: scrub(e?.x).slice(0, 500), ua: String(e?.ua || '').slice(0, 160),
+    })).filter((e) => e.m);
+    if (!clean.length) return { status: 204 };
+    let all = [];
+    try { all = JSON.parse((await store.get('log:recent')) || '[]'); } catch { all = []; }
+    all = [...clean, ...all].slice(0, 300);
+    await store.put('log:recent', JSON.stringify(all), 14 * 86400);
+    return { status: 204 };
+  }
+  if (path === '/api/logs' && method === 'GET') {
+    let all = [];
+    try { all = JSON.parse((await store.get('log:recent')) || '[]'); } catch { all = []; }
+    return json(200, all);
+  }
+
   const m = path.match(/^\/api\/profile\/([^/]+)$/);
   if (m) {
     const id = m[1];

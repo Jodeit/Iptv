@@ -182,6 +182,14 @@ function handler(req, res) {
   const { pathname, searchParams } = new URL(req.url, 'http://x');
   if (req.method === 'OPTIONS') { res.writeHead(204, CORS); return res.end(); }
   if (pathname === '/proxy/health') return send(res, 200, 'ok');
+  if (pathname === '/logs') {
+    handleProfileApi({ method: 'GET', path: '/api/logs', body: null, ip: '' }, fileStore).then((out) => {
+      const lines = (out.body || []).map((e) => `${new Date(e.t).toISOString().replace('T', ' ').slice(0, 19)}Z  v${e.v}  ${e.d}  ${e.k}  ${e.m}${e.x ? `  ${e.x}` : ''}`);
+      res.writeHead(200, { ...CORS, 'content-type': 'text/plain; charset=utf-8', 'cache-control': 'no-store' });
+      res.end(lines.length ? lines.join('\n') : 'No problems reported yet.');
+    }).catch(() => send(res, 500, 'API error'));
+    return;
+  }
   if (pathname === '/proxy') return proxy(req, res, searchParams.get('url'));
   if (pathname.startsWith('/api/')) return api(req, res, pathname).catch(() => send(res, 500, 'API error'));
   const demo = xtreamDemo(new URL(req.url, `${tls ? 'https' : 'http'}://${req.headers.host}`));

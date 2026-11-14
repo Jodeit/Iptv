@@ -6,7 +6,6 @@
 // access units for the MP4 muxer. Two frames of the previous chunk go in first ("preroll") and are trimmed off
 // afterwards, so the codec's overlap/priming does not leave a click at every chunk boundary.
 
-const CORE = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/';
 const RATE = 48000;
 const FORMAT = { A_AC3: 'ac3', A_EAC3: 'eac3', A_DTS: 'dts', A_TRUEHD: 'truehd', A_MLP: 'truehd' };
 export const CAN_TRANSCODE = new Set(Object.keys(FORMAT));
@@ -34,7 +33,7 @@ class WorkerEngine {
         if (m.error) p.reject(new Error(m.error)); else p.resolve(m.out ? new Uint8Array(m.out) : null);
       };
       this.worker.onerror = (e) => reject(new Error(e.message || 'audio decoder worker failed'));
-      this.call({ type: 'init', core: `${CORE}ffmpeg-core.js`, wasm: `${CORE}ffmpeg-core.wasm` }).then(resolve, reject);
+      this.call({ type: 'init' }).then(resolve, reject);
     });
     return this.ready;
   }

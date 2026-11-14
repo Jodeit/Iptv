@@ -108,6 +108,15 @@ export default {
     if (allowed.length && caller && !allowed.includes(caller)) return text('Origin not allowed', 403, { 'x-proxy-error': 'origin-not-allowed' });
 
     if (pathname === '/proxy/health') return text('ok');
+    // A plain-text view of the problems the apps reported (newest first). Set LOG_READ_KEY to require ?key=...
+    if (pathname === '/logs') {
+      if (env.LOG_READ_KEY && searchParams.get('key') !== env.LOG_READ_KEY) return text('Not found', 404);
+      if (!env.PROFILES) return text('No log storage (KV binding PROFILES) is set up', 503);
+      let all = [];
+      try { all = JSON.parse((await env.PROFILES.get('log:recent')) || '[]'); } catch { all = []; }
+      const lines = all.map((e) => `${new Date(e.t).toISOString().replace('T', ' ').slice(0, 19)}Z  v${e.v}  ${e.d}  ${e.k}  ${e.m}${e.x ? `  ${e.x}` : ''}${/^(player|audio|silent)$/.test(e.k) ? '' : `  [${e.ua}]`}`);
+      return text(lines.length ? lines.join('\n') : 'No problems reported yet.', 200, { 'cache-control': 'no-store' });
+    }
     if (pathname.startsWith('/api/')) {
       if (!env.PROFILES) return Response.json({ error: 'Profile storage (KV binding PROFILES) is not set up' }, { status: 503, headers: CORS });
       let body = null;
