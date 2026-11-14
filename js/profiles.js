@@ -314,7 +314,11 @@ export class Profiles {
     const r = await this.api('pair/claim', { method: 'POST', body: { code } });
     if (r.status === 404) throw new Error('That code wasn’t found or has expired. Codes last 10 minutes and work once.');
     if (!r.ok) throw new Error(r.data?.error || `HTTP ${r.status}`);
-    const { token, name } = r.data;
+    return this.join(r.data.token, r.data.name);
+  }
+
+  // Adopt a profile given its secret token (from a pairing code or a phone linking this TV).
+  async join(token, name) {
     const { id, key } = await deriveKeys(token);
     this.keys.set(token, { id, key });
     const got = await this.api(`profile/${id}`);
@@ -325,6 +329,62 @@ export class Profiles {
     write(`doc@${id.slice(0, 16)}`, doc);
     this.switchTo(id);
     return name;
+  }
+
+  // ---------- Linking a TV ----------
+  // The TV (no keyboard) asks for a code and shows it as a QR; the phone, which already has a
+  // profile, sends the profile's token back encrypted to a key that never leaves the TV.
+  async tvRequest() {
+    if (!subtle) throw new Error('Linking needs a secure (https) connection.');
+    const pair = await subtle.generateKey(
+      { name: 'RSA-OAEP', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' },
+      false, ['decrypt'],
+    );
+    const pub = b64u.enc(await subtle.exportKey('spki', pair.publicKey));
+    const r = await this.api('tv', { method: 'POST', body: { pub } });
+    if (!r.ok) throw new Error(r.data?.error || `HTTP ${r.status}`);
+    return { code: r.data.code, expiresIn: r.data.expiresIn, privateKey: pair.privateKey };
+  }
+
+  // Poll until a phone answers ({ token, name }; the caller decides whether to accept it with join()),
+  // the code expires (null) or `signal` aborts.
+  async tvWait({ code, expiresIn, privateKey }, signal) {
+    const until = Date.now() + expiresIn * 1000;
+    while (Date.now() < until && !signal?.aborted) {
+      await new Promise((ok) => setTimeout(ok, 2000));
+      if (signal?.aborted) return null;
+      let r;
+      try { r = await this.api(`tv/${code}`); } catch { continue; }
+      if (r.status === 404) return null;
+      if (!r.ok || !r.data?.blob) continue;
+      this.api(`tv/${code}`, { method: 'DELETE' }).catch(() => {});
+      const pt = await subtle.decrypt({ name: 'RSA-OAEP' }, privateKey, b64u.dec(r.data.blob));
+      return JSON.parse(dec.decode(pt));
+    }
+    return null;
+  }
+
+  // Phone side: codes of TVs on the same network (same public IP) waiting to be linked.
+  async tvNearby() {
+    const r = await this.api('tv');
+    return r.ok ? (r.data.tvs || []).map((t) => t.code) : [];
+  }
+
+  // Phone side: send the active profile to the TV showing `code`.
+  async tvOffer(code) {
+    const p = this.active();
+    if (!p) throw new Error('No profile selected');
+    if (!subtle) throw new Error('Linking needs a secure (https) connection.');
+    const clean = String(code).toUpperCase().replace(/[^0-9A-Z]/g, '');
+    if (clean.length !== 8) throw new Error('The TV’s code has 8 characters.');
+    const got = await this.api(`tv/${clean}`);
+    if (got.status === 404) throw new Error('That code wasn’t found or has expired. The TV shows a new one every 10 minutes.');
+    if (!got.ok) throw new Error(got.data?.error || `HTTP ${got.status}`);
+    const pub = await subtle.importKey('spki', b64u.dec(got.data.pub), { name: 'RSA-OAEP', hash: 'SHA-256' }, false, ['encrypt']);
+    const blob = b64u.enc(await subtle.encrypt({ name: 'RSA-OAEP' }, pub, enc.encode(JSON.stringify({ token: p.token, name: p.name }))));
+    const r = await this.api(`tv/${clean}`, { method: 'POST', body: { blob } });
+    if (!r.ok) throw new Error(r.data?.error || `HTTP ${r.status}`);
+    return p.name;
   }
 
   // id = null switches to "this device only".

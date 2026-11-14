@@ -604,3 +604,29 @@ body.mini-on #video {
 body.mini-on .stage-pip { display: none; }
 .guide-open { position: fixed; top: calc(var(--content-top) + 10px); right: calc(var(--edge-r) + 50px); z-index: 31; background: rgba(0,0,0,.6); backdrop-filter: blur(8px); }
 #castBtn.on { color: var(--accent); border-color: var(--accent); }
+
+/* ---------- Linking a TV ---------- */
+.tv-banner {
+  position: fixed; z-index: 70; left: 12px; right: 12px; top: calc(var(--sat) + 8px); margin: 0 auto; max-width: 520px;
+  display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 14px; border-radius: var(--radius);
+  background: var(--panel-solid); border: 1px solid var(--accent); box-shadow: 0 8px 30px rgba(0,0,0,.5);
+}
+.tv-banner span { flex: 1; font-size: 14px; }
+
+/* ---------- TV (the Android TV app adds html.tv; see js/tv.js) ---------- */
+html.tv .tab:not([data-tab="channels"]):not([data-tab="phone"]),
+html.tv .tab-body:not([data-tab="channels"]):not([data-tab="phone"]),
+html.tv #cfToggle, html.tv #accountInfo { display: none !important; }
+html.tv .tab-body[data-tab="phone"] p, html.tv .tab-body[data-tab="phone"] h3 { margin: 12px 0 6px; }
+html.tv .tab-body[data-tab="phone"] .btn { font-size: 18px; padding: 12px 18px; }
+.tv-setup {
+  position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
+  background: radial-gradient(circle at 50% 30%, #101a2e, var(--bg));
+}
+.tvs-card { max-width: 900px; padding: 40px 56px; text-align: center; font-size: 26px; line-height: 1.5; }
+.tvs-card h1 { font-size: 44px; margin: 0 0 24px; }
+.tvs-card ol { text-align: left; display: inline-block; margin: 0 0 16px; padding-left: 1.4em; }
+.tvs-card .muted { font-size: 20px; margin: 12px 0 4px; }
+.tvs-code { font-size: 54px; font-weight: 700; letter-spacing: .12em; color: var(--accent); }
+.tvs-actions { margin-top: 28px; display: flex; gap: 16px; justify-content: center; }
+.tvs-actions .btn { font-size: 22px; padding: 14px 28px; }

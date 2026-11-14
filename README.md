@@ -110,6 +110,12 @@ across your devices: TV, phone, laptop, headset. To set it up:
 2. Tap **Link a device**. That shows an 8-character code, valid for 10 minutes and usable once.
 3. On the other device, open **Profile → Link this device** and enter the code.
 
+**Linking a TV:** the TV app has no setup forms. A TV with no playlist shows a setup screen; on your phone open the app,
+go to **Profile → Link a TV** and tap the TV (it appears there, or as a banner, when the phone and TV share a Wi-Fi network;
+otherwise type the code on the TV). The TV asks "Allow?" and then gets your profile, so playlists you add on the phone appear
+on the TV. The profile's secret travels RSA-encrypted to a key that never leaves the TV; the server only matches the two by
+a hash of the shared public IP, kept for 10 minutes.
+
 Changes upload a moment after you make them and download when the app opens or comes back into focus. Edits made on
 two devices at once are merged, not overwritten. 3D, screen, volume and proxy settings stay per device.
 
