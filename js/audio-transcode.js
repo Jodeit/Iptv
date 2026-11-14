@@ -69,9 +69,15 @@ export function splitAdts(bytes) {
   return out;
 }
 
+// One decoder per page: loading it is the slow part (about 32 MB to download and compile), so it is started as early
+// as possible and kept for the next episode.
+let shared = null;
+const sharedEngine = (onLog) => (shared ||= new WorkerEngine(onLog));
+export const warmUp = (onLog) => sharedEngine(onLog).start().catch(() => { shared = null; });
+
 export class AudioTranscoder {
   constructor({ onLog = () => {}, engine } = {}) {
-    this.engine = engine || (typeof window !== 'undefined' && window.__tunerAudioEngine) || new WorkerEngine(onLog);
+    this.engine = engine || (typeof window !== 'undefined' && window.__tunerAudioEngine) || sharedEngine(onLog);
     this.onLog = onLog;
     this.tail = null; // the last two blocks of the previous chunk
     this.chunks = 0;
@@ -111,5 +117,5 @@ export class AudioTranscoder {
     if (this.chunks && this.chunks % 20 === 0) this.onLog(`audio conversion: ${this.chunks} chunks, ${(this.ms / this.chunks).toFixed(0)} ms each`);
   }
 
-  destroy() { this.engine.destroy?.(); }
+  destroy() { /* the decoder stays loaded for the next file */ }
 }

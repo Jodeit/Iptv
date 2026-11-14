@@ -16,13 +16,14 @@ const BEHIND = 30; // seconds kept behind the playhead
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export class MkvPlayer {
-  constructor(video, url, { onWarn = () => {}, onNote = () => {}, onFatal = () => {}, onLog = () => {}, startAt = 0, ahead = 45, preroll = 0 } = {}) {
+  constructor(video, url, { onWarn = () => {}, onNote = () => {}, onProgress = () => {}, onFatal = () => {}, onLog = () => {}, startAt = 0, ahead = 45, preroll = 0 } = {}) {
     this.maxAhead = ahead; // seconds buffered before pausing the download
     this.preroll = preroll; // seconds to build up before playback may start
     this.video = video;
     this.url = url;
     this.onWarn = onWarn;
     this.onNote = onNote; // information, not a problem
+    this.onProgress = onProgress; // what startup is waiting for (shown on the loading screen)
     this.onFatal = onFatal;
     this.onLog = onLog;
     this.startAt = startAt;
@@ -80,6 +81,7 @@ export class MkvPlayer {
     for (const n of setup.notes || []) this.onLog(`MKV: ${n}`);
     if (setup.audio?.transcode) {
       this.transcoder = new AudioTranscoder({ onLog: (l) => this.onLog(`MKV: ${l}`) });
+      this.onProgress('Loading the audio decoder (first time only, about 32 MB)');
       this.onNote('Converting this audio so it can play. The first time, the decoder (about 32 MB) has to download.');
     }
     this.onLog(`MKV: ${[setup.video && `video ${setup.video.cfg.codec}`, setup.audio && `audio ${setup.audio.cfg.codec}`,
