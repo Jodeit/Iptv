@@ -65,6 +65,7 @@ const PRESETS = [
 
 // ---------- State ----------
 const isTV = /TunerTV/.test(navigator.userAgent); // the Android TV app (see js/tv.js)
+const tunerUI = isTV || !!window.__tunerWeb; // either way js/tv.js draws the interface
 const TV_MAX_COPY_AGE = 6 * 3600 * 1000; // the TV has no ↻ button, so it doesn't trust an older saved copy
 const state = {
   channels: [],
@@ -780,7 +781,7 @@ function setChannels(channels, label, source = null) {
   state.group = '';
   rebuildLibrary();
   showAccount(source);
-  if (!isTV) toast(`${label}: ${state.library.length.toLocaleString()} channels${state.library.length < channels.length ? ' after filter' : ''}`); // the TV has its own status line
+  if (!tunerUI) toast(`${label}: ${state.library.length.toLocaleString()} channels${state.library.length < channels.length ? ' after filter' : ''}`); // the TV has its own status line
   // Jump to the list after loading from Sources, but not when a profile switch or sync
   // reloads the playlist while you're on another tab.
   if (document.querySelector('.tab.active')?.dataset.tab === 'sources') {
@@ -1142,7 +1143,7 @@ function rebuildLibrary() {
   for (const b of $('kindSeg').children) b.classList.toggle('active', b.dataset.kind === state.kind);
   rebuildGroups();
   // First playlist of the visit: start on the guide (live TV) instead of an empty stage.
-  if (!isTV && !guideShown && lib.length && !galleryKind() && guide.available() && !gallery.isOpen()) { guideShown = true; guideView.open(); }
+  if (!tunerUI && !guideShown && lib.length && !galleryKind() && guide.available() && !gallery.isOpen()) { guideShown = true; guideView.open(); }
 }
 let guideShown = false;
 
@@ -2321,5 +2322,8 @@ window.o3xr = {
     forgetCopies: () => Promise.all(profiles.doc.playlists.map((p) => cacheDelete(playlistKey(p.url)))),
   },
 };
-if (isTV) video.controls = false; // no system player bar over the picture; js/tv.js draws a small overlay
+if (tunerUI) video.controls = false; // no system player bar over the picture; js/tv.js draws a small overlay
 dispatchEvent(new Event('o3xr-ready'));
+
+// Classic page → Tuner view
+$('tunerViewBtn')?.addEventListener('click', () => { try { localStorage.setItem('tuner.ui', 'tuner'); } catch { /* fine */ } location.reload(); });
