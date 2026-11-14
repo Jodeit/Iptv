@@ -46,7 +46,9 @@ function initTV() {
   const setup = el('div', 'tv-setup hidden');
   setup.id = 'tvSetup';
   setup.innerHTML = '<div class="tvs-card"><div id="tvsBody"></div><div class="tvs-actions"><button id="tvsSkip" class="btn ghost">Skip for now</button></div><div class="tvs-ver">Tuner ' + VERSION + '</div></div>';
-  document.body.append(osd, home, setup);
+  const detail = el('div', 'tv-detail hidden');
+  detail.id = 'tvDetail';
+  document.body.append(osd, home, setup, detail);
   const tabsEl = home.querySelector('.tvh-tabs'), chipsEl = home.querySelector('.tvh-chips'), bodyEl = home.querySelector('.tvh-body'), infoEl = home.querySelector('.tvh-info');
 
   // ---------- State ----------
@@ -61,8 +63,8 @@ function initTV() {
   const autoView = () => { if (!viewChosen) view = T().guide.available() ? 'now' : 'channels'; };
   let genre = '';              // '' = everything on now
   let dismissed = false, running = false, abort = null, liveCode = null;
-  const isOpen = { home: () => !home.classList.contains('hidden'), setup: () => !setup.classList.contains('hidden'), gallery: () => !!O()?.tv.galleryOpen() };
-  const screen = () => (isOpen.setup() ? 'setup' : isOpen.gallery() ? 'gallery' : isOpen.home() ? 'home' : 'player');
+  const isOpen = { home: () => !home.classList.contains('hidden'), setup: () => !setup.classList.contains('hidden'), gallery: () => !!O()?.tv.galleryOpen(), detail: () => !detail.classList.contains('hidden') };
+  const screen = () => (isOpen.setup() ? 'setup' : isOpen.detail() ? 'detail' : isOpen.gallery() ? 'gallery' : isOpen.home() ? 'home' : 'player');
   const isVod = () => { const c = O()?.state.current; return !!c && kindOf(c) !== 'live'; };
 
   // ---------- Channel list helpers ----------
@@ -137,6 +139,7 @@ function initTV() {
     if (f) paintInfo(listCache[+f.dataset.i]);
   });
   const onRatingArrived = (item) => {
+    if (isOpen.detail() && dItem && (!item || item.id === dItem.id)) paintDetail();
     if (tab === 'vod' && isOpen.home()) {
       for (const row of bodyEl.querySelectorAll('.tvh-row.vod')) { const it = listCache[+row.dataset.i]; if (it && (!item || it.id === item.id)) fillVod(row, it); }
       return;
@@ -873,7 +876,112 @@ function initTV() {
     vodRestore = i;
     vodReturn = true;
     closeHome();
-    T().vod.open(item);
+    openDetail(item);
+  }
+
+  // ---------- A single movie or show ----------
+  // Poster and scores on the left; plot, actions and, for a show, seasons and episodes on the right. Everything on it
+  // is a button, so ▲▼◀▶ move between them and OK presses.
+  let dItem = null, dData = null, dSeason = null, dSeq = 0;
+  const pad2 = (n) => String(n ?? 0).padStart(2, '0');
+  function openDetail(item) {
+    dItem = item; dData = null; dSeason = null;
+    const seq = ++dSeq;
+    document.documentElement.classList.add('detail-open');
+    detail.classList.remove('hidden');
+    ready();
+    paintDetail();
+    detail.querySelector('[data-k="primary"]')?.focus();
+    T().vod.rating(item);
+    T().vod.details(item).then((d) => { if (seq === dSeq) { dData = d; paintDetail(); } })
+      .catch((e) => { if (seq === dSeq) { dData = e.message; paintDetail(); } });
+  }
+  function closeDetail(viaBack) {
+    dSeq++;
+    detail.classList.add('hidden');
+    document.documentElement.classList.remove('detail-open');
+    document.activeElement?.blur?.();
+    if (viaBack && vodReturn) { vodReturn = false; openHome(); }
+  }
+  const playFromDetail = (item, at) => { vodReturn = false; closeDetail(false); T().vod.play(item, at || 0); };
+  function paintDetail() {
+    const item = dItem;
+    if (!item) return;
+    const keep = document.activeElement?.closest?.('#tvDetail') ? document.activeElement.dataset.k : null;
+    const series = kindOf(item) === 'series';
+    const r = T().vod.peek(item) || {}, { title, year } = T().vod.title(item);
+    const d = !series && dData && typeof dData === 'object' ? dData : {};
+    const eps = series && Array.isArray(dData) ? dData : null;
+    const poster = item.logo || r.poster || d.poster;
+    const plot = d.plot || item.plot || r.plot || '';
+    const meta = [item.year || year || r.year, d.runtime || r.runtime, d.genre || item.genre || r.genre, r.rated || d.age].filter((x) => x && x !== 'N/A').map(esc).join(' · ');
+    const badges = [
+      r.rt != null ? `<span class="tvd-badge ${r.rt >= 60 ? 'fresh' : 'rotten'}">${r.rt >= 60 ? '🍅' : '🤢'} ${r.rt}%</span>` : '',
+      r.imdb ? `<span class="tvd-badge">IMDb ${esc(r.imdb)}</span>` : '',
+      r.metacritic != null ? `<span class="tvd-badge">Metacritic ${r.metacritic}</span>` : '',
+      !r.rt && !r.imdb && +item.rating > 0 ? `<span class="tvd-badge">★ ${(+item.rating).toFixed(1)}</span>` : '',
+    ].join('');
+    const people = [
+      (d.director || item.director || r.director) && `<span><i>Director</i> ${esc(d.director || item.director || r.director)}</span>`,
+      (d.cast || item.cast || r.actors) && `<span><i>Cast</i> ${esc(String(d.cast || item.cast || r.actors).split(',').slice(0, 5).join(', '))}</span>`,
+    ].filter(Boolean).join('');
+    const prog = T().vod.progress(item);
+    const canResume = !series && prog && prog.t > 30 && prog.t < prog.d - 60;
+    let actions = '', lower = '';
+    if (!series) {
+      actions = `<button class="btn" data-k="primary">${canResume ? `▶ Resume ${fmtDur(prog.t)}` : '▶ Play'}</button>${canResume ? '<button class="btn ghost" data-k="restart">From the start</button>' : ''}`;
+    } else if (!eps) {
+      actions = `<button class="btn" data-k="primary" disabled>${typeof dData === 'string' ? 'Couldn’t load episodes' : 'Loading episodes…'}</button>`;
+    } else if (!eps.length) {
+      actions = '<button class="btn" data-k="primary" disabled>No episodes listed</button>';
+    } else {
+      const seasons = [...new Set(eps.map((e) => e.season))].sort((a, b) => a - b);
+      if (!seasons.includes(dSeason)) { const w = eps.filter((e) => T().vod.progress(e)).pop(); dSeason = w ? w.season : seasons[0]; }
+      // Carry on where you were: the episode you were part-way through, else the one after the last you finished
+      let next = eps[0], label = `▶ Play S${pad2(next.season)}E${pad2(next.episode)}`, at = 0;
+      const i = prog?.season != null ? eps.findIndex((e) => e.season === prog.season && e.episode === prog.episode) : -1;
+      if (i >= 0) {
+        const ep = eps[i], p = T().vod.progress(ep) || prog;
+        if (p.t < p.d - 60) { next = ep; at = p.t > 30 ? p.t : 0; label = `▶ Continue S${pad2(ep.season)}E${pad2(ep.episode)}${at ? ` · ${fmtDur(at)}` : ''}`; }
+        else if (eps[i + 1]) { next = eps[i + 1]; label = `▶ Next: S${pad2(next.season)}E${pad2(next.episode)}`; }
+        else label = '✓ Watched all · play S01E01 again';
+      }
+      detail._next = { next, at };
+      actions = `<button class="btn" data-k="primary">${esc(label)}</button>`;
+      lower = `<div class="tvd-seasons">${seasons.map((s) => `<button class="tvd-season${s === dSeason ? ' on' : ''}" data-k="s${s}" data-s="${s}">Season ${s}</button>`).join('')}</div>
+        <div class="tvd-eps">${eps.filter((e) => e.season === dSeason).map((ep, k) => {
+          const p = T().vod.progress(ep);
+          const st = p?.d ? (p.t > p.d - 60 ? 'Watched' : `${fmtDur(p.t)} / ${fmtDur(p.d)}`) : esc(ep.runtime || '');
+          return `<button class="tvd-ep" data-k="e${k}" data-e="${eps.indexOf(ep)}"><span class="n">${ep.episode || ''}</span><span class="t"><b>${esc(ep.title || ep.name)}</b>${ep.plot ? `<small>${esc(ep.plot)}</small>` : ''}</span><span class="s">${st}</span><span class="p">▶</span></button>`;
+        }).join('')}</div>`;
+    }
+    const fav = T().isFav(item.id);
+    detail.innerHTML = `<div class="tvd-card${series ? ' series' : ''}">
+      <div class="tvd-side"><div class="tvd-poster">${poster ? `<img alt="" src="${esc(poster)}" referrerpolicy="no-referrer">` : `<em>${esc(title || item.name)}</em>`}</div></div>
+      <div class="tvd-main">
+        <h1>${esc(r.title || title || item.name)}</h1>
+        <div class="tvd-meta">${meta}</div>
+        <div class="tvd-badges">${badges}</div>
+        <p class="tvd-plot">${esc(plot)}</p>
+        ${series ? '' : `<div class="tvd-people">${people}</div>`}
+        <div class="tvd-actions">${actions}<button class="btn ghost" data-k="fav">${fav ? '★ Favorite' : '☆ Favorite'}</button></div>
+        ${lower}
+      </div></div>`;
+    const img = detail.querySelector('.tvd-poster img');
+    if (img) img.onerror = () => img.replaceWith(el('em', '', esc(title || item.name)));
+    const q = (s) => detail.querySelector(s);
+    q('[data-k="primary"]').onclick = () => {
+      if (series) { const { next, at } = detail._next || {}; if (next) playFromDetail(next, at); }
+      else playFromDetail(item, canResume ? prog.t : 0);
+    };
+    q('[data-k="restart"]')?.addEventListener('click', () => playFromDetail(item, 0));
+    q('[data-k="fav"]').onclick = () => { T().toggleFav(item); paintDetail(); };
+    for (const b of detail.querySelectorAll('.tvd-season')) b.onclick = () => { dSeason = +b.dataset.s; paintDetail(); detail.querySelector(`[data-k="s${dSeason}"]`)?.focus(); };
+    for (const b of detail.querySelectorAll('.tvd-ep')) {
+      b.onclick = () => { const ep = eps[+b.dataset.e], p = T().vod.progress(ep); playFromDetail(ep, p && p.t > 30 && p.t < p.d - 60 ? p.t : 0); };
+    }
+    if (keep) detail.querySelector(`[data-k="${CSS.escape(keep)}"]`)?.focus();
+    else if (!detail.contains(document.activeElement)) detail.querySelector('[data-k="primary"]:not(:disabled)')?.focus(); // the episodes just arrived
   }
 
   // ---------- Setup: link a phone ----------
@@ -1056,6 +1164,7 @@ function initTV() {
       synthetic = false;
       return true;
     }
+    if (s === 'detail') { closeDetail(true); return true; }
     if (s === 'home') {
       // With a picture behind it, Back returns to the picture (no channel banner). With nothing playing there is
       // nowhere to return to, so Back leaves the app.
@@ -1078,7 +1187,7 @@ function initTV() {
       return;
     }
     if (s !== 'player') {
-      const root = s === 'setup' ? setup : s === 'gallery' ? $('gallery') : home;
+      const root = s === 'setup' ? setup : s === 'gallery' ? $('gallery') : s === 'detail' ? detail : home;
       if (typing && (!DIR[e.key] || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return; // let the keyboard type
       if (s === 'home' && DIR[e.key] && homeNav(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
       if (DIR[e.key]) { e.preventDefault(); e.stopImmediatePropagation(); move(root, ...DIR[e.key]); return; }
