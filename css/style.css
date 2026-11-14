@@ -1004,3 +1004,18 @@ html.tv.guide-mode .tvh-cap .cap-now { font-size: 17px; color: var(--text); }
 html.tv.guide-mode .tvh-cap small { color: #8a7d68; font-size: 13px; }
 html.tv.guide-mode .tvh-cap .prog { display: block; height: 4px; border-radius: 2px; background: rgba(60,50,30,.15); }
 html.tv.guide-mode .tvh-cap .prog u { display: block; height: 100%; background: var(--accent); border-radius: 2px; }
+
+/* Guide window: the list is narrower, so keep tabs on one line, hide the version tag, and use two tiles across */
+html.tv.guide-mode .tvh-tab { white-space: nowrap; padding-left: 14px; padding-right: 14px; }
+html.tv.guide-mode .tvh-version { display: none; }
+html.tv.guide-mode .tvh-body.grid:not(.posters) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+html.tv.guide-mode .tvh-body.grid.posters { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+html.tv.guide-mode .tvh-body.grid .tvh-row.game .tn { font-size: 19px; }
+html.tv.guide-mode .tvh-body.grid .tvh-row.game .g-state > b { font-size: 17px; }
+html.tv.guide-mode .tvh-body.grid .tvh-row.game .g-state small span { max-width: 70px; }
+html.tv.guide-mode .tvh-panel { width: 69%; padding-right: 0; }
+html.tv.guide-mode #flatStage { width: 26vw !important; inset: 34px 36px auto auto !important; }
+html.tv.guide-mode .tvh-cap { width: 26vw; right: 36px; top: calc(34px + 26vw * 9 / 16 + 14px); }
+html.tv.guide-mode .tvh-body.grid .tvh-row.game { padding: 12px 14px; }
+html.tv.guide-mode .tvh-body.grid .tvh-row.game .ts { font-size: 22px; min-width: 32px; }
+html.tv.guide-mode .tvh-body.grid .tvh-row.game img.tl, html.tv.guide-mode .tvh-body.grid .tvh-row.game i.tl { width: 28px; height: 28px; }
