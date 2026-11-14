@@ -1072,7 +1072,15 @@ function initTV() {
     const sub = live ? `${lab.title}${nn?.now ? ` · until ${fmtClock(nn.now.stop)}` : ''}` : lab.sub;
     const tr = T().tracks?.() || { audio: [], text: [] };
     const on = (list) => list.find((x) => x.on)?.label;
-    const btn = (k, icon, label, extra = '', disabled = false) => `<button class="tvc-btn" data-k="${k}"${disabled ? ' disabled' : ''}><i>${icon}</i><span>${esc(label)}</span>${extra ? `<small>${esc(extra)}</small>` : ''}</button>`;
+    const ICON = {
+      back: 'M11 18V6l-8.5 6 8.5 6zm.5-6 8.5 6V6l-8.5 6z', fwd: 'M4 18l8.5-6L4 6v12zm9-12v12l8.5-6L13 6z', play: 'M8 5v14l11-7z',
+      pause: 'M6 19h4V5H6v14zm8-14v14h4V5h-4z',
+      audio: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z',
+      cc: 'M19 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2zm-8 7H9.5v-.5h-2v3h2V13H11v1a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1zm7 0h-1.5v-.5h-2v3h2V13H18v1a1 1 0 0 1-1 1h-3a1 1 0 0 1-1-1v-4a1 1 0 0 1 1-1h3a1 1 0 0 1 1 1v1z',
+      info: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z', warn: 'M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z',
+      guide: 'M3 6h18v2H3V6zm0 5h18v2H3v-2zm0 5h18v2H3v-2z',
+    };
+    const btn = (k, icon, label, extra = '', disabled = false) => `<button class="tvc-btn" data-k="${k}"${disabled ? ' disabled' : ''}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${ICON[icon]}"/></svg><span>${esc(label)}</span>${extra ? `<small>${esc(extra)}</small>` : ''}</button>`;
     const r = seekRange(), canSeek = !live || (r && r[1] - r[0] > 12);
     let menu = '';
     if (controlsMenu === 'info') {
@@ -1104,13 +1112,13 @@ function initTV() {
       <div class="tvc-head"><b>${esc(title)}</b><span>${esc(sub)}</span></div>
       <div class="tvc-bar"><u></u></div><div class="tvc-times"><span class="tvc-l"></span><span class="tvc-r"></span></div>
       <div class="tvc-row">
-        ${btn('back', '⏪', '10 s', '', !canSeek)}
-        ${btn('primary', v.paused ? '▶' : '⏸', v.paused ? 'Resume' : 'Pause')}
-        ${btn('fwd', '⏩', '30 s', '', !canSeek)}
-        ${btn('audio', '🔊', 'Audio', tr.audio.length ? on(tr.audio) || '' : 'one track', !tr.audio.length)}
-        ${btn('cc', 'CC', 'Captions', tr.text.length ? on(tr.text) || 'Off' : 'none', !tr.text.length)}
-        ${btn('info', silent ? '⚠' : 'ℹ', 'Info', silent ? 'no sound' : '')}
-        ${live ? btn('guide', '☰', 'Guide') : ''}
+        ${btn('back', 'back', '10 s', '', !canSeek)}
+        ${btn('primary', v.paused ? 'play' : 'pause', v.paused ? 'Resume' : 'Pause')}
+        ${btn('fwd', 'fwd', '30 s', '', !canSeek)}
+        ${btn('audio', 'audio', 'Audio', tr.audio.length ? on(tr.audio) || '' : 'one track', !tr.audio.length)}
+        ${btn('cc', 'cc', 'Captions', tr.text.length ? on(tr.text) || 'Off' : 'none', !tr.text.length)}
+        ${btn('info', silent ? 'warn' : 'info', 'Info', silent ? 'no sound' : '')}
+        ${live ? btn('guide', 'guide', 'Guide') : ''}
       </div></div>`;
     const q = (s) => controls.querySelector(s);
     q('[data-k="primary"]').onclick = () => { closeControls(false); if (T().video.paused) T().togglePlay(); };
