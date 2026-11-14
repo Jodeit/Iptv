@@ -352,7 +352,7 @@ function initTV() {
   function goTab(k) {
     if (k === 'movie' || k === 'series') {
       if (tab === 'vod' && vodKind === k) { markTabs(); return; }
-      tab = 'vod'; vodKind = k;
+      tab = 'vod'; vodKind = k; vodF.age = 0;
       markTabs();
       renderBody();
       syncGuideMode();
@@ -728,7 +728,12 @@ function initTV() {
   let vodItems = [], vodTags = new Map(); // what the grid is showing from, and each title's folder labels
   const vodIndex = {}; // kind → { sig, items, tags: Map(id → Set(label)), done, total, state }
   const vodTag = { movie: '', series: '' }; // selected genre / collection ('' = everything)
-  const vodF = { sort: 'added', rating: 0, year: '', fav: false, unwatched: false };
+  const vodF = { sort: 'added', rating: 0, year: '', age: 0 };
+  // Film (MPAA) and TV (Parental Guidelines) ratings on one scale; the menu is "up to" a level, in each system's terms
+  const AGE = { 'TV-Y': 1, G: 2, 'TV-Y7': 2, 'TV-Y7-FV': 2, 'TV-G': 2, PG: 3, 'TV-PG': 3, 'PG-13': 4, 'TV-14': 4, R: 5, 'TV-MA': 5, 'NC-17': 6, NR: 6 };
+  const AGE_MENU = { movie: [[2, 'G'], [3, 'PG'], [4, 'PG-13'], [5, 'R']], series: [[1, 'TV-Y'], [2, 'TV-G'], [3, 'TV-PG'], [4, 'TV-14'], [5, 'TV-MA']] };
+  const vodMeta = new Map(); // id → { cert } for titles whose rating has been looked up
+  let ageRun = 0;
   const CONTINUE = '__continue';
   const SORTS = [['added', 'Recently added'], ['rt', 'Rotten Tomatoes'], ['rating', 'Top rated'], ['year', 'Newest'], ['title', 'A–Z']];
   const YEARS = [['', 'Any'], ['2020', '2020s'], ['2010', '2010s'], ['2000', '2000s'], ['1990', '1990s'], ['old', 'Before 1990']];
@@ -807,9 +812,35 @@ function initTV() {
     if (tag && tag !== CONTINUE && !vodTags.get(i.id)?.has(tag)) return false;
     if (f.rating && vodScore(i) < f.rating) return false;
     if (f.year) { if (!i.year) return false; if (f.year === 'old' ? i.year >= 1990 : i.year < +f.year || i.year >= +f.year + 10) return false; }
-    if (f.fav && !T().isFav(i.id)) return false;
-    if (f.unwatched) { const p = T().vod.progress(i); if (p?.d && p.t / p.d > 0.9) return false; }
+    if (f.age) { const lvl = ageLevel(i); if (!lvl || lvl > f.age) return false; } // unknown counts as too old
     return true;
+  }
+  const ageLevel = (i) => AGE[vodMeta.get(i.id)?.cert || T().vod.peek(i)?.rated] || 0;
+  // Looks up the age rating of every title in the list (TMDB allows plenty at once; results are cached in the profile)
+  async function fetchAges() {
+    const run = ++ageRun, list = vodItems.filter((i) => !vodMeta.has(i.id)).slice(0, 4000), total = list.length;
+    if (!total) return;
+    let next = 0, done = 0, last = performance.now();
+    const status = () => { const s = chipsEl.querySelector('.vod-age'); if (s) s.textContent = done < total ? `Checking age ratings · ${done.toLocaleString()} of ${total.toLocaleString()}` : ''; };
+    const worker = async () => {
+      while (next < total && ageRun === run) {
+        const it = list[next++];
+        try { vodMeta.set(it.id, (await T().vod.meta(it)) || { cert: '' }); } catch { vodMeta.set(it.id, { cert: '' }); }
+        done++;
+        if (performance.now() - last > 1200) { last = performance.now(); status(); vodRefresh(); }
+      }
+    };
+    status();
+    await Promise.all(Array.from({ length: 16 }, worker));
+    if (ageRun === run) { status(); vodRefresh(); }
+  }
+  // Titles that now pass the filters: rebuild the grid if you are not in it, else add them to the end
+  function vodRefresh() {
+    if (tab !== 'vod') return;
+    if (!(bodyEl.contains(document.activeElement) && bodyEl.querySelector('.tvh-row:not(.skel)'))) { renderVodList(); return; }
+    const have = new Set(listCache.map((i) => i.id));
+    const add = vodItems.filter((i) => !have.has(i.id) && vodPass(i));
+    if (add.length) { const wasAll = shown >= listCache.length; listCache.push(...add); if (wasAll) addRows(); }
   }
   function vodList() {
     const f = vodF;
@@ -838,8 +869,15 @@ function initTV() {
     mode('rating', 'Rating', vodF.rating ? `${vodF.rating}+` : 'Any', () => { vodF.rating = cycle([0, 6, 7, 8], vodF.rating); });
     const yi = YEARS.findIndex(([k]) => k === vodF.year);
     mode('year', 'Year', YEARS[yi][1], () => { vodF.year = YEARS[(yi + 1) % YEARS.length][0]; });
-    mode('fav', '★ Favorites', vodF.fav ? 'On' : 'Off', () => { vodF.fav = !vodF.fav; });
-    mode('unwatched', 'Hide watched', vodF.unwatched ? 'On' : 'Off', () => { vodF.unwatched = !vodF.unwatched; });
+    // Age rating: "up to" a level, in the terms of films (G…R) or shows (TV-Y…TV-MA)
+    const ages = AGE_MENU[vodKind] || AGE_MENU.movie, ai = ages.findIndex(([n]) => n === vodF.age);
+    mode('age', 'Age', vodF.age ? `Up to ${ages[ai]?.[1] || ''}` : 'Any', () => {
+      vodF.age = ai + 1 < ages.length ? ages[ai + 1][0] : 0;
+      if (vodF.age === 0 && ai === -1) vodF.age = ages[0][0];
+      if (vodF.age && !T().vod.hasMeta()) { T().toast('Age ratings need a TMDB key: add one on your phone (Settings → Sync)'); }
+      if (vodF.age) fetchAges();
+    });
+    if (vodF.age) chipsEl.append(el('div', 'tvh-gstatus vod-age', ''));
     // Genres and collections come from the folders the titles were found in
     const counts = new Map();
     for (const tags of vodTags.values()) for (const g of tags) counts.set(g, (counts.get(g) || 0) + 1);
@@ -886,6 +924,7 @@ function initTV() {
     vodItems = idx.items; vodTags = idx.tags;
     const inGrid = bodyEl.contains(document.activeElement) && bodyEl.querySelector('.tvh-row:not(.skel)');
     if (!chipsEl.contains(document.activeElement) && (final || idx.done % 2 === 1 || idx.done === idx.total)) renderVodChips();
+    if (final && vodF.age) fetchAges();
     if (!inGrid) {
       const onSkeleton = document.activeElement?.classList.contains('skel'); // you pressed ▼ before anything had loaded
       renderVodList();
