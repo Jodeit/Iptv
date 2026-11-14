@@ -2200,7 +2200,8 @@ window.o3xr = {
         if (!state.xlib) return state.library.filter((c) => kindOf(c) === kind && c.group === catId);
         return state.xlib.items[kind].get(catId) || state.xlib.category(kind, catId);
       },
-      primary: () => settings.contentFilter.vodPrimary ?? '',
+      // (v0.13.0 shipped a guess for the series folders; treat a saved copy of it as unset so the real default applies)
+      primary: () => { const v = settings.contentFilter.vodPrimary ?? ''; return v === 'VOD | EN*, VOD | IMDB TOP 500, SERIES | EN*' ? FILTER_DEFAULTS.vodPrimary : v; },
       continueList: (kind) => gallery.app.continueList(kind).map((x) => x.item),
       progress: (item) => getProgress(item),
       title: (item) => parseTitle(item.name),

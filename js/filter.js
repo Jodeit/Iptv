@@ -14,7 +14,7 @@ export const FILTER_DEFAULTS = {
   dedupe: true,
   // The TV's Movies and Shows tabs: one flat list built from the folders that start with these (a trailing * matches
   // anything after), and the folder names become its genre filters. Empty = every folder.
-  vodPrimary: 'VOD | EN*, VOD | IMDB TOP 500, SERIES | EN*',
+  vodPrimary: 'VOD | EN*, VOD | IMDB TOP 500, SRS | EN*',
 };
 
 // Region/language tags that mark a movie or series group as not English. Untagged groups
