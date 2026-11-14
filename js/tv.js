@@ -40,12 +40,12 @@ function initTV() {
   osd.innerHTML = '<img class="osd-logo" alt=""><div class="osd-main"><div class="osd-name"></div><div class="osd-sub"></div><div class="osd-bar"><u></u></div></div><div class="osd-hint"></div>';
   const home = el('div', 'tv-home hidden');
   home.id = 'tvHome';
-  home.innerHTML = '<div class="tvh-panel"><div class="tvh-tabs"></div><div class="tvh-main"><div class="tvh-chips"></div><div class="tvh-body"></div></div></div>';
+  home.innerHTML = '<div class="tvh-panel"><div class="tvh-tabs"></div><div class="tvh-main"><div class="tvh-chips"></div><div class="tvh-body"></div></div><div class="tvh-info hidden"></div></div>';
   const setup = el('div', 'tv-setup hidden');
   setup.id = 'tvSetup';
   setup.innerHTML = '<div class="tvs-card"><div id="tvsBody"></div><div class="tvs-actions"><button id="tvsSkip" class="btn ghost">Skip for now</button></div><div class="tvs-ver">Tuner ' + VERSION + '</div></div>';
   document.body.append(osd, home, setup);
-  const tabsEl = home.querySelector('.tvh-tabs'), chipsEl = home.querySelector('.tvh-chips'), bodyEl = home.querySelector('.tvh-body');
+  const tabsEl = home.querySelector('.tvh-tabs'), chipsEl = home.querySelector('.tvh-chips'), bodyEl = home.querySelector('.tvh-body'), infoEl = home.querySelector('.tvh-info');
 
   // ---------- State ----------
   let tab = 'live';            // 'live' | 'phone' (Movies and Shows open the poster gallery)
@@ -57,6 +57,8 @@ function initTV() {
   const isVod = () => { const c = O()?.state.current; return !!c && kindOf(c) !== 'live'; };
 
   // ---------- Channel list helpers ----------
+  // Providers pad names with '######' banners and the like; show them tidied, keep the real name for playback.
+  const cleanName = (n) => String(n || '').replace(/^[#*=\-_\s]+|[#*=\-_\s]+$/g, '').replace(/\s{2,}/g, ' ') || String(n || '');
   const liveAll = () => T().live();
   const groups = () => [...new Set(liveAll().map((c) => c.group).filter(Boolean))];
   const visibleList = () => {
@@ -205,11 +207,15 @@ function initTV() {
     chipsEl.innerHTML = '';
     chipsEl.classList.toggle('hidden', tab !== 'live');
     if (tab !== 'live') return;
-    const defs = [['', 'All']];
-    if (liveAll().some((c) => T().isFav(c.id))) defs.push([FAV, '★ Favorites']);
-    for (const g of groups().slice(0, 80)) defs.push([g, g]);
-    for (const [k, label] of defs) {
-      const b = el('button', `tvh-chip${k === group ? ' on' : ''}`, esc(label));
+    const all = liveAll();
+    const counts = new Map();
+    for (const c of all) counts.set(c.group, (counts.get(c.group) || 0) + 1);
+    const favs = all.filter((c) => T().isFav(c.id)).length;
+    const defs = [['', 'All', all.length]];
+    if (favs) defs.push([FAV, '★ Favorites', favs]);
+    for (const g of groups().slice(0, 120)) defs.push([g, g, counts.get(g)]);
+    for (const [k, label, n] of defs) {
+      const b = el('button', `tvh-chip${k === group ? ' on' : ''}`, `<span class="nm">${esc(label)}</span><span class="n">${n}</span>`);
       b.onclick = () => { group = k; renderChips(); renderBody(); [...chipsEl.children].find((x) => x.classList.contains('on'))?.focus(); };
       // Browsing groups previews them: the list follows focus, so ▲▼ then ▶ is enough.
       b.onfocus = () => { if (group !== k) { group = k; for (const x of chipsEl.children) x.classList.toggle('on', x === b); renderBody(false); } };
@@ -224,7 +230,7 @@ function initTV() {
     b.dataset.i = i; // position in listCache; ids can repeat when a provider lists a stream twice
     b.classList.toggle('playing', ch === O().state.current);
     b.innerHTML = `<img alt="" referrerpolicy="no-referrer"><span class="meta"><b></b><small></small><i class="prog"><u></u></i></span><span class="star">★</span>`;
-    b.querySelector('b').textContent = ch.name;
+    b.querySelector('b').textContent = cleanName(ch.name);
     if (ch.logo) b.querySelector('img').src = ch.logo; else b.querySelector('img').style.display = 'none';
     b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
     paintRow(b, ch);
@@ -235,10 +241,13 @@ function initTV() {
     const small = b.querySelector('small'), prog = b.querySelector('.prog');
     if (nn?.now) {
       small.textContent = `${nn.now.title}${nn.next ? `  ·  next ${nn.next.title}` : ''}`;
+      small.style.display = '';
       prog.classList.add('on');
       prog.firstElementChild.style.width = `${Math.round(((Date.now() - nn.now.start) / (nn.now.stop - nn.now.start)) * 100)}%`;
     } else {
-      small.textContent = ch.group || '';
+      // Inside a group the group name on every row is noise; show it only when browsing everything.
+      small.textContent = group ? '' : (ch.group || '');
+      small.style.display = small.textContent ? '' : 'none';
       prog.classList.remove('on');
       T().guide.request?.(ch);
     }
@@ -250,10 +259,33 @@ function initTV() {
   }
   let holdFired = false, rowPressed = false;
 
+  // The highlighted channel in full: name, group, what's on and what's next. Long provider names are cut off
+  // in the list, so this is where you can always tell two similar channels apart.
+  function paintInfo(ch) {
+    if (!ch) { infoEl.classList.add('hidden'); return; }
+    const nn = T().guide.nowNext(ch);
+    const parts = [`<div class="i-name">${esc(cleanName(ch.name))}</div>`, `<div class="i-meta">${esc(ch.group || '')}</div>`];
+    if (nn?.now) {
+      const pct = Math.min(100, Math.max(0, ((Date.now() - nn.now.start) / (nn.now.stop - nn.now.start)) * 100));
+      parts.push(`<div class="i-now"><b>Now</b> ${esc(nn.now.title)} <span>until ${esc(fmtClock(nn.now.stop))}</span></div>`);
+      parts.push(`<div class="i-bar"><u style="width:${pct}%"></u></div>`);
+      if (nn.next) parts.push(`<div class="i-next"><b>Next</b> ${esc(nn.next.title)} <span>${esc(fmtClock(nn.next.start))}</span></div>`);
+    } else {
+      parts.push('<div class="i-next dim">No programme guide for this channel</div>');
+    }
+    infoEl.innerHTML = parts.join('');
+    infoEl.classList.remove('hidden');
+  }
+  bodyEl.addEventListener('focusin', (e) => {
+    const row = e.target.closest?.('.tvh-row');
+    if (row) paintInfo(listCache[+row.dataset.i]);
+  });
+
   function renderBody(withChips = true) {
     if (withChips) renderChips();
     bodyEl.innerHTML = '';
     bodyEl.className = `tvh-body ${tab}`;
+    infoEl.classList.add('hidden');
     if (tab === 'phone') return renderPhone();
     listCache = visibleList();
     shown = 0;
@@ -323,6 +355,7 @@ function initTV() {
     ready();
     P().pull(); // anything new from the phone
     checkUpdate('timer');
+    libSeen = libSig();
     renderTabs();
     renderBody();
     requestAnimationFrame(() => {
@@ -332,6 +365,21 @@ function initTV() {
     });
   }
   function closeHome() { home.classList.add('hidden'); document.documentElement.classList.remove('home-open'); document.activeElement?.blur?.(); }
+  // A playlist can finish loading (or change after a sync) while Home is already open: rebuild instead of
+  // leaving the old list on screen.
+  let libSeen = '';
+  const libSig = () => { const l = liveAll(); return `${l.length}|${l[0]?.id}|${l[l.length - 1]?.id}`; };
+  setInterval(() => {
+    if (!isOpen.home()) return;
+    const sig = libSig();
+    if (sig === libSeen) return;
+    libSeen = sig;
+    group = '';
+    const hadFocus = home.contains(document.activeElement);
+    renderTabs();
+    renderBody();
+    if (!hadFocus || document.activeElement === document.body) bodyEl.querySelector('.tvh-row')?.focus();
+  }, 1000);
   // Rows' what's-on lines fill in as guide data arrives.
   setInterval(() => {
     if (!isOpen.home() || tab !== 'live') return;
@@ -339,6 +387,8 @@ function initTV() {
       const ch = listCache[+row.dataset.i];
       if (ch) paintRow(row, ch);
     }
+    const f = document.activeElement?.closest?.('.tvh-row');
+    if (f) paintInfo(listCache[+f.dataset.i]);
   }, 5000);
 
   // ---------- Setup: link a phone ----------
@@ -594,6 +644,8 @@ function initTV() {
   // ---------- Boot ----------
   const boot = () => {
     T().video.controls = false;
+    // Android WebView draws a large grey play icon on a <video> that has nothing to show; a transparent poster replaces it.
+    T().video.poster = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
     checkUpdate('timer'); // sets the baseline
     // Phone edits should reach the TV quickly: look every 45 s (the app's own check is every 5 min).
     setInterval(() => { if (document.visibilityState === 'visible' && !running) P().pull(); }, 45000);
