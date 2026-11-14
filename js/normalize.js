@@ -92,6 +92,18 @@ const VARIANT = new Set(['BACKUP', 'ALT', 'ALTERNATE', 'MIRROR', 'SERVER', 'S1',
 const CALLSIGN = /^[KW][A-Z]{2,3}$/;
 const CALL_TO_CITY = Object.fromEntries(Object.entries(MARKET_ALIASES).flatMap(([city, calls]) => calls.map((c) => [c, city])));
 
+// "LAT - ESPN", "MX: FOX SPORTS" and "UK | BT SPORT" are the same channel name from another country's feed. When copies
+// merge, the US one should be the one that plays; the others stay as fallbacks.
+const FOREIGN = new Set(['LAT', 'LATAM', 'LATINO', 'LATINA', 'MX', 'MEX', 'MEXICO', 'BR', 'BRA', 'BRASIL', 'UK', 'CA', 'CAN', 'AR', 'ARG']);
+export const isForeign = (ch) => {
+  const t = tokens(`${ch.name} ${ch.group || ''}`);
+  return !t.includes('US') && !t.includes('USA') && t.some((x) => FOREIGN.has(x));
+};
+export function regionScore(ch) {
+  const t = tokens(`${ch.name} ${ch.group || ''}`);
+  return (t.includes('US') || t.includes('USA') ? 30 : 0) - (t.some((x) => FOREIGN.has(x)) ? 30 : 0);
+}
+
 // Higher is better. 4K/UHD and RAW streams are the heaviest on a TV's decoder and network, so a plain HD or FHD copy wins.
 export function qualityOf(rawName) {
   const t = new Set(tokens(rawName));
@@ -118,7 +130,7 @@ function stationKey(ch) {
 export function dupeKey(ch) {
   if (ch.net && ch.market) return `${ch.net}|${stationKey(ch)}`;
   if (ch.net) return `${ch.net}|`;
-  return tokens(ch.clean || ch.name).filter((t) => !VARIANT.has(t)).join(''); // "ESPN 2" and "ESPN2" are one channel
+  return tokens(ch.clean || ch.name).filter((t) => !VARIANT.has(t) && !FOREIGN.has(t)).join(''); // "ESPN 2", "ESPN2" and "ESPN LAT" are one channel
 }
 
 // One entry per station, in the order the first copy appeared. `isFav(id)` makes a favourited copy win, so a star
@@ -135,8 +147,11 @@ export function dedupe(channels, isFav = () => false) {
   }
   return out.map((x) => {
     if (!Array.isArray(x)) return x;
+    // Another country's copy of a channel you have is dropped, not even kept as a fallback stream
+    const home = x.filter((c) => !isForeign(c));
+    if (home.length && home.length < x.length) x.splice(0, x.length, ...home);
     if (x.length === 1) { delete x[0].dupes; return x[0]; }
-    const ranked = x.map((c, i) => ({ c, i, s: (isFav(c.id) ? 100 : 0) + (c._q ??= qualityOf(c.name)) + (c.tvgId ? 0.5 : 0) }))
+    const ranked = x.map((c, i) => ({ c, i, s: (isFav(c.id) ? 100 : 0) + (c._q ??= qualityOf(c.name)) + (c.tvgId ? 0.5 : 0) + regionScore(c) }))
       .sort((a, b) => b.s - a.s || a.i - b.i);
     const best = ranked[0].c;
     // Not enumerable: it is recomputed on every load and must not be written into the cached playlist
