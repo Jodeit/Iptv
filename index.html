@@ -138,6 +138,10 @@
       <label class="field">Your city or station call signs
         <input id="cfMarket" type="text" placeholder="Austin (default), or KVUE, KXAN, KEYE" autocomplete="off" spellcheck="false"></label>
       <label class="check"><input id="cfLocalOnly" type="checkbox" checked> Hide other cities’ ABC, CBS, NBC, FOX, PBS, CW and similar stations</label>
+      <h3>Movies and Shows on the TV</h3>
+      <label class="field">Folders to flatten into one list
+        <input id="cfVodPrimary" type="text" placeholder="VOD | EN*, VOD | IMDB TOP 500" autocomplete="off" spellcheck="false"></label>
+      <p class="muted small">The TV shows one list of every title in these folders instead of the provider’s folder tree. A * at the end matches anything after (“VOD | EN*” takes “VOD | EN Action”, “VOD | EN Comedy”…). The rest of each folder name becomes a genre filter, and a folder like “IMDB TOP 500” becomes a collection. Leave empty to use every folder.</p>
       <p class="muted small">Providers list the local station of every city under one folder (hundreds under “ABC”). With your city here, only yours are kept. Stations that name no city are kept. Channels are tidied once when a playlist loads.</p>
 
           </section>

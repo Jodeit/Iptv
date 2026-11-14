@@ -1754,16 +1754,17 @@ function syncFilterForm() {
   $('cfMarket').value = cf.market || '';
   $('cfLocalOnly').checked = cf.localOnly !== false;
   $('cfDedupe').checked = cf.dedupe !== false;
+  $('cfVodPrimary').value = cf.vodPrimary ?? '';
 }
 const readFilterForm = () => {
   Object.assign(settings.contentFilter, {
     on: $('cfOn').checked, live: $('cfLive').value, vod: $('cfVod').value, vodUntagged: $('cfUntagged').checked,
-    market: $('cfMarket').value.trim(), localOnly: $('cfLocalOnly').checked, dedupe: $('cfDedupe').checked,
+    market: $('cfMarket').value.trim(), localOnly: $('cfLocalOnly').checked, dedupe: $('cfDedupe').checked, vodPrimary: $('cfVodPrimary').value.trim(),
   });
   saveFilter();
   rebuildLibrary();
 };
-for (const id of ['cfOn', 'cfLive', 'cfVod', 'cfUntagged', 'cfMarket', 'cfLocalOnly', 'cfDedupe']) $(id).onchange = readFilterForm;
+for (const id of ['cfOn', 'cfLive', 'cfVod', 'cfUntagged', 'cfMarket', 'cfLocalOnly', 'cfDedupe', 'cfVodPrimary']) $(id).onchange = readFilterForm;
 syncFilterForm();
 
 // ---------- Profile tab ----------
@@ -2194,6 +2195,12 @@ window.o3xr = {
     vod: {
       categories: (kind) => gallery.app.categories(kind),
       load: (kind, id) => gallery.app.loadCategory(kind, id),
+      // Same, without the full-screen loading banner (the TV loads many folders in a row and shows its own progress)
+      loadQuiet: async (kind, catId) => {
+        if (!state.xlib) return state.library.filter((c) => kindOf(c) === kind && c.group === catId);
+        return state.xlib.items[kind].get(catId) || state.xlib.category(kind, catId);
+      },
+      primary: () => settings.contentFilter.vodPrimary ?? '',
       continueList: (kind) => gallery.app.continueList(kind).map((x) => x.item),
       progress: (item) => getProgress(item),
       title: (item) => parseTitle(item.name),
