@@ -17,7 +17,7 @@ import * as sports from './sports.js';
 import { VERSION } from './version.js';
 import { logEvent } from './telemetry.js';
 
-if (/TunerTV/.test(navigator.userAgent)) initTV();
+if (/TunerTV/.test(navigator.userAgent) || window.__tunerWeb) initTV();
 
 function initTV() {
   const $ = (id) => document.getElementById(id);
@@ -31,6 +31,7 @@ function initTV() {
   const fmtClock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const fmtDur = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return `${h ? h + ':' : ''}${String(m).padStart(h ? 2 : 1, '0')}:${String(s % 60).padStart(2, '0')}`; };
   const html = document.documentElement;
+  const WEB = !!window.__tunerWeb; // Tuner view in a browser (iPhone, iPad): touch instead of a remote
   html.classList.add('tv');
   // index.html already set tv + tv-booting before first paint (a splash, so the phone UI never flashes). Lift
   // it once there is something to show: the setup screen, Home, or a picture.
@@ -587,17 +588,18 @@ function initTV() {
       <div class="tvh-profile"><span class="avatar">${a ? esc(a.name.trim().charAt(0).toUpperCase()) : '·'}</span>
         <div class="grow"><div class="tvh-pname">${a ? esc(a.name) : 'Not linked to a phone'}</div><div class="tvh-sync"></div></div></div>
       <div class="tvh-syncbar"><u></u></div>
-      <p class="tvh-note">Change playlists and settings on your phone at <b>${esc(host)}</b>. They sync here.</p>
+      <p class="tvh-note">${WEB ? 'Playlists, content filters, API keys and every other setting are in <b>All settings</b>; changes sync to your other devices.' : `Change playlists and settings on your phone at <b>${esc(host)}</b>. They sync here.`}</p>
       <div class="tvh-actions"></div>
       <p class="tvh-note dim tvh-showing"></p>
       <h3>Playlists on your profile${a ? ` (${n})` : ''}</h3><div class="tvh-lists"></div>`;
     const actions = bodyEl.querySelector('.tvh-actions');
     const mk = (label, fn, cls = 'btn') => { const b = el('button', cls, esc(label)); b.onclick = fn; actions.append(b); return b; };
+    if (WEB) mk('All settings & playlists', () => { try { localStorage.setItem('tuner.ui', 'classic'); } catch { /* fine */ } location.reload(); });
     if (a) {
       mk('Sync now', () => { P().sync(); paintSync(); });
       if (src?.url) mk('Reload channels', () => { O().loadPlaylist(src.url, src.name, { fresh: true }); closeHome(); }, 'btn ghost');
-      mk('Unlink', async () => { await T().forgetCopies(); P().signOut(a.id); dismissed = false; closeHome(); runSetup(); }, 'btn ghost');
-    } else {
+      if (!WEB) mk('Unlink', async () => { await T().forgetCopies(); P().signOut(a.id); dismissed = false; closeHome(); runSetup(); }, 'btn ghost');
+    } else if (!WEB) {
       mk('Link a phone', () => { dismissed = false; closeHome(); runSetup(); });
     }
     const lists = bodyEl.querySelector('.tvh-lists');
@@ -614,7 +616,7 @@ function initTV() {
       };
       lists.append(b);
     }
-    if (!n) lists.innerHTML = '<p class="tvh-note dim">None yet. Add one on your phone.</p>';
+    if (!n) lists.innerHTML = `<p class="tvh-note dim">None yet. ${WEB ? 'Add one under All settings.' : 'Add one on your phone.'}</p>`;
     paintSync();
   }
   // Live sync line: what it's doing now, or when it last finished and what it found.
@@ -660,7 +662,7 @@ function initTV() {
   function openHome(opts = {}) {
     if (screen() === 'setup') return;
     hideOsd();
-    guideSession = !opts.menu && document.documentElement.classList.contains('tv-picture') && !!O().state.current; // the picture window is for the guide, not the main menu
+    guideSession = !WEB && !opts.menu && document.documentElement.classList.contains('tv-picture') && !!O().state.current; // the picture window is for the guide, not the main menu
     // From the picture you get the live guide; coming back from a title's page you stay where you were (Movies / Shows)
     if (guideSession && !opts.keepTab && tab !== 'live' && liveAll().length) { tab = 'live'; group = ''; genre = ''; }
     // ▲▼ from the picture: the playing channel's folder, as a plain channel list (put back as it was when Home closes)
@@ -1323,7 +1325,7 @@ function initTV() {
   // ---------- Setup: link a phone ----------
   const body = $('tvsBody');
   const fmt = (c) => `${c.slice(0, 4)} ${c.slice(4)}`;
-  const needsSetup = () => !dismissed && (!P().active() || !P().doc.playlists.length);
+  const needsSetup = () => !WEB && !dismissed && (!P().active() || !P().doc.playlists.length);
   function renderSetup(html, focusSel) {
     body.innerHTML = html;
     hideOsd();
@@ -1408,7 +1410,7 @@ function initTV() {
   // With nothing playing, the useful screen is the channel list, not a black picture.
   async function settleOnHome() {
     for (let i = 0; i < 40 && !T().live().length && !O().state.channels.length; i++) await sleep(250);
-    if (screen() === 'player' && !O().state.current) openHome();
+    if (screen() === 'player' && !O().state.current) { if (WEB && !O().state.channels.length) tab = 'phone'; openHome(); }
   }
 
   // ---------- Keys ----------
@@ -1647,6 +1649,40 @@ function initTV() {
     else T().toast(`New from your phone: ${added[0].name}. Home → Settings to switch.`);
   }
   setInterval(watchPlaylists, 4000);
+
+  // ---------- Touch (Tuner view in a browser) ----------
+  if (WEB) {
+    // Rows play on a tap; a long press favorites (the remote's "hold OK")
+    let pressTimer = 0, swallow = false;
+    bodyEl.addEventListener('pointerdown', (e) => {
+      const row = e.target.closest?.('.tvh-row');
+      clearTimeout(pressTimer);
+      if (!row || row.classList.contains('daybtn')) return;
+      pressTimer = setTimeout(() => { swallow = true; toggleFavRow(row); navigator.vibrate?.(15); }, 650);
+    });
+    for (const ev of ['pointerup', 'pointercancel', 'pointerleave']) bodyEl.addEventListener(ev, () => clearTimeout(pressTimer));
+    bodyEl.addEventListener('scroll', () => clearTimeout(pressTimer), { passive: true });
+    bodyEl.addEventListener('contextmenu', (e) => e.preventDefault());
+    bodyEl.addEventListener('click', (e) => {
+      const t = e.target.closest?.('.tvh-row');
+      if (!t || screen() !== 'home') return;
+      if (swallow) { swallow = false; return; }
+      const ch = listCache[+t.dataset.i];
+      if (ch?._day) { showTomorrow = !showTomorrow; if (showTomorrow) sports.wantTomorrow(); computeNow(true); renderChips(); renderBody(false); }
+      else if (ch && tab === 'vod') openVod(ch, +t.dataset.i);
+      else if (ch) { closeHome(); T().play(ch._real || ch); }
+    });
+    // Visible Back / Close, since there is no Back key
+    const mkBtn = (cls, label, fn) => { const b = el('button', `web-btn ${cls}`, label); b.onclick = fn; document.body.append(b); return b; };
+    mkBtn('web-menu', '☰ Menu', () => { if (screen() === 'controls') closeControls(false); if (screen() === 'player') openHome({ menu: true }); });
+    mkBtn('web-back', '‹ Back', () => goBack());
+    const x = el('button', 'tvh-x', '✕ Picture'); x.onclick = () => goBack(); tabsEl.append(x);
+    new MutationObserver(() => { if (!tabsEl.contains(x)) tabsEl.append(x); }).observe(tabsEl, { childList: true });
+    // Tap the picture for the controls (pause, seek, audio, captions, episodes, guide)
+    $('flatStage')?.addEventListener('click', () => { if (screen() === 'player' && O().state.current) openControls(); });
+    controls.addEventListener('click', (e) => { if (e.target === controls) goBack(); }); // tap outside the bar
+    detail.addEventListener('click', (e) => { if (e.target === detail) goBack(); });
+  }
 
   // ---------- Boot ----------
   const boot = () => {
