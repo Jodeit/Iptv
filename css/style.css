@@ -889,3 +889,11 @@ html.tv-booting body::before { background: radial-gradient(120% 95% at 28% 8%, #
 .tvs-actions .btn { font-size: 18px; padding: 10px 26px; }
 .tvs-ver { margin-top: 12px; font-size: 13px; }
 html.setup-open .toast { display: none !important; }
+
+/* ---------- TV: Channels | On now ---------- */
+.tvh-modes { display: flex; gap: 6px; margin-bottom: 6px; }
+.tvh-chip.mode { flex: 1; justify-content: center; text-align: center; font-weight: 600; padding: 7px 8px; background: rgba(60,50,30,.07); }
+.tvh-chip.mode.on { background: var(--blue); color: #fff; }
+.tvh-chip.mode:focus { border-color: var(--ink); }
+.tvh-gstatus { font-size: 13px; line-height: 1.3; color: var(--ink-3); padding: 8px 10px 4px; }
+.tvh-info .i-desc { grid-column: 2; font-size: 14px; line-height: 1.3; color: var(--ink-2); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
