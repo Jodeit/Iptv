@@ -29,6 +29,10 @@ export class Guide {
     this.active = 0;
     this.xmltv = null; // Map tvg-id → programmes once loaded
     this.xmltvState = 'none';
+    this.bulkState = 'none'; // whole-lineup load for Xtream accounts: none | loading | ready | failed
+    this.bgQueue = []; // slow crawl over every channel when there is no bulk guide
+    this.bgTotal = 0;
+    this.bgDone = 0;
   }
 
   // xtream: { server, username, password } or null; tvgUrl: XMLTV URL or null.
@@ -47,6 +51,8 @@ export class Guide {
   // Programmes for a channel if known; schedules a load otherwise.
   programmes(ch) {
     if (!this.source || kindOf(ch) !== 'live') return null;
+    const bulk = ch.tvgId && this.xmltv?.get(ch.tvgId);
+    if (bulk?.length) return bulk;
     if (this.source.tvgUrl && !this.source.xtream) {
       if (this.xmltvState === 'none') this.loadXmltv();
       return this.xmltv?.get(ch.tvgId) || null;
@@ -59,7 +65,8 @@ export class Guide {
   // What is already known, without scheduling a load (for painting many rows).
   peek(ch, now = Date.now()) {
     if (!this.source || kindOf(ch) !== 'live') return null;
-    const list = this.source.tvgUrl && !this.source.xtream ? this.xmltv?.get(ch.tvgId) : this.byChannel.get(ch.id)?.programmes;
+    const bulk = ch.tvgId && this.xmltv?.get(ch.tvgId);
+    const list = bulk?.length ? bulk : (this.source.tvgUrl && !this.source.xtream ? this.xmltv?.get(ch.tvgId) : this.byChannel.get(ch.id)?.programmes);
     return list ? this.#nowNext(list, now) : null;
   }
 
@@ -92,16 +99,55 @@ export class Guide {
 
   pump() {
     this.trimQueue();
-    while (this.active < PARALLEL && this.queue.length) {
-      const job = this.queue.pop();
+    // Urgent (on screen) first; the background crawl only uses what is left over.
+    while (this.active < PARALLEL && (this.queue.length || this.bgQueue.length)) {
+      const bg = !this.queue.length;
+      const job = bg ? this.bgQueue.shift() : this.queue.pop();
+      if (bg && (this.inFlight.has(job.id) || this.byChannel.has(job.id))) { this.bgDone++; continue; }
       this.active++;
       this.inFlight.add(job.id);
       this.loadShort(job).finally(() => {
         this.active--;
         this.inFlight.delete(job.id);
+        if (bg) this.bgDone++;
         this.pump();
       });
     }
+  }
+
+  // ---------- Whole lineup, for "what's on now" ----------
+  // Xtream panels also serve one big XMLTV file for every channel (xmltv.php). When that works, one request
+  // fills the guide; otherwise every channel's short guide is fetched slowly in the background.
+  loadBulk(channels) {
+    if (!this.source?.xtream || this.bulkState !== 'none') return;
+    const { server, username, password } = this.source.xtream;
+    this.bulkState = 'loading';
+    this.loadXmltv(`${server}/xmltv.php?${new URLSearchParams({ username, password })}`).then(() => {
+      this.bulkState = this.xmltvState === 'ready' && this.xmltv?.size ? 'ready' : 'failed';
+      if (this.bulkState === 'failed') this.crawl(channels);
+      this.onUpdate?.(null);
+    });
+  }
+
+  crawl(channels) {
+    if (this.bgTotal) return;
+    const jobs = [];
+    for (const ch of channels) {
+      if (kindOf(ch) !== 'live' || this.byChannel.has(ch.id)) continue;
+      const streamId = ch.url.split('?')[0].split('/').pop().replace(/\.\w+$/, '');
+      if (/^\d+$/.test(streamId)) jobs.push({ id: ch.id, streamId });
+    }
+    this.bgQueue = jobs;
+    this.bgTotal = jobs.length;
+    this.bgDone = 0;
+    this.pump();
+  }
+
+  // { state, done, total } for a progress line.
+  progress() {
+    if (this.bulkState === 'loading') return { state: 'loading', done: 0, total: 0 };
+    if (this.bgTotal && this.bgDone < this.bgTotal) return { state: 'crawling', done: this.bgDone, total: this.bgTotal };
+    return { state: 'ready', done: 0, total: 0 };
   }
 
   async loadShort({ id, streamId }) {
@@ -125,7 +171,7 @@ export class Guide {
   }
 
   // ---------- XMLTV ----------
-  async loadXmltv() {
+  async loadXmltv(url = this.source.tvgUrl) {
     this.xmltvState = 'loading';
     const wanted = this.wantedIds;
     const map = new Map();
@@ -133,7 +179,7 @@ export class Guide {
     const from = now - 3 * 3600 * 1000;
     const to = now + 24 * 3600 * 1000;
     try {
-      const res = await this.fetcher(this.source.tvgUrl);
+      const res = await this.fetcher(url);
       if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
       let body = res.body;
       // Gzipped files served without Content-Encoding still need unpacking.
@@ -157,7 +203,7 @@ export class Guide {
           const start = xmltvTime(attr(attrs, 'start'));
           const stop = xmltvTime(attr(attrs, 'stop'));
           if (!(stop > from && start < to)) continue;
-          const p = { start, stop, title: tag(block, 'title'), desc: tag(block, 'desc') };
+          const p = { start, stop, title: tag(block, 'title'), desc: tag(block, 'desc'), category: tag(block, 'category') };
           if (!map.has(channel)) map.set(channel, []);
           map.get(channel).push(p);
         }
