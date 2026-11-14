@@ -1,14 +1,17 @@
 :root {
-  --bg: #07080c;
-  --panel: rgba(16, 18, 26, 0.86);
-  --panel-solid: #10121a;
-  --line: rgba(255, 255, 255, 0.08);
-  --text: #e8eaf2;
-  --muted: #8a90a6;
-  --accent: #3de0ff;
-  --accent-2: #ff3d7f;
-  --hover: rgba(255, 255, 255, 0.06);
-  --active: rgba(61, 224, 255, 0.14);
+  /* Indigo & brass: deep porcelain-blue ink, linen text, brass accents, porcelain blue as the second colour */
+  --bg: #0c111d;
+  --panel: rgba(17, 23, 37, 0.9);
+  --panel-solid: #111725;
+  --line: rgba(236, 226, 206, 0.11);
+  --text: #f3eee3;
+  --muted: #a4a091;
+  --accent: #d9b97b;
+  --accent-2: #7ea4d8;
+  --accent-ink: #1a1408;
+  --hover: rgba(243, 238, 227, 0.07);
+  --active: rgba(217, 185, 123, 0.16);
+  --serif: "Cormorant Garamond", Georgia, "Times New Roman", serif;
   --radius: 12px;
   color-scheme: dark;
   /* Layout: the top bar and now-playing bar float at the edges; everything else fits between
@@ -110,7 +113,7 @@ button, a, input, select, label, li, .gcard { touch-action: manipulation; -webki
 .stack { display: flex; flex-direction: column; gap: 6px; }
 
 input[type=text], input[type=url], input[type=search], input[type=password], select {
-  background: rgba(255,255,255,.05);
+  background: rgba(243,238,227,.05);
   border: 1px solid var(--line);
   border-radius: 8px;
   padding: 8px 10px;
@@ -121,7 +124,7 @@ select option { background: var(--panel-solid); }
 input[type=file] { font-size: 12px; color: var(--muted); }
 
 .btn {
-  background: var(--accent); color: #001018; border: 0; border-radius: 8px;
+  background: var(--accent); color: var(--accent-ink); border: 0; border-radius: 8px;
   padding: 8px 14px; font-weight: 600; cursor: pointer; white-space: nowrap;
 }
 .btn:hover { filter: brightness(1.1); }
@@ -223,7 +226,7 @@ video { -webkit-touch-callout: none; }
 .flat-overlay {
   position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 6px; text-align: center; padding: 20px; pointer-events: none;
-  background: radial-gradient(circle at 50% 55%, rgba(61,224,255,.10), transparent 60%), #05060a;
+  background: radial-gradient(circle at 50% 55%, rgba(126,164,216,.10), transparent 60%), #080c16;
 }
 .flat-title { font-size: 22px; font-weight: 700; }
 .flat-sub { color: var(--muted); }
@@ -399,7 +402,6 @@ body.ios #volume { display: none; }
   .icon-btn { width: 44px; height: 44px; }
   .chip { min-height: 40px; }
   .btn { min-height: 40px; }
-  .tabs.secondary .tab, .tabs.secondary .tab[data-tab="sources"], .tabs.secondary .tab[data-tab="profile"] { font-size: 12px; padding: 10px 2px; }
   .channel-list li { min-height: 48px; }
   .channel-list .fav { padding: 10px; margin: -6px -4px -6px 0; }
   .seg button { min-height: 40px; }
@@ -453,7 +455,7 @@ body.ios #volume { display: none; }
 .ginfo { font-size: 11px; color: var(--muted); line-height: 1.35; margin-top: 2px; }
 .ginfo .gcat { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: .8; }
 .ginfo .gcat b { color: var(--accent); font-weight: 600; }
-.badge.best { margin-top: 3px; background: rgba(61,224,255,.15); color: var(--accent); }
+.badge.best { margin-top: 3px; background: rgba(217,185,123,.18); color: var(--accent); }
 .badge { display: inline-flex; align-items: center; gap: 3px; padding: 1px 6px; border-radius: 6px; font-size: 11px; font-weight: 700; white-space: nowrap; background: rgba(255,255,255,.08); color: var(--text); }
 .badge.big { font-size: 13px; padding: 4px 9px; }
 .badge.tomato.fresh { background: rgba(250, 50, 10, .2); color: #ff7a5c; }
@@ -541,12 +543,7 @@ body.ios #volume { display: none; }
 }
 .primary-nav button + button { border-left: 1px solid var(--line); }
 .primary-nav button:hover { background: var(--hover); }
-.primary-nav button.active { background: var(--accent); color: #001018; border-color: var(--accent); }
-.tabs.secondary { padding-top: 2px; }
-.tabs.secondary .tab { font-size: 11px; padding: 6px 2px; opacity: .7; }
-.tabs.secondary .tab.active { opacity: 1; }
-.tabs.secondary .tab[data-tab="sources"], .tabs.secondary .tab[data-tab="profile"] { font-size: 10.5px; opacity: .5; }
-.tabs.secondary .tab[data-tab="sources"].active, .tabs.secondary .tab[data-tab="profile"].active { opacity: .9; }
+.primary-nav button.active { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .profile-chip { opacity: .65; font-size: 11px; max-width: 110px; }
 .profile-chip:hover { opacity: 1; }
 
@@ -640,7 +637,7 @@ html.tv .toast { font-size: 22px; padding: 12px 22px; z-index: 120; }
 .tv-osd .osd-bar u { display: block; height: 100%; border-radius: 3px; background: var(--accent); text-decoration: none; }
 .tv-osd .osd-hint { font-size: 16px; color: #9aa0b6; white-space: nowrap; }
 
-.tv-home { position: fixed; inset: 0; z-index: 70; background: linear-gradient(to right, rgba(7,8,12,.96) 0%, rgba(7,8,12,.92) 52%, rgba(7,8,12,.1) 78%, rgba(7,8,12,0) 100%); }
+.tv-home { position: fixed; inset: 0; z-index: 70; background: linear-gradient(to right, rgba(12,17,29,.96) 0%, rgba(12,17,29,.92) 52%, rgba(12,17,29,.1) 78%, rgba(12,17,29,0) 100%); }
 .tvh-panel { width: 62%; height: 100%; padding: 28px 0 0 40px; display: flex; flex-direction: column; min-height: 0; }
 .tvh-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
 .tvh-tab { font-size: 19px; padding: 6px 18px; border-radius: 999px; background: transparent; color: #9aa0b6; border: 2px solid transparent; font-weight: 600; }
@@ -664,7 +661,7 @@ html.tv .toast { font-size: 22px; padding: 12px 22px; z-index: 120; }
 .tvh-row .prog u { display: block; height: 100%; background: var(--accent); border-radius: 2px; text-decoration: none; }
 .tvh-row .star { color: #ffcf40; font-size: 22px; }
 .tvh-row.playing { background: var(--active); }
-.tvh-row:focus { border-color: var(--accent); background: rgba(61,224,255,.2); }
+.tvh-row:focus { border-color: var(--accent); background: rgba(217,185,123,.2); }
 .tvh-empty { color: #9aa0b6; font-size: 22px; padding: 24px 8px; }
 .tvh-profile { display: flex; align-items: center; gap: 12px; }
 .tvh-profile .grow { flex: 1; min-width: 0; }
@@ -684,9 +681,9 @@ html.tv .toast { font-size: 22px; padding: 12px 22px; z-index: 120; }
 .tvh-body.phone .btn.ghost { border-color: rgba(255,255,255,.12); }
 .tvh-body.phone .btn:focus { border-color: #fff; }
 .tvh-version { margin-left: auto; align-self: center; margin-right: 24px; font-size: 14px; color: #6f758c; padding: 4px 12px; border-radius: 999px; border: 2px solid transparent; background: transparent; }
-.tvh-version.new { color: #07080c; background: var(--accent); font-weight: 600; }
+.tvh-version.new { color: var(--accent-ink); background: var(--accent); font-weight: 600; }
 .tvh-version:focus { border-color: #fff; color: #fff; }
-.tvh-version.new:focus { color: #07080c; }
+.tvh-version.new:focus { color: var(--accent-ink); }
 .tvs-ver { margin-top: 18px; font-size: 14px; color: #6f758c; }
 .tv-setup {
   position: fixed; inset: 0; z-index: 100; display: flex; align-items: center; justify-content: center;
@@ -700,3 +697,50 @@ html.tv .toast { font-size: 22px; padding: 12px 22px; z-index: 120; }
 .tvs-actions { margin-top: 28px; display: flex; gap: 16px; justify-content: center; }
 .tvs-actions .btn { font-size: 22px; padding: 14px 28px; }
 .tv-osd.update .osd-hint { color: var(--accent); }
+
+
+/* ---------- Typeface: traditional serif for names and titles ---------- */
+.brand, .drawer-title, .tvs-card h1, .tvh-pname, .tv-osd .osd-name, .pv-info h2 { font-family: var(--serif); letter-spacing: .01em; }
+.brand { font-size: 20px; font-weight: 700; }
+.drawer-title { font-size: 24px; font-weight: 700; }
+.tvs-card h1 { font-weight: 600; }
+.tvh-pname { font-size: 26px; font-weight: 700; }
+.tv-osd .osd-name { font-weight: 700; }
+
+/* ---------- Settings: a proper sheet with tabs you can read ---------- */
+.tabs { gap: 6px; padding: 8px 12px; overflow-x: auto; scrollbar-width: none; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { flex: 1 0 auto; padding: 10px 14px; font-size: 15px; font-weight: 600; border: 0; border-radius: 10px; color: var(--muted); }
+.tab:hover { background: var(--hover); color: var(--text); }
+.tab.active { background: var(--accent); color: var(--accent-ink); border: 0; }
+.tab-body { padding: 12px 16px 24px; gap: 10px; }
+.tab-body h3 { margin: 18px 0 4px; font-size: 12px; color: var(--accent); }
+.tab-body > h3:first-child { margin-top: 4px; }
+@media (min-width: 721px) { .panel { width: 420px; } }
+@media (max-width: 720px) {
+  /* Settings is its own screen on a phone, not a card over the player and guide */
+  .panel { inset: 0; width: auto; border-radius: 0; border: 0; background: var(--panel-solid); z-index: 90;
+    padding: var(--sat) var(--sar) var(--sab) var(--sal); }
+  .panel.collapsed { transform: translateY(100%); opacity: 1; }
+  .panel-head { padding: 14px 16px 6px; }
+  .panel-head .icon-btn { width: 44px; height: 44px; font-size: 20px; }
+  .tab { padding: 12px 14px; }
+  .saved-list li { min-height: 52px; }
+}
+
+/* ---------- TV startup: pick the UI before anything paints ---------- */
+html.tv-booting body > * { visibility: hidden !important; }
+html.tv-booting body::before {
+  content: 'Tuner'; position: fixed; inset: 0; z-index: 999; display: grid; place-items: center; visibility: visible !important;
+  font: 600 64px var(--serif); letter-spacing: .04em; color: var(--accent);
+  background: radial-gradient(circle at 50% 45%, rgba(126,164,216,.12), transparent 60%), var(--bg);
+}
+/* A faint coffered-ceiling grid on the TV's own screens */
+.tv-home::before, .tv-setup::before {
+  content: ''; position: absolute; inset: 0; pointer-events: none;
+  background-image: linear-gradient(rgba(243,238,227,.04) 1px, transparent 1px), linear-gradient(90deg, rgba(243,238,227,.04) 1px, transparent 1px);
+  background-size: 110px 110px;
+  -webkit-mask-image: radial-gradient(ellipse at 25% 15%, #000 0%, transparent 70%); mask-image: radial-gradient(ellipse at 25% 15%, #000 0%, transparent 70%);
+}
+.tvs-code { color: var(--accent); }
+.tvh-chip.on, .tvh-tab.on { color: var(--accent); }

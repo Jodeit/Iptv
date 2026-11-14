@@ -233,7 +233,7 @@ function applyDoc(doc, reason) {
     loadPlaylistUrl(want.url, want.name, { fresh: false });
   } else if (reason === 'switch' && !want?.url) {
     setChannels([], 'Profile', null);
-    setStatus('Add a playlist in Sources');
+    setStatus('Add a playlist in Settings → Playlists');
   } else {
     rebuildLibrary();
   }
@@ -356,7 +356,7 @@ function catalogIndex(kind, onProgress) {
 }
 
 async function moreLike(item, details, onProgress) {
-  if (!similar.enabled()) return { items: [], note: 'Add a free TMDB key in Sources → Ratings to see recommendations.' };
+  if (!similar.enabled()) return { items: [], note: 'Add a free TMDB key in Settings → Playback → Ratings to see recommendations.' };
   const kind = kindOf(item) === 'series' ? 'series' : 'movie';
   const ref = await similar.tmdbId(item, { tmdb: details.tmdb || item.tmdb, imdbID: ratings.peek(item)?.imdbID });
   if (!ref) return { items: [], note: 'TMDB doesn’t know this title, so there are no recommendations.' };
@@ -1296,7 +1296,7 @@ async function play(ch, { startAt = resumePoint(ch) } = {}) {
   vrPanel?.draw();
   const sources = streamCandidates(ch);
   if (!sources.length) {
-    const msg = 'This http:// stream can’t play on an https:// page without a proxy. Set one under Sources → Proxy.';
+    const msg = 'This http:// stream can’t play on an https:// page without a proxy. Set one under Settings → Playback → Proxy.';
     setStatus(msg); toast(msg, true);
     theater.setPlaceholder('Stream blocked', ch.name);
     return;
@@ -1802,7 +1802,7 @@ $('pfCreate').onclick = () => busy($('pfCreate'), async () => {
   if (!name) return toast('Give the profile a name', true);
   await profiles.create(name, { copyCurrent: $('pfCopy').checked });
   $('pfNewName').value = '';
-  toast(`Profile “${name}” created. Use “Link a device” to add it to your other devices.`);
+  toast(`Profile “${name}” created. Use Sync → “Link a device” to add it to your other devices.`);
 });
 $('pfNewName').onkeydown = (e) => { if (e.key === 'Enter') $('pfCreate').click(); };
 $('pfClaim').onclick = () => busy($('pfClaim'), async () => {

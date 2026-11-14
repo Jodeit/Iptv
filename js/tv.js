@@ -27,7 +27,12 @@ function initTV() {
   const host = location.host;
   const fmtClock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const fmtDur = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return `${h ? h + ':' : ''}${String(m).padStart(h ? 2 : 1, '0')}:${String(s % 60).padStart(2, '0')}`; };
-  document.documentElement.classList.add('tv');
+  const html = document.documentElement;
+  html.classList.add('tv');
+  // index.html already set tv + tv-booting before first paint (a splash, so the phone UI never flashes). Lift
+  // it once there is something to show: the setup screen, Home, or a picture.
+  const ready = () => html.classList.remove('tv-booting');
+  setTimeout(ready, 8000);
 
   // ---------- DOM ----------
   const osd = el('div', 'tv-osd hidden');
@@ -106,7 +111,7 @@ function initTV() {
   let lastShown = null;
   setInterval(() => {
     const c = O()?.state.current;
-    if (c && c !== lastShown) { lastShown = c; showOsd(); }
+    if (c && c !== lastShown) { lastShown = c; ready(); showOsd(); }
   }, 400);
 
   // ---------- Updates ----------
@@ -315,6 +320,7 @@ function initTV() {
     hideOsd();
     home.classList.remove('hidden');
     document.documentElement.classList.add('home-open');
+    ready();
     P().pull(); // anything new from the phone
     checkUpdate('timer');
     renderTabs();
@@ -344,13 +350,14 @@ function initTV() {
     hideOsd();
     closeHome();
     setup.classList.remove('hidden');
+    ready();
     document.querySelector(focusSel || '#tvsSkip')?.focus();
   }
   const steps = (code) => `
     <h1>Set up Tuner on your phone</h1>
     <ol>
       <li>On your phone, open <b>${esc(host)}</b></li>
-      <li>Go to <b>Profile → Link a TV</b> and tap this TV</li>
+      <li>Go to <b>Sync → Link a TV</b> and tap this TV</li>
       <li>Add your playlist there. It shows up here by itself.</li>
     </ol>
     <p class="muted">Phone not on this Wi-Fi? In Link a TV, type this code:</p>
@@ -370,7 +377,7 @@ function initTV() {
       while (needsSetup()) {
         const p = P();
         if (p.active()) {
-          renderSetup(`<h1>Linked to “${esc(p.active().name)}”</h1><p>Now add a playlist on your phone: <b>Sources</b>. It will appear here automatically.</p>`);
+          renderSetup(`<h1>Linked to “${esc(p.active().name)}”</h1><p>Now add a playlist on your phone, under <b>Playlists</b>. It will appear here automatically.</p>`);
           await sleep(4000);
           await p.pull();
           continue;
