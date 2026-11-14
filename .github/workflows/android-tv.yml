@@ -9,6 +9,9 @@ on:
         description: Page the app loads
         default: https://iptv.jodeit.workers.dev
 
+permissions:
+  contents: write
+
 jobs:
   apk:
     runs-on: ubuntu-latest
@@ -25,3 +28,12 @@ jobs:
         with:
           name: tuner-tv-apk
           path: android-tv/app/build/outputs/apk/release/app-release.apk
+      # Keeps one rolling prerelease with the newest APK so there is a stable download page.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android-tv/app/build/outputs/apk/release/app-release.apk tuner-tv.apk
+          gh release delete tv-latest --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
+          gh release create tv-latest tuner-tv.apk --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --prerelease --title "Tuner TV (latest build)" --notes "Debug-signed APK for sideloading on Google TV. Built from $GITHUB_SHA."
