@@ -230,7 +230,7 @@ export class Profiles {
     if (!canSync()) return 'Profiles need a secure (https) connection.';
     try {
       const r = await this.api('health');
-      if (r.ok && r.data?.sync) return '';
+      if (r.ok && r.data?.sync) { this.store = r.data.store || 'kv'; return ''; }
       return r.data?.error || 'This server doesn’t have profile sync set up.';
     } catch {
       return 'Can’t reach the sync server.';
