@@ -38,7 +38,7 @@ jobs:
           gh release create tv-latest tuner-tv.apk --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --prerelease --title "Tuner TV (latest build)" --notes "Debug-signed APK for sideloading on Google TV. Built from $GITHUB_SHA."
       # The Cloudflare Worker serves the repo root, so this makes the APK downloadable at /tuner-tv.apk
-      # on the app's own (public) URL even while the repo is private. The token push does not re-trigger this workflow.
+      # on the app's own (public) URL even while the repo is private. GITHUB_TOKEN pushes do not re-trigger this workflow, but Cloudflare still deploys them.
       - name: Commit APK for the Worker to serve
         run: |
           cp android-tv/app/build/outputs/apk/release/app-release.apk tuner-tv.apk
