@@ -56,10 +56,20 @@ export class Guide {
     return hit?.programmes || null;
   }
 
+  // What is already known, without scheduling a load (for painting many rows).
+  peek(ch, now = Date.now()) {
+    if (!this.source || kindOf(ch) !== 'live') return null;
+    const list = this.source.tvgUrl && !this.source.xtream ? this.xmltv?.get(ch.tvgId) : this.byChannel.get(ch.id)?.programmes;
+    return list ? this.#nowNext(list, now) : null;
+  }
+
   // Current and next programme.
   nowNext(ch, now = Date.now()) {
     const list = this.programmes(ch);
-    if (!list) return null;
+    return list ? this.#nowNext(list, now) : null;
+  }
+
+  #nowNext(list, now) {
     const i = list.findIndex((p) => p.stop > now);
     if (i < 0) return null;
     const cur = list[i].start <= now ? list[i] : null;
