@@ -21,12 +21,13 @@ let bufferLevel = BUFFER_LEVELS.normal;
 export const setBufferLevel = (k) => { bufferLevel = BUFFER_LEVELS[k] || BUFFER_LEVELS.normal; };
 
 export class StreamPlayer {
-  constructor(video, { onStatus = () => {}, onError = () => {}, onWarn = () => {}, onNote = () => {}, onLog = () => {}, onSlow = () => {} } = {}) {
+  constructor(video, { onStatus = () => {}, onError = () => {}, onWarn = () => {}, onNote = () => {}, onProblem = () => {}, onLog = () => {}, onSlow = () => {} } = {}) {
     this.video = video;
     this.onStatus = onStatus;
     this.onError = onError;
     this.onWarn = onWarn;
     this.onNote = onNote;
+    this.onProblem = onProblem; // a ✗ or ⚠ line of the playback log (failures, warnings)
     this.onLog = onLog; // (report) after each new line, so the playback log stays live
     this.health = new Health(video, (line) => this.log(line), () => onSlow());
     this.hls = null;
@@ -38,6 +39,7 @@ export class StreamPlayer {
   log(line) {
     const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     this.report.push(`${t} ${line}`);
+    if (/^[✗⚠]/.test(line)) this.onProblem(line);
     if (this.report.length > 300) this.report.splice(0, this.report.length - 300);
     this.onLog(this.report);
   }
