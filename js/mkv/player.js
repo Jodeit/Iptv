@@ -109,6 +109,7 @@ export class MkvPlayer {
       this.video.currentTime = b.start(0);
     }
 
+    this.nudgeTimer = setInterval(() => this.nudge(), 600);
     this.loop().catch((err) => { if (!this.dead) this.onFatal(err); });
 
     // Optional head start: let the cushion build before playback begins (capped at 60 s).
@@ -165,6 +166,27 @@ export class MkvPlayer {
     if (!sb) return;
     delete this.buffers.audio;
     try { await idle(sb); this.ms.removeSourceBuffer(sb); } catch { /* already gone */ }
+  }
+
+  // Playback cannot start (or carry on) when the playhead sits in a hole in front of the buffered data, and the browser
+  // does not skip it. After a jump the data can begin a little after where we asked (the first keyframe is later, or
+  // one track starts later than the other), so step over a gap of up to 12 seconds.
+  nudge() {
+    const v = this.video, t = v.currentTime, b = v.buffered;
+    if (this.dead || this.seekTo !== null || !b.length) return;
+    for (let i = 0; i < b.length; i++) if (b.start(i) <= t + 0.05 && b.end(i) > t) return;
+    for (let i = 0; i < b.length; i++) {
+      if (b.start(i) > t && b.start(i) - t < 12) {
+        this.onLog(`MKV: skipped a ${(b.start(i) - t).toFixed(1)} s gap in front of the data (to ${fmt(b.start(i))})`);
+        v.currentTime = b.start(i) + 0.05;
+        return;
+      }
+    }
+  }
+
+  // Each track's buffered ranges, for the problem log
+  stateText() {
+    return Object.entries(this.buffers).map(([k, sb]) => `${k} [${[...Array(sb.buffered.length).keys()].map((i) => `${sb.buffered.start(i).toFixed(1)}-${sb.buffered.end(i).toFixed(1)}`).join(',')}]`).join(', ') + `, playhead ${this.video.currentTime.toFixed(1)}`;
   }
 
   async append(sb, data) {
@@ -279,6 +301,7 @@ export class MkvPlayer {
 
   destroy() {
     this.dead = true;
+    clearInterval(this.nudgeTimer);
     this.video.removeEventListener('seeking', this.onSeeking);
     this.r?.cancel();
     this.transcoder?.destroy();

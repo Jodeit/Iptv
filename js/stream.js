@@ -39,7 +39,7 @@ export class StreamPlayer {
   log(line) {
     const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     this.report.push(`${t} ${line}`);
-    if (/^[✗⚠]/.test(line) || /^MKV: (video|jumped)/.test(line)) this.onProblem(line);
+    if (/^[✗⚠]/.test(line) || /^MKV: (video|jumped|skipped)/.test(line)) this.onProblem(line);
     if (this.report.length > 300) this.report.splice(0, this.report.length - 300);
     this.onLog(this.report);
   }
@@ -133,6 +133,7 @@ export class StreamPlayer {
         if (airPlay && engine === 'native') this.log('ℹ AirPlay is on: the Apple TV fetched this stream itself and couldn’t play it');
         this.log(`✗ ${engine}${label ? ` (${label})` : ''} ${hint || src}: ${err.message}`);
         const v = this.video, rg = [...Array(v.buffered.length).keys()].map((i) => `${v.buffered.start(i).toFixed(1)}-${v.buffered.end(i).toFixed(1)}`).join(',');
+        if (this.mkvp?.stateText) this.log(`✗ mkv buffers: ${this.mkvp.stateText()}`);
         this.log(`✗ video state: ready ${v.readyState}, network ${v.networkState}, error ${v.error ? `${v.error.code} ${v.error.message || ''}`.trim() : 'none'}, buffered [${rg}], ${v.videoWidth}×${v.videoHeight}`);
         this.destroy();
         // A refusal (bad login, connection limit) won't change with another variant, and
