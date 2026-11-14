@@ -98,24 +98,35 @@ function initTV() {
     }
     nowData = out;
     nowMap = new Map(out.map((x) => [x.ch, x]));
-    // Scoreboard: channels carrying a live or upcoming game. A channel whose guide says something vaguer
-    // (or nothing) still gets an entry, so you can pick from the games rather than the programme titles.
+    // Scoreboard: one entry per game on a channel you have (live first, then what is coming up). The entry is a
+    // copy of the channel that carries its game, so playing it plays the channel.
     scoreData = [];
     for (const ch of liveAll()) {
-      const sp = sports.gameFor(ch);
-      if (!sp) continue;
-      let x = nowMap.get(ch);
-      if (x) x.sc = sp; else { x = { ch, p: { title: sp.title, start: 0, stop: 0 }, genre: 'Sports', synth: true, sc: sp }; nowMap.set(ch, x); }
-      scoreData.push(x);
+      for (const g of sports.gamesFor(ch)) {
+        const w = Object.create(ch, { _game: { value: g }, _gkey: { value: `${ch.id}|${g.key}` }, _sect: { value: '', writable: true } });
+        scoreData.push({ ch: w, g });
+      }
     }
-    scoreData.sort((a, b) => (b.sc.live - a.sc.live) || a.sc.start - b.sc.start);
+    scoreData.sort((a, b) => (b.g.live - a.g.live) || a.g.start - b.g.start);
+    const firstLater = scoreData.findIndex((x) => !x.g.live);
+    scoreData.forEach((x, k) => { x.ch._sect = k === 0 && firstLater !== 0 ? 'Live now' : k === firstLater ? 'Coming up' : ''; });
   }
-  let scoreData = [];
+  let scoreData = [], scoreSig = '';
   const SCORES = '__scores';
   // A scoreboard arrived: swap "College Football" for the game in the rows already on screen
   sports.onChange(() => {
     if (view !== 'now' || !isOpen.home()) return;
     computeNow(true);
+    if (scoreView()) { // scores changed: redraw the tiles, keeping your place
+      const sig = scoreData.map((x) => x.ch._gkey + x.g.status).join('|');
+      if (sig === scoreSig) return;
+      scoreSig = sig;
+      const at = document.activeElement?.closest?.('.tvh-row')?.dataset.i;
+      if (!chipsEl.contains(document.activeElement)) renderChips();
+      renderBody(false);
+      if (at !== undefined) bodyEl.querySelector(`.tvh-row[data-i="${at}"]`)?.focus();
+      return;
+    }
     for (const row of bodyEl.querySelectorAll('.tvh-row')) {
       const ch = listCache[+row.dataset.i], it = ch && nowMap.get(ch);
       if (!it) continue;
@@ -370,6 +381,7 @@ function initTV() {
     const a = +g.away.score, h = +g.home.score, live = g.live && !isNaN(a) && !isNaN(h);
     b.innerHTML = `<span class="g-teams">${side(g.away, live && a > h)}${side(g.home, live && h > a)}</span>
       <span class="g-state ${g.live ? 'live' : ''}"><b>${esc(g.period)}</b><small>${ch.logo ? `<img alt="" src="${esc(ch.logo)}" referrerpolicy="no-referrer">` : ''}<span>${esc(ch.net || ch.clean || cleanName(ch.name))}</span></small></span>
+      ${!g.live && g.odds ? `<span class="g-odds">${g.odds.line ? `<b>${esc(g.odds.line)}</b>` : ''}${g.odds.total ? `<span>O/U ${esc(String(g.odds.total))}</span>` : ''}</span>` : ''}
       <span class="star">★</span>`;
     b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
   }
@@ -393,12 +405,11 @@ function initTV() {
       fillMovie(b, ch, mv);
       return b;
     }
-    const gm = scoreView() && nowMap.get(ch)?.sc;
-    if (gm) {
+    if (scoreView() && ch._game) {
       b.dataset.i = i;
       b.classList.add('game');
-      b.classList.toggle('playing', ch === O().state.current);
-      fillGame(b, ch, gm);
+      b.classList.toggle('playing', ch.id === O().state.current?.id);
+      fillGame(b, ch, ch._game);
       return b;
     }
     b.dataset.i = i; // position in listCache; ids can repeat when a provider lists a stream twice
@@ -412,20 +423,14 @@ function initTV() {
   }
   const scoreView = () => view === 'now' && genre === SCORES;
   const posterView = () => view === 'now' && genre === 'Movies';
-  const titleOf = (it) => (scoreView() && it.sc ? it.sc.title : it.sp?.title || it.p.title);
+  const titleOf = (it) => it.sp?.title || it.p.title;
   function paintRow(b, ch) {
     if (b.classList.contains('movie')) { const it = nowMap.get(ch); if (it) fillMovie(b, ch, it); return; }
-    if (b.classList.contains('game')) { const g = nowMap.get(ch)?.sc; if (g) fillGame(b, ch, g); return; }
+    if (b.classList.contains('game')) { fillGame(b, ch, ch._game); return; }
     if (view === 'now') {
       const it = nowMap.get(ch);
       if (!it) return;
       const small = b.querySelector('small'), prog = b.querySelector('.prog');
-      if (scoreView() && it.sc) {
-        small.textContent = `${ch.clean || cleanName(ch.name)}  ·  ${it.sc.status}`;
-        small.style.display = '';
-        prog.classList.remove('on');
-        return;
-      }
       small.textContent = `${ch.clean || cleanName(ch.name)}  ·  ${it.sp?.status ? `${it.sp.status}  ·  ` : ''}until ${fmtClock(it.p.stop)}`;
       small.style.display = '';
       prog.classList.add('on');
@@ -460,7 +465,10 @@ function initTV() {
   }
   function addRows() {
     const next = listCache.slice(shown, shown + ROW_PAGE);
-    next.forEach((ch, k) => bodyEl.append(rowFor(ch, shown + k)));
+    next.forEach((ch, k) => {
+      if (scoreView() && ch._sect) bodyEl.append(el('div', 'tvh-sect', esc(ch._sect)));
+      bodyEl.append(rowFor(ch, shown + k));
+    });
     shown += next.length;
   }
   let holdFired = false, rowPressed = false;
@@ -473,14 +481,13 @@ function initTV() {
     const parts = [`<div class="i-name">${esc((ch.clean || cleanName(ch.name)))}</div>`, `<div class="i-meta">${esc(ch.group || '')}</div>`];
     if (nn?.now) {
       const pct = Math.min(100, Math.max(0, ((Date.now() - nn.now.start) / (nn.now.stop - nn.now.start)) * 100));
-      const sp = nowMap.get(ch)?.sp || nowMap.get(ch)?.sc;
+      const sp = nowMap.get(ch)?.sp;
       parts.push(`<div class="i-now"><b>Now</b> ${esc(sp ? `${sp.title}` : nn.now.title)} <span>${esc(sp?.status ? `${sp.status} · ` : '')}until ${esc(fmtClock(nn.now.stop))}</span></div>`);
       parts.push(`<div class="i-bar"><u style="width:${pct}%"></u></div>`);
       if (nn.next) parts.push(`<div class="i-next"><b>Next</b> ${esc(nn.next.title)} <span>${esc(fmtClock(nn.next.start))}</span></div>`);
       if (view === 'now' && nn.now.desc && nn.now.desc.length > 3) parts.push(`<div class="i-desc">${esc(nn.now.desc.slice(0, 220))}</div>`);
     } else {
-      const g = nowMap.get(ch)?.sc;
-      parts.push(g ? `<div class="i-now"><b>Now</b> ${esc(g.title)} <span>${esc(g.status)}</span></div>` : '<div class="i-next dim">No programme guide for this channel</div>');
+      parts.push('<div class="i-next dim">No programme guide for this channel</div>');
     }
     infoEl.innerHTML = parts.join('');
     infoEl.classList.remove('hidden');
@@ -559,9 +566,21 @@ function initTV() {
     return m < 2 ? 'just now' : m < 120 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
   };
   
+  // Opened from the picture (◀ or OK while a channel plays), Home becomes a guide: the list on the left and
+  // the show carrying on in a window on the right. Without a picture it is the plain full-screen Home.
+  const cap = el('div', 'tvh-cap');
+  home.append(cap);
+  function paintCap() {
+    const c = O().state.current;
+    const nn = c && T().guide.peek(c);
+    cap.innerHTML = c ? `<b>${esc(c.clean || cleanName(c.name))}</b>${nn?.now ? `<div class="cap-now">${esc(nn.now.title)} <small>until ${esc(fmtClock(nn.now.stop))}</small></div><i class="prog on"><u style="width:${Math.round(Math.min(100, Math.max(0, ((Date.now() - nn.now.start) / ((nn.now.stop - nn.now.start) || 1)) * 100)))}%"></u></i>` : ''}<small class="dim">Back returns to the picture</small>` : '';
+  }
   function openHome() {
     if (screen() === 'setup') return;
     hideOsd();
+    const guideMode = document.documentElement.classList.contains('tv-picture') && !!O().state.current;
+    document.documentElement.classList.toggle('guide-mode', guideMode);
+    if (guideMode) paintCap();
     home.classList.remove('hidden');
     document.documentElement.classList.add('home-open');
     ready();
@@ -578,7 +597,7 @@ function initTV() {
       row?.scrollIntoView({ block: 'center' });
     });
   }
-  function closeHome() { home.classList.add('hidden'); document.documentElement.classList.remove('home-open'); document.activeElement?.blur?.(); }
+  function closeHome() { home.classList.add('hidden'); document.documentElement.classList.remove('home-open', 'guide-mode'); document.activeElement?.blur?.(); }
   // A playlist can finish loading (or change after a sync) while Home is already open: rebuild instead of
   // leaving the old list on screen.
   let libSeen = '';
@@ -792,6 +811,11 @@ function initTV() {
         return true;
       }
       if (key === 'ArrowUp' && (grid ? first.offsetTop === t.offsetTop : first === t)) { toTabs(); return true; }
+      if (key === 'ArrowDown') { // the bottom of the list is the bottom: never fall through to the next category
+        move(home, ...DIR.ArrowDown);
+        if (!bodyEl.contains(document.activeElement)) t.focus();
+        return true;
+      }
       return false;
     }
     // Phone tab: ▲ from the first control goes up to the tabs
@@ -810,7 +834,7 @@ function initTV() {
       synthetic = false;
       return true;
     }
-    if (s === 'home') { closeHome(); showOsd(2500); return true; }
+    if (s === 'home') { closeHome(); return true; } // straight back to the picture, no channel banner
     return false;
   }
 
