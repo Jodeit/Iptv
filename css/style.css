@@ -1171,3 +1171,6 @@ html.tv .toast { z-index: 120; }
 .tvc-opt.on:focus, .tvc-opt:focus { background: var(--espresso); color: #fffaf0; border-color: var(--espresso); box-shadow: 0 6px 16px rgba(58,40,23,.32), 0 0 0 2px rgba(255,250,240,.85); }
 .tvc-bar { height: 5px; background: rgba(90,60,25,.16); }
 .tvc-bar u { background: var(--oak, #9a6431); }
+
+.tv-paused { position: fixed; top: 26px; right: 32px; z-index: 94; padding: 8px 18px; border-radius: 999px; font-size: 17px; font-weight: 600; color: #fffaf0; background: rgba(58,40,23,.82); box-shadow: 0 6px 16px rgba(40,25,10,.35); }
+.tv-paused.hidden { display: none; }
