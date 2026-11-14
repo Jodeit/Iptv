@@ -752,23 +752,27 @@ function initTV() {
     if (!rest && isCollection(name)) return pretty(words.filter((w) => w.toUpperCase() !== 'VOD').join(' ') || String(name)); // "VOD | IMDB TOP 500" → "IMDB Top 500"
     return pretty(rest || 'General');
   }
-  async function loadVodIndex(kind) {
+  // Starts loading (or returns the load already under way). Titles land in idx.items as each folder arrives, and
+  // idx.onBatch is called so the grid can show them straight away.
+  function loadVodIndex(kind) {
     const pats = String(T().vod.primary?.() || '').split(',').map((s) => s.trim()).filter(Boolean);
     const sig = `${libSig()}|${pats.join(',')}`;
     let idx = vodIndex[kind];
     if (idx && idx.sig === sig) return idx;
-    idx = vodIndex[kind] = { sig, items: [], tags: new Map(), done: 0, total: 0, state: 'loading' };
+    idx = vodIndex[kind] = { sig, items: [], tags: new Map(), done: 0, total: 0, state: 'loading', onBatch: null };
     const all = T().vod.categories(kind) || [];
     let chosen = pats.length ? all.map((c) => ({ c, m: primaryMatch(c.name, pats) })).filter((x) => x.m) : [];
     if (!chosen.length) chosen = all.slice(0, 60).map((c) => ({ c, m: '' })); // nothing matched: use the folders there are
-    idx.total = chosen.length;
-    const queue = [...chosen];
+    // Small curated folders (IMDB Top 500…) first, so there is something to look at quickly
+    const withLabel = chosen.map((x) => ({ ...x, label: folderLabel(x.c.name, x.m) }));
+    withLabel.sort((a, b) => isCollection(b.label) - isCollection(a.label));
+    idx.total = withLabel.length;
+    const queue = [...withLabel];
     const worker = async () => {
       while (queue.length) {
-        const { c, m } = queue.shift();
+        const { c, label } = queue.shift();
         try {
           const items = await T().vod.loadQuiet(kind, c.id);
-          const label = folderLabel(c.name, m);
           for (const it of items) {
             let tags = idx.tags.get(it.id);
             if (!tags) { tags = new Set(); idx.tags.set(it.id, tags); idx.items.push(it); }
@@ -776,17 +780,14 @@ function initTV() {
           }
         } catch { /* one folder failing should not lose the rest */ }
         idx.done++;
-        if (vodKind === kind && tab === 'vod') paintVodProgress(idx);
+        idx.onBatch?.(false);
       }
     };
-    await Promise.all([worker(), worker(), worker()]);
-    idx.state = 'done';
+    idx.promise = Promise.all([worker(), worker(), worker()]).then(() => { idx.state = 'done'; idx.onBatch?.(true); return idx; });
     return idx;
   }
-  const paintVodProgress = (idx) => {
-    const p = bodyEl.querySelector('.vod-loading');
-    if (p) p.textContent = `Loading ${vodKind === 'movie' ? 'movies' : 'shows'} · ${idx.done} of ${idx.total} folders · ${idx.items.length.toLocaleString()} titles`;
-  };
+  const vodStatusText = (idx) => `Loading more · ${idx.done} of ${idx.total} folders`;
+  const vodSkeleton = () => Array.from({ length: 12 }, () => '<button class="tvh-row movie skel" tabindex="-1"><span class="pc-img"></span><b>&nbsp;</b><small>&nbsp;</small></button>').join('');
   const vodIO = new IntersectionObserver((es) => {
     // Scores cost a lookup each, so only posters that stay on screen for a moment ask
     for (const e of es) {
@@ -798,16 +799,19 @@ function initTV() {
     const r = T().vod.peek(i), imdb = parseFloat(r?.imdb);
     return imdb > 0 ? imdb : r?.rt != null ? r.rt / 10 : +i.rating || 0;
   };
-  function vodList() {
+  let vodSeen = 0; // how many of the index's titles the grid has taken into account
+  function vodPass(i) {
     const f = vodF, tag = vodTag[vodKind];
-    const out = vodItems.filter((i) => {
-      if (tag && tag !== CONTINUE && !vodTags.get(i.id)?.has(tag)) return false;
-      if (f.rating && vodScore(i) < f.rating) return false;
-      if (f.year) { if (!i.year) return false; if (f.year === 'old' ? i.year >= 1990 : i.year < +f.year || i.year >= +f.year + 10) return false; }
-      if (f.fav && !T().isFav(i.id)) return false;
-      if (f.unwatched) { const p = T().vod.progress(i); if (p?.d && p.t / p.d > 0.9) return false; }
-      return true;
-    });
+    if (tag && tag !== CONTINUE && !vodTags.get(i.id)?.has(tag)) return false;
+    if (f.rating && vodScore(i) < f.rating) return false;
+    if (f.year) { if (!i.year) return false; if (f.year === 'old' ? i.year >= 1990 : i.year < +f.year || i.year >= +f.year + 10) return false; }
+    if (f.fav && !T().isFav(i.id)) return false;
+    if (f.unwatched) { const p = T().vod.progress(i); if (p?.d && p.t / p.d > 0.9) return false; }
+    return true;
+  }
+  function vodList() {
+    const f = vodF;
+    const out = vodItems.filter(vodPass);
     const by = {
       added: (a, b) => (b.added || 0) - (a.added || 0),
       rt: (a, b) => (T().vod.peek(b)?.rt ?? -1) - (T().vod.peek(a)?.rt ?? -1),
@@ -844,6 +848,8 @@ function initTV() {
       chipsEl.append(b);
     };
     const nCont = T().vod.continueList(vodKind).length;
+    const cur = vodIndex[vodKind];
+    if (cur && cur.state === 'loading') chipsEl.append(el('div', 'tvh-gstatus vod-status', vodStatusText(cur)));
     chipsEl.append(el('div', 'tvh-gstatus', 'Show'));
     if (nCont) chip(CONTINUE, 'Continue watching', nCont);
     chip('', 'Everything', vodTags.size || vodItems.length);
@@ -854,27 +860,41 @@ function initTV() {
     for (const g of genres) chip(g, g, counts.get(g));
     if (keep) chipsEl.querySelector(`.tvh-chip[data-key="${CSS.escape(keep)}"]`)?.focus();
   }
-  async function renderVod() {
+  function renderVod() {
     const seq = ++vodSeq;
-    bodyEl.className = 'tvh-body vod grid posters';
-    bodyEl.innerHTML = '<p class="tvh-empty vod-loading">Loading…</p>';
     infoEl.classList.add('hidden');
     listCache = [];
-    let idx;
-    try {
-      const p = loadVodIndex(vodKind);
-      idx = vodIndex[vodKind];
-      if (idx.state === 'loading') paintVodProgress(idx);
-      idx = await p;
-    } catch (e) {
-      if (seq === vodSeq) bodyEl.innerHTML = `<p class="tvh-empty">Couldn’t load the list: ${esc(e.message)}</p>`;
-      return;
-    }
-    if (seq !== vodSeq) return;
+    const idx = loadVodIndex(vodKind);
     vodItems = vodTag[vodKind] === CONTINUE ? T().vod.continueList(vodKind) : idx.items;
     vodTags = idx.tags;
-    if (!chipsEl.contains(document.activeElement)) renderVodChips();
-    renderVodList();
+    idx.onBatch = (final) => { if (seq === vodSeq && tab === 'vod') vodBatch(idx, final); };
+    if (idx.items.length || idx.state === 'done' || vodTag[vodKind] === CONTINUE) {
+      if (!chipsEl.contains(document.activeElement)) renderVodChips();
+      renderVodList();
+    } else {
+      bodyEl.className = 'tvh-body vod grid posters';
+      bodyEl.innerHTML = vodSkeleton();
+    }
+  }
+  // A folder finished loading (or all of them did). Update the left panel and the grid without taking the cursor away.
+  function vodBatch(idx, final) {
+    const st = chipsEl.querySelector('.vod-status');
+    if (st) st.textContent = vodStatusText(idx);
+    if (vodTag[vodKind] === CONTINUE) return;
+    vodItems = idx.items; vodTags = idx.tags;
+    const inGrid = bodyEl.contains(document.activeElement) && bodyEl.querySelector('.tvh-row:not(.skel)');
+    if (!chipsEl.contains(document.activeElement) && (final || idx.done % 2 === 1 || idx.done === idx.total)) renderVodChips();
+    if (!inGrid) {
+      const onSkeleton = document.activeElement?.classList.contains('skel'); // you pressed ▼ before anything had loaded
+      renderVodList();
+      if (onSkeleton) bodyEl.querySelector('.tvh-row:not(.skel)')?.focus();
+      return;
+    }
+    // Browsing right now: add the new titles to the end of what is on screen; the next filter change re-sorts everything
+    const fresh = idx.items.slice(vodSeen);
+    vodSeen = idx.items.length;
+    const add = fresh.filter(vodPass);
+    if (add.length) { const wasAll = shown >= listCache.length; listCache.push(...add); if (wasAll) addRows(); }
   }
   function renderVodList() {
     vodIO.disconnect();
@@ -883,8 +903,13 @@ function initTV() {
     if (vodTag[vodKind] === CONTINUE) vodItems = T().vod.continueList(vodKind);
     else if (vodIndex[vodKind]) vodItems = vodIndex[vodKind].items;
     listCache = vodList();
+    vodSeen = vodItems.length;
     shown = 0;
-    if (!listCache.length) { bodyEl.innerHTML = `<p class="tvh-empty">${vodItems.length ? 'Nothing matches these filters.' : 'Nothing here yet.'}</p>`; return; }
+    if (!listCache.length) {
+      const loading = vodIndex[vodKind]?.state === 'loading' && vodTag[vodKind] !== CONTINUE;
+      bodyEl.innerHTML = loading ? vodSkeleton() : `<p class="tvh-empty">${vodItems.length ? 'Nothing matches these filters.' : 'Nothing here yet.'}</p>`;
+      return;
+    }
     addRows();
     if (vodRestore != null) {
       const i = vodRestore; vodRestore = null;
