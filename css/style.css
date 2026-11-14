@@ -1174,3 +1174,13 @@ html.tv .toast { z-index: 120; }
 
 .tv-paused { position: fixed; top: 26px; right: 32px; z-index: 94; padding: 8px 18px; border-radius: 999px; font-size: 17px; font-weight: 600; color: #fffaf0; background: rgba(58,40,23,.82); box-shadow: 0 6px 16px rgba(40,25,10,.35); }
 .tv-paused.hidden { display: none; }
+
+/* Episode chooser (controls bar → Episodes) */
+.tvc-menu.tvc-eps { position: fixed; left: 50%; top: 42%; right: auto; bottom: auto; transform: translate(-50%, -50%); width: min(760px, 90vw); max-width: none; z-index: 99; padding: 14px 18px 12px; gap: 8px; }
+.tvc-eps .tvd-seasons { margin: 0; padding: 2px 2px 4px; }
+.tvc-eps .tvd-eps { max-height: 300px; padding: 3px; }
+.tvc-eps .tvd-ep { padding: 6px 14px; grid-template-columns: 34px minmax(0, 1fr) auto 24px; }
+.tvc-eps .tvd-ep.now { border-color: rgba(154,100,49,.55); background: linear-gradient(160deg, rgba(240,226,196,.95), rgba(232,214,176,.85)); }
+.tvc-eps .tvd-ep .s { font-size: 13px; color: #8a7d68; }
+.tvc-menu.tvc-eps { max-height: none; overflow: visible; top: 40%; }
+.tvc-eps .tvd-eps { max-height: 40vh; }
