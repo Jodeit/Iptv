@@ -236,7 +236,7 @@ function initTV() {
     b.dataset.i = i; // position in listCache; ids can repeat when a provider lists a stream twice
     b.classList.toggle('playing', ch === O().state.current);
     b.innerHTML = `<img alt="" referrerpolicy="no-referrer"><span class="meta"><b></b><small></small><i class="prog"><u></u></i></span><span class="star">★</span>`;
-    b.querySelector('b').textContent = cleanName(ch.name);
+    b.querySelector('b').textContent = (ch.clean || cleanName(ch.name));
     if (ch.logo) b.querySelector('img').src = ch.logo; else b.querySelector('img').style.display = 'none';
     b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
     paintRow(b, ch);
@@ -281,7 +281,7 @@ function initTV() {
   function paintInfo(ch) {
     if (!ch) { infoEl.classList.add('hidden'); return; }
     const nn = T().guide.nowNext(ch);
-    const parts = [`<div class="i-name">${esc(cleanName(ch.name))}</div>`, `<div class="i-meta">${esc(ch.group || '')}</div>`];
+    const parts = [`<div class="i-name">${esc((ch.clean || cleanName(ch.name)))}</div>`, `<div class="i-meta">${esc(ch.group || '')}</div>`];
     if (nn?.now) {
       const pct = Math.min(100, Math.max(0, ((Date.now() - nn.now.start) / (nn.now.stop - nn.now.start)) * 100));
       parts.push(`<div class="i-now"><b>Now</b> ${esc(nn.now.title)} <span>until ${esc(fmtClock(nn.now.stop))}</span></div>`);

@@ -101,6 +101,19 @@ or a channel name to watch it.
 - **Other playlists:** if the playlist header names an XMLTV guide (`url-tvg` or `x-tvg-url`), the app streams it,
   gunzips it if needed, and keeps only this playlist's channels for the next 24 hours.
 
+## Local stations (one city, every network)
+
+Providers list the local ABC, CBS, NBC, FOX, PBS, CW (and Telemundo, Univision, ION, MyNetworkTV and a few
+over-the-air sub-networks) station of every city, often hundreds under one "ABC" folder. Set **Settings → Playlists
+→ Local stations** to your city ("Austin") or call signs ("KVUE, KXAN") and only your city's stations are kept, in
+every network folder, on the phone and the TV. National channels (FOX News, CBS Sports, ESPN) are untouched, and a
+station that names no city is kept only for networks where none of your city's stations was found. The setting syncs
+with your profile.
+
+The names are tidied and each channel's network and city worked out **once**, as the playlist comes in
+(`js/normalize.js`), and saved with the cached playlist, so browsing does no extra work. "Austin" also finds stations
+listed only by call sign; add more cities to `MARKET_ALIASES` in `js/normalize.js`.
+
 ## Profiles and syncing across devices
 
 **Profile** (top of the panel) keeps playlists, favorites, the content filter and the last playlist in step
