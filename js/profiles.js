@@ -92,6 +92,15 @@ export function capMeta(meta = {}) {
 
 const sameDoc = (x, y) => JSON.stringify(x) === JSON.stringify(y);
 
+// Cheap fingerprint (FNV-1a) of the encrypted blob a device last saw or wrote. The server's version number
+// alone can't be trusted to notice a change: its storage is eventually consistent, so two uploads can end up
+// with the same number and different content.
+const fingerprint = (str) => {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 0x01000193); }
+  return (h >>> 0).toString(16);
+};
+
 // Browsers only offer crypto.subtle on https pages and localhost. Elsewhere (the app opened
 // from a computer on the home network, http://192.168.…) the same SHA-256, HKDF and AES-GCM
 // come from the audited noble libraries, so profiles work there too, byte for byte the same.
@@ -151,6 +160,7 @@ export class Profiles {
     this.timer = 0;
     this.pushing = null;
     this.doc = read(this.docKey(), null) || migrate?.() || emptyDoc();
+    this._dirty = !!read('dirty', false);
     this.saveLocal();
 
     addEventListener('visibilitychange', () => {
@@ -160,6 +170,11 @@ export class Profiles {
     addEventListener('online', () => this.sync());
     setInterval(() => { if (document.visibilityState === 'visible') this.pull(); }, PULL_EVERY);
   }
+
+  // Unsent changes survive a reload: a failed or interrupted upload used to be forgotten with the page, so the
+  // change stayed on this device only while it believed it was in sync.
+  get dirty() { return this._dirty; }
+  set dirty(v) { this._dirty = !!v; write('dirty', this._dirty); }
 
   // ---------- Local state ----------
   list() { return read('profiles', []); }
@@ -227,11 +242,12 @@ export class Profiles {
       const r = await this.api(`profile/${id}`);
       if (r.status === 404) return this.setStatus('error', 'This profile was deleted on another device.');
       if (!r.ok) throw new Error(r.data?.error || `HTTP ${r.status}`);
-      if (r.data.version !== p.version) {
+      const rev = fingerprint(r.data.data);
+      if (r.data.version !== p.version || rev !== p.rev) {
         this.setStatus('syncing', 'Downloading changes…');
         const remote = await decrypt(key, r.data.data);
         this.setStatus('syncing', 'Merging…');
-        this.adopt(p, r.data.version, mergeDocs(this.doc, remote), remote);
+        this.adopt(p, r.data.version, mergeDocs(this.doc, remote), remote, rev);
       }
       if (this.dirty) return this.push();
       this.setStatus('synced', 'Synced');
@@ -252,16 +268,17 @@ export class Profiles {
         for (let attempt = 0; attempt < 3; attempt++) {
           this.dirty = false;
           const cur = this.active();
-          const r = await this.api(`profile/${id}`, { method: 'PUT', body: { version: cur.version, data: await encrypt(key, this.doc) } });
+          const sent = await encrypt(key, this.doc);
+          const r = await this.api(`profile/${id}`, { method: 'PUT', body: { version: cur.version, data: sent } });
           if (r.ok) {
-            this.saveMeta({ ...cur, version: r.data.version });
+            this.saveMeta({ ...cur, version: r.data.version, rev: fingerprint(sent) });
             if (!this.dirty) this.setStatus('synced', 'Synced');
             return;
           }
           if (r.status !== 409) throw new Error(r.data?.error || `HTTP ${r.status}`);
           // Another device saved first: merge its changes into ours, then try again.
           const remote = await decrypt(key, r.data.data);
-          this.adopt(cur, r.data.version, mergeDocs(this.doc, remote), remote);
+          this.adopt(cur, r.data.version, mergeDocs(this.doc, remote), remote, fingerprint(r.data.data));
         }
         throw new Error('kept conflicting with another device');
       } catch (err) {
@@ -274,8 +291,8 @@ export class Profiles {
     return this.pushing;
   }
 
-  adopt(p, version, merged, remote) {
-    this.saveMeta({ ...p, version, name: merged.name || p.name });
+  adopt(p, version, merged, remote, rev) {
+    this.saveMeta({ ...p, version, rev, name: merged.name || p.name });
     const changed = !sameDoc(merged, this.doc);
     this.doc = merged;
     this.saveLocal();
