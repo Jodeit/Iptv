@@ -301,10 +301,11 @@ function resumePoint(ch) {
 }
 
 // ---------- Gallery (movies & series) ----------
+const ratingListeners = new Set(); // the TV's poster tiles ask to hear about new ratings too
 const ratings = new Ratings({
   fetcher: (u) => smartFetch(u),
   getKey: () => profiles.doc.omdbKey || '',
-  onUpdate: (item) => gallery.updated(item),
+  onUpdate: (item) => { gallery.updated(item); for (const f of ratingListeners) f(item); },
 });
 
 // "More like this": TMDB's recommendations, kept to titles this provider has. TMDB allows
@@ -2186,6 +2187,9 @@ window.o3xr = {
     openGallery(kind) { state.kind = kind; rebuildGroups(); guideView.close(); gallery.open(kind); },
     galleryOpen: () => gallery.isOpen(),
     source: () => state.source,
+    // Rotten Tomatoes score and poster for a film title (undefined while it is being looked up)
+    rating: (title) => ratings.get({ name: title, kind: 'movie' }),
+    onRating: (f) => ratingListeners.add(f),
     forgetCopies: () => Promise.all(profiles.doc.playlists.map((p) => cacheDelete(playlistKey(p.url)))),
   },
 };

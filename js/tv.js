@@ -125,6 +125,10 @@ function initTV() {
     const f = document.activeElement?.closest?.('.tvh-row');
     if (f) paintInfo(listCache[+f.dataset.i]);
   });
+  const onRatingArrived = () => {
+    if (!posterView() || !isOpen.home()) return;
+    for (const row of bodyEl.querySelectorAll('.tvh-row.movie')) paintRow(row, listCache[+row.dataset.i]);
+  };
   setInterval(() => { if (view === 'now' && isOpen.home()) for (const x of nowData) if (x.genre === 'Sports') sports.want(sports.leagueOf(x.p)); }, 60000);
   const nowCounts = () => { const m = new Map(); for (const x of nowData) m.set(x.genre, (m.get(x.genre) || 0) + 1); return m; };
   // One big request for the whole lineup when the provider offers it, else a slow background crawl.
@@ -369,8 +373,26 @@ function initTV() {
       <span class="star">★</span>`;
     b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
   }
+  // Film tile: poster, Rotten Tomatoes score, title, and what channel it is on until when. Without an OMDb key
+  // (or before the lookup lands) the tile shows the title on a plain card.
+  function fillMovie(b, ch, it) {
+    const r = T().rating(it.p.title);
+    const score = r?.rt != null ? `<span class="pc-rt"><i>🍅</i>${r.rt}%</span>` : r?.imdb ? `<span class="pc-rt"><i>★</i>${esc(r.imdb)}</span>` : '';
+    const pct = Math.round(Math.min(100, Math.max(0, ((Date.now() - it.p.start) / ((it.p.stop - it.p.start) || 1)) * 100)));
+    b.innerHTML = `<span class="pc-img">${r?.poster ? `<img alt="" src="${esc(r.poster)}" referrerpolicy="no-referrer">` : `<em>${esc(it.p.title)}</em>`}${score}</span>
+      <b>${esc(it.p.title)}</b><small>${esc(ch.net || ch.clean || cleanName(ch.name))} · ${esc(fmtClock(it.p.stop))}</small><i class="prog on"><u style="width:${pct}%"></u></i><span class="star">★</span>`;
+    b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
+  }
   function rowFor(ch, i) {
     const b = el('button', 'tvh-row');
+    const mv = posterView() && nowMap.get(ch);
+    if (mv) {
+      b.dataset.i = i;
+      b.classList.add('movie');
+      b.classList.toggle('playing', ch === O().state.current);
+      fillMovie(b, ch, mv);
+      return b;
+    }
     const gm = scoreView() && nowMap.get(ch)?.sc;
     if (gm) {
       b.dataset.i = i;
@@ -389,8 +411,10 @@ function initTV() {
     return b;
   }
   const scoreView = () => view === 'now' && genre === SCORES;
+  const posterView = () => view === 'now' && genre === 'Movies';
   const titleOf = (it) => (scoreView() && it.sc ? it.sc.title : it.sp?.title || it.p.title);
   function paintRow(b, ch) {
+    if (b.classList.contains('movie')) { const it = nowMap.get(ch); if (it) fillMovie(b, ch, it); return; }
     if (b.classList.contains('game')) { const g = nowMap.get(ch)?.sc; if (g) fillGame(b, ch, g); return; }
     if (view === 'now') {
       const it = nowMap.get(ch);
@@ -444,7 +468,7 @@ function initTV() {
   // The highlighted channel in full: name, group, what's on and what's next. Long provider names are cut off
   // in the list, so this is where you can always tell two similar channels apart.
   function paintInfo(ch) {
-    if (!ch || scoreView()) { infoEl.classList.add('hidden'); return; } // the game tile already says everything
+    if (!ch || scoreView() || posterView()) { infoEl.classList.add('hidden'); return; } // the game tile already says everything
     const nn = T().guide.nowNext(ch);
     const parts = [`<div class="i-name">${esc((ch.clean || cleanName(ch.name)))}</div>`, `<div class="i-meta">${esc(ch.group || '')}</div>`];
     if (nn?.now) {
@@ -472,7 +496,7 @@ function initTV() {
   function renderBody(withChips = true) {
     if (withChips) renderChips();
     bodyEl.innerHTML = '';
-    bodyEl.className = `tvh-body ${tab}${tab === 'live' && scoreView() ? ' grid' : ''}`; // games are tiles, three across
+    bodyEl.className = `tvh-body ${tab}${tab === 'live' && scoreView() ? ' grid' : tab === 'live' && posterView() ? ' grid posters' : ''}`; // games and films are tiles
     infoEl.classList.add('hidden');
     if (tab === 'phone') return renderPhone();
     listCache = visibleList();
@@ -915,6 +939,7 @@ function initTV() {
 
   // ---------- Boot ----------
   const boot = () => {
+    T().onRating?.(onRatingArrived);
     import('./qr.js').catch(() => {}); // warm the cache so the setup screen draws its code at once
     T().video.controls = false;
     // Android WebView draws a large grey play icon on a <video> that has nothing to show; a transparent poster replaces it.
