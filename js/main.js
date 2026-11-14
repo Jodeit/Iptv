@@ -6,6 +6,7 @@ import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, 
 import { XtreamLibrary } from './xtream.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
 import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
+import { VERSION } from './version.js';
 import { Profiles, emptyDoc, canSync, capMeta, mergeProgress } from './profiles.js';
 import { Guide } from './epg.js';
 import { GuideView } from './guide-view.js';
@@ -1750,7 +1751,7 @@ function renderProfiles() {
   }
   $('pfStatus').textContent = !active
     ? 'Not synced. Create a profile or link this device to sync.'
-    : st.state === 'synced' ? `Synced ${ago(st.at)}` : st.message || 'Synced';
+    : (st.state === 'synced' ? `Synced ${ago(st.at)}` : st.message || 'Synced') + ` · ${profiles.doc.playlists.length} playlist${profiles.doc.playlists.length === 1 ? '' : 's'}`;
   $('pfActions').classList.toggle('hidden', !active);
   $('pfDanger').classList.toggle('hidden', !active);
   if (active && document.activeElement !== $('pfRename')) $('pfRename').value = active.name;
@@ -2081,6 +2082,7 @@ applyAll();
 renderSaved();
 await detectProxy();
 renderProfiles();
+$('appVersion').textContent = VERSION;
 checkSyncAvailable().then((ok) => { syncOk = ok; if (ok) { profiles.pull(); refreshTvs(); } });
 // server.js and the Cloudflare deployment include a demo Xtream panel (proxy/xtream-demo.js).
 if (proxy.available && !settings.proxyUrl) {
