@@ -799,7 +799,7 @@ async function loadPlaylistInner(url, name, { fresh = true } = {}) {
     if (cached?.channels?.length && !stale) {
       setChannels(cached.channels, name, { url, name, savedAt: cached.savedAt, tvgUrl: cached.tvgUrl });
       setLast({ url, name });
-      rememberPlaylist(name, url);
+      rememberPlaylist(name, url, false);
       setStatus(`Saved copy from ${ago(cached.savedAt)} · ↻ to update`);
       return;
     }
@@ -835,7 +835,7 @@ async function loadPlaylistInner(url, name, { fresh = true } = {}) {
     setChannels(channels, name, { url, name, savedAt, tvgUrl: channels.tvgUrl });
     cachePut(key, { url, name, savedAt, channels, tvgUrl: channels.tvgUrl });
     setLast({ url, name });
-    rememberPlaylist(name, url);
+    rememberPlaylist(name, url, fresh);
     hideLoading();
     setStatus(state.current && statusBefore ? statusBefore : 'Pick a channel to start');
   } catch (err) {
@@ -861,7 +861,7 @@ async function loadXtream(url, name, xt, key, fresh) {
       state.xlib = lib;
       setChannels(cached.channels, name, { url, name, savedAt: cached.savedAt });
       setLast({ url, name });
-      rememberPlaylist(name, url);
+      rememberPlaylist(name, url, false);
       setStatus(`Saved copy from ${ago(cached.savedAt)} · ↻ to update`);
       ensureLiveCoverage();
       return true;
@@ -894,7 +894,7 @@ async function loadXtream(url, name, xt, key, fresh) {
     setChannels(channels, name, { url, name, savedAt });
     saveXtreamCache(key, url, name, savedAt);
     setLast({ url, name });
-    rememberPlaylist(name, url);
+    rememberPlaylist(name, url, fresh);
     hideLoading();
     setStatus(state.current && statusBefore ? statusBefore : 'Pick a channel to start');
   } catch (err) {
@@ -1026,8 +1026,12 @@ function loadBuiltinDemo() {
 // Saved playlists are unique per playlistKey, so re-adding an account replaces its entry.
 const savedPlaylists = () => profiles.doc.playlists;
 
-function rememberPlaylist(name, url) {
+// `touch` is true when someone asked for this playlist (Load, a fresh download). Reopening what a profile
+// already points at (startup, a sync, the TV's saved list) must not bump it or bring back one that was
+// forgotten on another device: a newer timestamp would beat that device's deletion everywhere.
+function rememberPlaylist(name, url, touch = true) {
   const key = playlistKey(url);
+  if (!touch) return;
   const top = profiles.doc.playlists[0];
   if (top?.key === key && top.name === name && top.url === url) return; // nothing new to sync
   profiles.update((d) => {
@@ -1057,6 +1061,7 @@ function renderSaved() {
       profiles.update((d) => {
         d.playlists = d.playlists.filter((x) => x.key !== key);
         d.playlistsRemoved[key] = Date.now();
+        if (d.last?.url && playlistKey(d.last.url) === key) d.last = null;
       });
       cacheDelete(key);
       renderSaved();
