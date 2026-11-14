@@ -927,3 +927,23 @@ html.tv .tvh-row img:not([style*="none"]), html.tv .tvh-info img {
   background: linear-gradient(160deg, rgba(88,70,48,.78), rgba(54,42,28,.86)); border-radius: 9px; padding: 4px 6px;
   box-shadow: 0 2px 6px rgba(60,44,20,.22), inset 0 1px 0 rgba(255,255,255,.18); box-sizing: border-box;
 }
+
+/* Scoreboard tiles: the game is the point, the channel is a footnote */
+.tvh-row.game { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 20px; padding: 10px 18px; margin-bottom: 8px; border-radius: 16px;
+  background: linear-gradient(160deg, rgba(255,252,243,.82), rgba(246,238,219,.7)); box-shadow: 0 6px 14px rgba(80,60,28,.14), inset 0 1px 0 rgba(255,255,255,.7); }
+.tvh-row.game .g-teams { display: grid; gap: 4px; min-width: 0; }
+.tvh-row.game .tm { display: flex; align-items: center; gap: 12px; min-width: 0; color: var(--text); opacity: .72; }
+.tvh-row.game .tm.lead { opacity: 1; }
+html.tv .tvh-row.game img.tl, html.tv .tvh-row.game i.tl { width: 36px; height: 36px; flex: none; object-fit: contain; background: none !important; box-shadow: none !important; padding: 0 !important; border-radius: 0; }
+.tvh-row.game .tn { font-size: 22px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex: 1; min-width: 0; }
+.tvh-row.game .tn em { font-style: normal; font-size: 14px; color: #8a6a3a; margin-right: 8px; font-weight: 700; }
+.tvh-row.game .tm.lead .tn, .tvh-row.game .ts { font-weight: 800; }
+.tvh-row.game .ts { font-size: 26px; min-width: 56px; text-align: right; font-variant-numeric: tabular-nums; }
+.tvh-row.game .g-state { display: grid; gap: 4px; justify-items: end; text-align: right; min-width: 190px; }
+.tvh-row.game .g-state > b { font-size: 21px; font-weight: 700; color: #6b4a22; }
+.tvh-row.game .g-state.live > b { color: #a2402a; }
+.tvh-row.game .g-state.live > b::before { content: ''; display: inline-block; width: 9px; height: 9px; margin-right: 8px; border-radius: 50%; background: #c8452d; vertical-align: 2px; }
+.tvh-row.game .g-state small { display: flex; align-items: center; gap: 8px; font-size: 14px; color: #8a7d68; }
+.tvh-row.game .g-state small img { width: 28px; height: 20px; padding: 2px 4px; border-radius: 5px; box-sizing: border-box; }
+.tvh-row.game .star { position: absolute; right: 8px; top: 4px; font-size: 16px; }
+.tvh-row.game { position: relative; }

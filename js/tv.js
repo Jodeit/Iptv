@@ -119,7 +119,7 @@ function initTV() {
     for (const row of bodyEl.querySelectorAll('.tvh-row')) {
       const ch = listCache[+row.dataset.i], it = ch && nowMap.get(ch);
       if (!it) continue;
-      row.querySelector('b').textContent = titleOf(it);
+      if (!row.classList.contains('game')) row.querySelector('b').textContent = titleOf(it);
       paintRow(row, ch);
     }
     const f = document.activeElement?.closest?.('.tvh-row');
@@ -360,8 +360,25 @@ function initTV() {
 
   const ROW_PAGE = 100;
   let shown = 0, listCache = [];
+  // Scoreboard tile: both teams with logo and score, the period or clock, and the channel it is on (small)
+  function fillGame(b, ch, g) {
+    const side = (t, lead) => `<div class="tm${t.won || lead ? ' lead' : ''}">${t.logo ? `<img class="tl" alt="" src="${esc(t.logo)}" referrerpolicy="no-referrer">` : '<i class="tl"></i>'}<span class="tn">${t.rank ? `<em>${t.rank}</em>` : ''}${esc(t.name)}</span><b class="ts">${esc(String(t.score))}</b></div>`;
+    const a = +g.away.score, h = +g.home.score, live = g.live && !isNaN(a) && !isNaN(h);
+    b.innerHTML = `<span class="g-teams">${side(g.away, live && a > h)}${side(g.home, live && h > a)}</span>
+      <span class="g-state ${g.live ? 'live' : ''}"><b>${esc(g.period)}</b><small>${ch.logo ? `<img alt="" src="${esc(ch.logo)}" referrerpolicy="no-referrer">` : ''}<span>${esc(ch.clean || cleanName(ch.name))}</span></small></span>
+      <span class="star">★</span>`;
+    b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
+  }
   function rowFor(ch, i) {
     const b = el('button', 'tvh-row');
+    const gm = scoreView() && nowMap.get(ch)?.sc;
+    if (gm) {
+      b.dataset.i = i;
+      b.classList.add('game');
+      b.classList.toggle('playing', ch === O().state.current);
+      fillGame(b, ch, gm);
+      return b;
+    }
     b.dataset.i = i; // position in listCache; ids can repeat when a provider lists a stream twice
     b.classList.toggle('playing', ch === O().state.current);
     b.innerHTML = `<img alt="" referrerpolicy="no-referrer"><span class="meta"><b></b><small></small><i class="prog"><u></u></i></span><span class="star">★</span>`;
@@ -374,6 +391,7 @@ function initTV() {
   const scoreView = () => view === 'now' && genre === SCORES;
   const titleOf = (it) => (scoreView() && it.sc ? it.sc.title : it.sp?.title || it.p.title);
   function paintRow(b, ch) {
+    if (b.classList.contains('game')) { const g = nowMap.get(ch)?.sc; if (g) fillGame(b, ch, g); return; }
     if (view === 'now') {
       const it = nowMap.get(ch);
       if (!it) return;

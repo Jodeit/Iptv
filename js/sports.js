@@ -48,13 +48,27 @@ function normalize(ev) {
   for (const b of c.broadcasts || []) for (const n of b.names || []) nets.add(net(n));
   for (const g of c.geoBroadcasts || []) if (g.media?.shortName) nets.add(net(g.media.shortName));
   const live = st.state === 'in';
+  // "13:52 - 3rd" -> "3rd 13:52"; "Halftime", "Top 5th", "67'" stay as they are
+  const period = (() => {
+    const d = String(st.shortDetail || '');
+    if (/half/i.test(d)) return 'Halftime';
+    const m = d.match(/^(\S+)\s+-\s+(.+)$/);
+    return m && /[:'’]|^\d/.test(m[1]) ? `${m[2]} ${m[1]}` : d;
+  })();
+  const side = (t) => ({
+    name: team(t), abbr: t?.team?.abbreviation || '', score: t?.score ?? '',
+    logo: t?.team?.logo || t?.team?.logos?.[0]?.href || '',
+    rank: t?.curatedRank?.current > 0 && t.curatedRank.current <= 25 ? t.curatedRank.current : 0,
+    won: !!t?.winner,
+  });
   const score = live || st.state === 'post' ? `${away.score ?? 0}–${home.score ?? 0}` : '';
   return {
     title: `${team(away)} at ${team(home)}`,
     state: st.state, // pre | in | post
     start: Date.parse(ev.date) || 0,
     nets,
-    detail: live ? `${st.shortDetail || ''}`.replace(/\s*-\s*/, ' ') : st.state === 'post' ? 'Final' : '',
+    detail: live ? period : st.state === 'post' ? 'Final' : '',
+    away: side(away), home: side(home),
     score,
   };
 }
@@ -101,7 +115,8 @@ export function gameFor(ch) {
   return {
     title: more > 1 ? `${e.title} +${more - 1}` : e.title,
     status: e.state === 'in' ? [e.detail, e.score].filter(Boolean).join(' · ') : `starts ${clock(e.start)}`,
-    live: e.state === 'in', start: e.start,
+    live: e.state === 'in', start: e.start, away: e.away, home: e.home,
+    period: e.state === 'in' ? e.detail : `Starts ${clock(e.start)}`,
   };
 }
 export const onChange = (f) => { listeners.add(f); };
