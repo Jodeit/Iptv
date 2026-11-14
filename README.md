@@ -294,3 +294,19 @@ js/theater.js     three.js scene, environments, ambient light, desktop stereo, W
 js/xr3d.js        XR3D depth + stereo shader and per-eye screen meshes
 js/vr-panel.js    In-headset channel browser and controller rays
 ```
+
+## Google TV / Android TV app
+
+`android-tv/` is a thin full-screen WebView around the hosted app (default `https://iptv.jodeit.workers.dev`),
+so the remote works properly: ▲/▼ change channel, OK or ◀ opens the channel panel, ▶ the guide, arrows move
+between controls, Back closes panels, and the media keys play/pause/skip. The page switches on this mode
+(`js/tv.js`) when it sees the `TunerTV` user agent token the app adds.
+
+1. GitHub → **Actions → Android TV APK → Run workflow** (it also runs on pushes that touch `android-tv/`).
+   Optionally set `app_url` to point it at a different deployment.
+2. The build also commits the APK to the repo root, so once deployed it is at `https://iptv.jodeit.workers.dev/tuner-tv.apk` (type that into the **Downloader** app on the TV). It is also on the `tv-latest` release and as the **tuner-tv-apk** artifact.
+3. On the TV enable *Settings → System → About → Android TV OS build* (tap 7 times), then *Developer options → USB/Network debugging*, and either:
+   - `adb connect <tv-ip>:5555 && adb install app-release.apk`, or
+   - put the APK on a USB stick / host it and install with the **Downloader** app (allow "Install unknown apps" for it).
+
+To build locally instead: `cd android-tv && gradle :app:assembleRelease [-PappUrl=https://…]` with the Android SDK installed.
