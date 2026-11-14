@@ -1693,7 +1693,9 @@ function initTV() {
     const x = el('button', 'tvh-x', '✕ Picture'); x.onclick = () => goBack(); tabsEl.append(x);
     new MutationObserver(() => { if (!tabsEl.contains(x)) tabsEl.append(x); }).observe(tabsEl, { childList: true });
     // Tap the picture for the controls (pause, seek, audio, captions, episodes, guide)
-    if (!nativeAppleControls) $('flatStage')?.addEventListener('click', () => { if (screen() === 'player' && O().state.current) openControls(); });
+    $('flatStage')?.addEventListener('click', () => {
+      if (!nativeAppleControls && screen() === 'player' && O().state.current) openControls();
+    });
     controls.addEventListener('click', (e) => { if (e.target === controls) goBack(); }); // tap outside the bar
     detail.addEventListener('click', (e) => { if (e.target === detail) goBack(); });
   }
