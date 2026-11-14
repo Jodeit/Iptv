@@ -12,6 +12,7 @@
 //          Back on the picture leaves the app.
 
 import { kindOf } from './filter.js';
+import { genreOf, GENRES } from './genre.js';
 import { VERSION } from './version.js';
 
 if (/TunerTV/.test(navigator.userAgent)) initTV();
@@ -51,6 +52,9 @@ function initTV() {
   let tab = 'live';            // 'live' | 'phone' (Movies and Shows open the poster gallery)
   let group = '';              // '' = all, FAV = favorites, else a group name
   const FAV = '\u0000fav';
+  // 'channels' browses the provider's folders; 'now' groups by what is airing right now (Sports, Movies, News…)
+  let view = (() => { try { return localStorage.getItem('tvView') === 'now' ? 'now' : 'channels'; } catch { return 'channels'; } })();
+  let genre = '';              // '' = everything on now
   let dismissed = false, running = false, abort = null, liveCode = null;
   const isOpen = { home: () => !home.classList.contains('hidden'), setup: () => !setup.classList.contains('hidden'), gallery: () => !!O()?.tv.galleryOpen() };
   const screen = () => (isOpen.setup() ? 'setup' : isOpen.gallery() ? 'gallery' : isOpen.home() ? 'home' : 'player');
@@ -62,10 +66,42 @@ function initTV() {
   const liveAll = () => T().live();
   const groups = () => [...new Set(liveAll().map((c) => c.group).filter(Boolean))];
   const visibleList = () => {
+    if (view === 'now') { computeNow(); return nowData.filter((x) => !genre || x.genre === genre).map((x) => x.ch); }
     const all = liveAll();
     if (group === FAV) return all.filter((c) => T().isFav(c.id));
     return group ? all.filter((c) => c.group === group) : all;
   };
+  // ---------- What's on now ----------
+  // Every live channel that has a current programme, tagged with its kind. Rebuilt on demand and every few
+  // seconds while the guide is still arriving; classification is a handful of regexes per channel.
+  let nowData = [], nowMap = new Map(), nowAt = 0;
+  function computeNow(force = false) {
+    if (!force && Date.now() - nowAt < 2500) return;
+    nowAt = Date.now();
+    const g = T().guide, t = nowAt, out = [];
+    for (const ch of liveAll()) {
+      const nn = g.peek(ch, t);
+      if (nn?.now) out.push({ ch, p: nn.now, nx: nn.next, genre: genreOf(nn.now, ch).genre });
+    }
+    nowData = out;
+    nowMap = new Map(out.map((x) => [x.ch, x]));
+  }
+  const nowCounts = () => { const m = new Map(); for (const x of nowData) m.set(x.genre, (m.get(x.genre) || 0) + 1); return m; };
+  // One big request for the whole lineup when the provider offers it, else a slow background crawl.
+  function ensureGuide() {
+    const g = T().guide;
+    if (!g.available()) return;
+    if (g.source?.xtream) g.loadBulk(liveAll());
+    else if (liveAll()[0]) g.nowNext(liveAll()[0]); // XMLTV playlists: starts the file download
+  }
+  function guideStatus() {
+    const g = T().guide, n = nowData.length, total = liveAll().length, pr = g.progress();
+    if (!g.available()) return 'This provider has no programme guide.';
+    if (pr.state === 'loading') return 'Reading the guide…';
+    if (pr.state === 'crawling') return `Reading the guide… ${Math.round((pr.done / Math.max(1, pr.total)) * 100)}%`;
+    return n ? `${n.toLocaleString()} of ${total.toLocaleString()} channels have guide data` : 'No guide data yet.';
+  }
+
   function surf(dir) {
     const list = visibleList();
     if (!list.length) return;
@@ -209,24 +245,50 @@ function initTV() {
     (bodyEl.querySelector('.tvh-row.playing') || bodyEl.querySelector('button'))?.focus();
   }
 
+  function setView(v) {
+    view = v; genre = ''; group = '';
+    try { localStorage.setItem('tvView', v); } catch { /* fine */ }
+    if (v === 'now') { ensureGuide(); computeNow(true); }
+    renderChips(); renderBody(false);
+    chipsEl.querySelector(`.mode[data-mode="${v}"]`)?.focus();
+  }
   function renderChips() {
     chipsEl.innerHTML = '';
     chipsEl.classList.toggle('hidden', tab !== 'live');
     if (tab !== 'live') return;
-    const all = liveAll();
-    const counts = new Map();
-    for (const c of all) counts.set(c.group, (counts.get(c.group) || 0) + 1);
-    const favs = all.filter((c) => T().isFav(c.id)).length;
-    const defs = [['', 'All', all.length]];
-    if (favs) defs.push([FAV, '★ Favorites', favs]);
-    for (const g of groups().slice(0, 120)) defs.push([g, g, counts.get(g)]);
-    for (const [k, label, n] of defs) {
-      const b = el('button', `tvh-chip${k === group ? ' on' : ''}`, `<span class="nm">${esc(label)}</span><span class="n">${n}</span>`);
-      b.onclick = () => { group = k; renderChips(); renderBody(); [...chipsEl.children].find((x) => x.classList.contains('on'))?.focus(); };
-      // Browsing groups previews them: the list follows focus, so ▲▼ then ▶ is enough.
-      b.onfocus = () => { if (group !== k) { group = k; for (const x of chipsEl.children) x.classList.toggle('on', x === b); renderBody(false); } };
-      chipsEl.append(b);
+    // Channels | On now
+    const modes = el('div', 'tvh-modes');
+    for (const [k, label] of [['channels', 'Channels'], ['now', 'On now']]) {
+      const m = el('button', `tvh-chip mode${view === k ? ' on' : ''}`, esc(label));
+      m.dataset.mode = k;
+      m.onclick = () => setView(k);
+      modes.append(m);
     }
+    chipsEl.append(modes);
+    const add = (k, label, n, current, set) => {
+      const b = el('button', `tvh-chip${k === current ? ' on' : ''}`, `<span class="nm">${esc(label)}</span><span class="n">${n}</span>`);
+      b.dataset.key = k;
+      const pick = (refocus) => { set(k); renderChips(); renderBody(false); if (refocus) chipsEl.querySelector('.tvh-chip.on:not(.mode)')?.focus(); };
+      b.onclick = () => pick(true);
+      // Browsing previews: the list follows focus, so ▲▼ then ▶ is enough.
+      b.onfocus = () => { if (k !== current) { set(k); for (const x of chipsEl.querySelectorAll('.tvh-chip:not(.mode)')) x.classList.toggle('on', x === b); renderBody(false); } };
+      chipsEl.append(b);
+    };
+    if (view === 'now') {
+      computeNow();
+      const counts = nowCounts();
+      chipsEl.append(el('div', 'tvh-gstatus', esc(guideStatus()))); // on top, where it is seen while the guide loads
+      add('', 'Everything', nowData.length, genre, (k) => { genre = k; });
+      for (const g of GENRES) if (counts.get(g)) add(g, g, counts.get(g), genre, (k) => { genre = k; });
+      return;
+    }
+    const all = liveAll();
+    const gcounts = new Map();
+    for (const c of all) gcounts.set(c.group, (gcounts.get(c.group) || 0) + 1);
+    const favs = all.filter((c) => T().isFav(c.id)).length;
+    add('', 'All', all.length, group, (k) => { group = k; });
+    if (favs) add(FAV, '★ Favorites', favs, group, (k) => { group = k; });
+    for (const g of groups().slice(0, 120)) add(g, g, gcounts.get(g), group, (k) => { group = k; });
   }
 
   const ROW_PAGE = 100;
@@ -236,13 +298,23 @@ function initTV() {
     b.dataset.i = i; // position in listCache; ids can repeat when a provider lists a stream twice
     b.classList.toggle('playing', ch === O().state.current);
     b.innerHTML = `<img alt="" referrerpolicy="no-referrer"><span class="meta"><b></b><small></small><i class="prog"><u></u></i></span><span class="star">★</span>`;
-    b.querySelector('b').textContent = (ch.clean || cleanName(ch.name));
+    b.querySelector('b').textContent = view === 'now' && nowMap.get(ch) ? nowMap.get(ch).p.title : (ch.clean || cleanName(ch.name));
     if (ch.logo) b.querySelector('img').src = ch.logo; else b.querySelector('img').style.display = 'none';
     b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
     paintRow(b, ch);
     return b;
   }
   function paintRow(b, ch) {
+    if (view === 'now') {
+      const it = nowMap.get(ch);
+      if (!it) return;
+      const small = b.querySelector('small'), prog = b.querySelector('.prog');
+      small.textContent = `${ch.clean || cleanName(ch.name)}  ·  until ${fmtClock(it.p.stop)}`;
+      small.style.display = '';
+      prog.classList.add('on');
+      prog.firstElementChild.style.width = `${Math.round(Math.min(100, Math.max(0, ((Date.now() - it.p.start) / (it.p.stop - it.p.start)) * 100)))}%`;
+      return;
+    }
     const nn = T().guide.peek(ch); // looks only; requestAround() asks for what's near the cursor
     const small = b.querySelector('small'), prog = b.querySelector('.prog');
     if (nn?.now) {
@@ -287,6 +359,7 @@ function initTV() {
       parts.push(`<div class="i-now"><b>Now</b> ${esc(nn.now.title)} <span>until ${esc(fmtClock(nn.now.stop))}</span></div>`);
       parts.push(`<div class="i-bar"><u style="width:${pct}%"></u></div>`);
       if (nn.next) parts.push(`<div class="i-next"><b>Next</b> ${esc(nn.next.title)} <span>${esc(fmtClock(nn.next.start))}</span></div>`);
+      if (view === 'now' && nn.now.desc && nn.now.desc.length > 3) parts.push(`<div class="i-desc">${esc(nn.now.desc.slice(0, 220))}</div>`);
     } else {
       parts.push('<div class="i-next dim">No programme guide for this channel</div>');
     }
@@ -307,7 +380,7 @@ function initTV() {
     listCache = visibleList();
     shown = 0;
     if (!listCache.length) {
-      bodyEl.innerHTML = `<p class="tvh-empty">${group === FAV ? 'No favorites yet. Hold OK on a channel to add one.' : 'No channels here.'}</p>`;
+      bodyEl.innerHTML = `<p class="tvh-empty">${view === 'now' ? esc(guideStatus() || 'Nothing on yet.') : group === FAV ? 'No favorites yet. Hold OK on a channel to add one.' : 'No channels here.'}</p>`;
       return;
     }
     addRows();
@@ -373,6 +446,7 @@ function initTV() {
     P().pull(); // anything new from the phone
     checkUpdate('timer');
     libSeen = libSig();
+    if (view === 'now') { ensureGuide(); computeNow(true); }
     renderTabs();
     renderBody();
     requestAnimationFrame(() => {
@@ -391,12 +465,33 @@ function initTV() {
     const sig = libSig();
     if (sig === libSeen) return;
     libSeen = sig;
-    group = '';
+    group = ''; genre = '';
     const hadFocus = home.contains(document.activeElement);
     renderTabs();
     renderBody();
     if (!hadFocus || document.activeElement === document.body) bodyEl.querySelector('.tvh-row')?.focus();
   }, 1000);
+  // While the guide is still arriving the kinds and their counts change under you. Update the left column in place
+  // (keeping focus), and rebuild the list only if you are not in it.
+  let nowSig = '';
+  setInterval(() => {
+    if (!isOpen.home() || tab !== 'live' || view !== 'now') return;
+    computeNow(true);
+    const pr = T().guide.progress();
+    const sig = `${[...nowCounts()].join()}|${pr.state}|${pr.done}|${nowData.length}`;
+    if (sig === nowSig) return;
+    nowSig = sig;
+    const a = document.activeElement;
+    const inList = !!a?.closest?.('.tvh-body');
+    const inChips = chipsEl.contains(a);
+    const key = a?.dataset?.key, mode = a?.dataset?.mode;
+    renderChips();
+    if (inChips) {
+      if (mode) chipsEl.querySelector(`.mode[data-mode="${mode}"]`)?.focus();
+      else if (key !== undefined) chipsEl.querySelector(`.tvh-chip[data-key="${CSS.escape(key)}"]`)?.focus();
+    }
+    if (!inList) renderBody(false);
+  }, 1500);
   // Rows' what's-on lines fill in as guide data arrives.
   setInterval(() => {
     if (!isOpen.home() || tab !== 'live') return;
@@ -551,8 +646,8 @@ function initTV() {
       if (s === 'home' && tab === 'live') {
         const t = document.activeElement;
         // Groups are a column on the left: ◀ from the list goes to it, ▶ from it goes back.
-        if (e.key === 'ArrowLeft' && t?.classList.contains('tvh-row')) { e.preventDefault(); e.stopImmediatePropagation(); (chipsEl.querySelector('.on') || chipsEl.firstElementChild)?.focus(); return; }
-        if (e.key === 'ArrowRight' && t?.classList.contains('tvh-chip')) { e.preventDefault(); e.stopImmediatePropagation(); focusFirstInBody(); return; }
+        if (e.key === 'ArrowLeft' && t?.classList.contains('tvh-row')) { e.preventDefault(); e.stopImmediatePropagation(); (chipsEl.querySelector('.tvh-chip.on:not(.mode)') || chipsEl.querySelector('.tvh-chip'))?.focus(); return; }
+        if (e.key === 'ArrowRight' && t?.classList.contains('tvh-chip') && !t.classList.contains('mode')) { e.preventDefault(); e.stopImmediatePropagation(); focusFirstInBody(); return; }
       }
       if (DIR[e.key]) { e.preventDefault(); e.stopImmediatePropagation(); move(root, ...DIR[e.key]); return; }
       if (e.key === 'Enter' && !typing) {

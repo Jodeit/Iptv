@@ -327,6 +327,13 @@ pop-out player are hidden there; setup and settings happen on the phone and sync
   (All, Favorites, each group) beside the channel list with what's on now; ◀ from the list reaches the groups, OK
   plays, **hold OK** adds or removes a favorite. Movies and Shows open the poster gallery. Phone shows sync status,
   your playlists and Unlink. Back returns to the picture; Back on the picture leaves the app.
+- **On now:** switch the left column from **Channels** to **On now** to browse like a cable guide, by what is airing
+  right now instead of by the provider's folders: Sports, Movies, News, Kids, Documentary, Music, Shows, each with a
+  live count. Rows lead with the programme, then the channel and when it ends; the bar at the bottom adds the
+  description. Programmes are classified from the guide's own category when it has one, else from the title and
+  description (league names, "vs", movie / news / kids words), else from the channel's name (`js/genre.js`). The
+  guide for the whole lineup is read once from the provider's `xmltv.php` where there is one, otherwise channel by
+  channel in the background (the column shows progress). The choice is remembered.
 - **Setup:** a TV with no playlist shows a setup screen; link it from your phone (see Profiles above).
 - The remote's media keys (play/pause, next/previous, fast-forward/rewind) work everywhere.
 

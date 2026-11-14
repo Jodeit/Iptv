@@ -57,6 +57,7 @@ export class Guide {
       if (this.xmltvState === 'none') this.loadXmltv();
       return this.xmltv?.get(ch.tvgId) || null;
     }
+    if (!this.source.xtream) return null; // per-channel requests are an Xtream API
     const hit = this.byChannel.get(ch.id);
     if (!hit || Date.now() - hit.at > TTL) this.request(ch);
     return hit?.programmes || null;
@@ -85,6 +86,7 @@ export class Guide {
 
   // ---------- Xtream short EPG ----------
   request(ch) {
+    if (!this.source?.xtream) return;
     if (this.inFlight.has(ch.id) || this.queue.some((c) => c.id === ch.id)) return;
     const streamId = ch.url.split('?')[0].split('/').pop().replace(/\.\w+$/, '');
     if (!/^\d+$/.test(streamId)) return;
@@ -124,7 +126,9 @@ export class Guide {
     this.bulkState = 'loading';
     this.loadXmltv(`${server}/xmltv.php?${new URLSearchParams({ username, password })}`).then(() => {
       this.bulkState = this.xmltvState === 'ready' && this.xmltv?.size ? 'ready' : 'failed';
-      if (this.bulkState === 'failed') this.crawl(channels);
+      // Channels the lineup file does not cover (no guide id, or an id it lacks) fall back to one request each.
+      const missing = this.bulkState === 'failed' ? channels : channels.filter((c) => !(c.tvgId && this.xmltv.get(c.tvgId)?.length));
+      this.crawl(missing.slice(0, 2500));
       this.onUpdate?.(null);
     });
   }
