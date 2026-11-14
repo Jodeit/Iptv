@@ -7,7 +7,7 @@ import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFa
 const W = 768, H = 1024, ROWS = 9;
 const C = {
   bg: 'rgba(14,16,24,0.94)', line: 'rgba(255,255,255,0.10)', text: '#e8eaf2', muted: '#8a90a6',
-  accent: '#3de0ff', accent2: '#ff3d7f', hover: 'rgba(255,255,255,0.10)', active: 'rgba(61,224,255,0.20)',
+  accent: '#d9b97b', accent2: '#7ea4d8', hover: 'rgba(255,255,255,0.10)', active: 'rgba(217,185,123,0.20)',
 };
 
 export class VRPanel {
@@ -53,7 +53,7 @@ export class VRPanel {
     const rayGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1)]);
     this.controllers = [0, 1].map((i) => {
       const controller = renderer.xr.getController(i);
-      const ray = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color: 0x3de0ff, transparent: true, opacity: 0.7 }));
+      const ray = new THREE.Line(rayGeo, new THREE.LineBasicMaterial({ color: 0xd9b97b, transparent: true, opacity: 0.7 }));
       ray.scale.z = 5;
       controller.add(ray);
       const dot = new THREE.Mesh(new THREE.SphereGeometry(0.008), new THREE.MeshBasicMaterial({ color: 0xffffff }));

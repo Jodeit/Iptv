@@ -28,7 +28,7 @@ The proxy forwards to any URL it's given, so keep the server on your own network
 
 On iPhone, iPad and Android phones and tablets without WebXR, the app uses a **flat player**: the video itself with
 the system's own controls (full screen, picture-in-picture, AirPlay) instead of the 3D theater. The VR, XR3D and
-Theater controls are hidden, and three.js isn't downloaded at all. **Sources → Display** overrides this per device
+Theater controls are hidden, and three.js isn't downloaded at all. **Playback → Display** overrides this per device
 (Auto / Flat player / 3D theater). Vision Pro keeps the theater, since it supports immersive VR.
 
 ## Large Xtream accounts
@@ -63,7 +63,7 @@ stays small even for a full-length film.
 
 ## Playback log
 
-**Sources → Playback log** records each playback: which engine and source played, every buffering stall with its
+**Playback → Playback log** records each playback: which engine and source played, every buffering stall with its
 length, and every 30 s the buffer level, resolution, download speed against the stream's bitrate, dropped frames and
 engine warnings. Failed attempts and stream probes are there too. Xtream passwords are masked, and **Copy log** copies
 it for sharing. **Display → HLS player** switches between hls.js (default) and the browser's own HLS player, to
@@ -80,14 +80,14 @@ Films and episodes remember where you stopped, on this device. Posters show a pr
 **Resume** or **From the start**, and playing from the list resumes too.
 
 Ratings come from [OMDb](https://www.omdbapi.com/apikey.aspx), which includes Rotten Tomatoes scores. You need a free
-key (1,000 lookups a day) under **Sources → Ratings**. It is checked before saving and syncs with your profile. Only
+key (1,000 lookups a day) under **Playback → Ratings**. It is checked before saving and syncs with your profile. Only
 posters that stay on screen are looked up, and results are cached for 30 days. Without a key, the provider's own star
 rating is shown.
 
 **More like this.** Preview pages show a row of recommendations that your provider actually carries. TMDB
 (themoviedb.org) picks them from what its users watched together and from similar titles. The app keeps only the ones
 it finds in your catalog, matched by TMDB ID or by name and year. It needs a free TMDB API key (v3 key or read
-access token) under **Sources → Ratings**, which syncs with your profile. To know what your provider has, the app
+access token) under **Playback → Ratings**, which syncs with your profile. To know what your provider has, the app
 indexes the movie or series categories your content filter keeps, once a day. Recommendations are cached for a week.
 
 ## TV guide
@@ -108,10 +108,10 @@ across your devices: TV, phone, laptop, headset. To set it up:
 
 1. On one device, create a profile (e.g. "Living room"). It starts with what's already on that device.
 2. Tap **Link a device**. That shows an 8-character code, valid for 10 minutes and usable once.
-3. On the other device, open **Profile → Link this device** and enter the code.
+3. On the other device, open **Sync → Link this device** and enter the code.
 
 **Linking a TV:** the TV app has no setup forms. A TV with no playlist shows a setup screen; on your phone open the app,
-go to **Profile → Link a TV** and tap the TV (it appears there, or as a banner, when the phone and TV share a Wi-Fi network;
+go to **Sync → Link a TV** and tap the TV (it appears there, or as a banner, when the phone and TV share a Wi-Fi network;
 otherwise type the code on the TV). The TV asks "Allow?" and then gets your profile, so playlists you add on the phone appear
 on the TV. The profile's secret travels RSA-encrypted to a key that never leaves the TV; the server only matches the two by
 a hash of the shared public IP, kept for 10 minutes.

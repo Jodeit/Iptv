@@ -198,14 +198,14 @@ export class GalleryView {
     this.note.classList.toggle('hidden', this.app.ratings.enabled());
     if (needMeta && !this.app.tmdbMeta) {
       this.note.classList.remove('hidden');
-      this.note.innerHTML = 'Age ratings and popularity come from TMDB: add a free key in <b>Sources → Ratings</b>.';
+      this.note.innerHTML = 'Age ratings and popularity come from TMDB: add a free key in <b>Settings → Playback → Ratings</b>.';
     } else if (needMeta && this.metaPending) {
       this.note.classList.remove('hidden');
       this.note.textContent = `Looking up age ratings and popularity… ${this.metaDone.toLocaleString()} of ${this.metaTotal.toLocaleString()}`;
     } else if (everywhere) {
       this.note.classList.remove('hidden');
       this.note.textContent = `${list.length.toLocaleString()} result${list.length === 1 ? '' : 's'} across all categories`;
-    } else this.note.innerHTML = 'Add a free OMDb key in <b>Sources → Ratings</b> to see Rotten Tomatoes, IMDb and Metacritic scores.';
+    } else this.note.innerHTML = 'Add a free OMDb key in <b>Settings → Playback → Ratings</b> to see Rotten Tomatoes, IMDb and Metacritic scores.';
     this.renderContinue(!q && !everywhere);
     const frag = document.createDocumentFragment();
     for (const item of list.slice(0, this.limit)) frag.append(this.card(item));
