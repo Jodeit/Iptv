@@ -71,7 +71,11 @@ function initTV() {
   const liveAll = () => T().live();
   const groups = () => [...new Set(liveAll().map((c) => c.group).filter(Boolean))];
   const visibleList = () => {
-    if (view === 'now') { computeNow(); return nowData.filter((x) => !genre || x.genre === genre).map((x) => x.ch); }
+    if (view === 'now') {
+      computeNow();
+      if (genre === SCORES) return scoreData.map((x) => x.ch);
+      return nowData.filter((x) => !genre || x.genre === genre).map((x) => x.ch);
+    }
     const all = liveAll();
     if (group === FAV) return all.filter((c) => T().isFav(c.id));
     return group ? all.filter((c) => c.group === group) : all;
@@ -94,7 +98,20 @@ function initTV() {
     }
     nowData = out;
     nowMap = new Map(out.map((x) => [x.ch, x]));
+    // Scoreboard: channels carrying a live or upcoming game. A channel whose guide says something vaguer
+    // (or nothing) still gets an entry, so you can pick from the games rather than the programme titles.
+    scoreData = [];
+    for (const ch of liveAll()) {
+      const sp = sports.gameFor(ch);
+      if (!sp) continue;
+      let x = nowMap.get(ch);
+      if (x) x.sc = sp; else { x = { ch, p: { title: sp.title, start: 0, stop: 0 }, genre: 'Sports', synth: true, sc: sp }; nowMap.set(ch, x); }
+      scoreData.push(x);
+    }
+    scoreData.sort((a, b) => (b.sc.live - a.sc.live) || a.sc.start - b.sc.start);
   }
+  let scoreData = [];
+  const SCORES = '__scores';
   // A scoreboard arrived: swap "College Football" for the game in the rows already on screen
   sports.onChange(() => {
     if (view !== 'now' || !isOpen.home()) return;
@@ -102,7 +119,7 @@ function initTV() {
     for (const row of bodyEl.querySelectorAll('.tvh-row')) {
       const ch = listCache[+row.dataset.i], it = ch && nowMap.get(ch);
       if (!it) continue;
-      row.querySelector('b').textContent = it.sp?.title || it.p.title;
+      row.querySelector('b').textContent = titleOf(it);
       paintRow(row, ch);
     }
     const f = document.activeElement?.closest?.('.tvh-row');
@@ -326,6 +343,8 @@ function initTV() {
       computeNow();
       const counts = nowCounts();
       chipsEl.append(el('div', 'tvh-gstatus', esc(guideStatus()))); // on top, where it is seen while the guide loads
+      sports.wantAll();
+      if (scoreData.length) add(SCORES, '🏟 Scoreboard', scoreData.length, genre, (k) => { genre = k; });
       add('', 'Everything', nowData.length, genre, (k) => { genre = k; });
       for (const g of GENRES) if (counts.get(g)) add(g, g, counts.get(g), genre, (k) => { genre = k; });
       return;
@@ -346,17 +365,25 @@ function initTV() {
     b.dataset.i = i; // position in listCache; ids can repeat when a provider lists a stream twice
     b.classList.toggle('playing', ch === O().state.current);
     b.innerHTML = `<img alt="" referrerpolicy="no-referrer"><span class="meta"><b></b><small></small><i class="prog"><u></u></i></span><span class="star">★</span>`;
-    b.querySelector('b').textContent = view === 'now' && nowMap.get(ch) ? (nowMap.get(ch).sp?.title || nowMap.get(ch).p.title) : (ch.clean || cleanName(ch.name));
+    b.querySelector('b').textContent = view === 'now' && nowMap.get(ch) ? titleOf(nowMap.get(ch)) : (ch.clean || cleanName(ch.name));
     if (ch.logo) b.querySelector('img').src = ch.logo; else b.querySelector('img').style.display = 'none';
     b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
     paintRow(b, ch);
     return b;
   }
+  const scoreView = () => view === 'now' && genre === SCORES;
+  const titleOf = (it) => (scoreView() && it.sc ? it.sc.title : it.sp?.title || it.p.title);
   function paintRow(b, ch) {
     if (view === 'now') {
       const it = nowMap.get(ch);
       if (!it) return;
       const small = b.querySelector('small'), prog = b.querySelector('.prog');
+      if (scoreView() && it.sc) {
+        small.textContent = `${ch.clean || cleanName(ch.name)}  ·  ${it.sc.status}`;
+        small.style.display = '';
+        prog.classList.remove('on');
+        return;
+      }
       small.textContent = `${ch.clean || cleanName(ch.name)}  ·  ${it.sp?.status ? `${it.sp.status}  ·  ` : ''}until ${fmtClock(it.p.stop)}`;
       small.style.display = '';
       prog.classList.add('on');
@@ -404,14 +431,15 @@ function initTV() {
     const parts = [`<div class="i-name">${esc((ch.clean || cleanName(ch.name)))}</div>`, `<div class="i-meta">${esc(ch.group || '')}</div>`];
     if (nn?.now) {
       const pct = Math.min(100, Math.max(0, ((Date.now() - nn.now.start) / (nn.now.stop - nn.now.start)) * 100));
-      const sp = nowMap.get(ch)?.sp;
+      const sp = nowMap.get(ch)?.sp || nowMap.get(ch)?.sc;
       parts.push(`<div class="i-now"><b>Now</b> ${esc(sp ? `${sp.title}` : nn.now.title)} <span>${esc(sp?.status ? `${sp.status} · ` : '')}until ${esc(fmtClock(nn.now.stop))}</span></div>`);
       if (sp) parts.push(`<div class="i-meta">${esc(nn.now.title)}</div>`);
       parts.push(`<div class="i-bar"><u style="width:${pct}%"></u></div>`);
       if (nn.next) parts.push(`<div class="i-next"><b>Next</b> ${esc(nn.next.title)} <span>${esc(fmtClock(nn.next.start))}</span></div>`);
       if (view === 'now' && nn.now.desc && nn.now.desc.length > 3) parts.push(`<div class="i-desc">${esc(nn.now.desc.slice(0, 220))}</div>`);
     } else {
-      parts.push('<div class="i-next dim">No programme guide for this channel</div>');
+      const g = nowMap.get(ch)?.sc;
+      parts.push(g ? `<div class="i-now"><b>Now</b> ${esc(g.title)} <span>${esc(g.status)}</span></div>` : '<div class="i-next dim">No programme guide for this channel</div>');
     }
     infoEl.innerHTML = parts.join('');
     infoEl.classList.remove('hidden');
@@ -538,7 +566,7 @@ function initTV() {
       renderTabs(); renderBody();
       return;
     }
-    const sig = `${[...nowCounts()].join()}|${pr.state}|${pr.done}|${nowData.length}`;
+    const sig = `${[...nowCounts()].join()}|${pr.state}|${pr.done}|${nowData.length}|${scoreData.length}`;
     if (sig === nowSig) return;
     nowSig = sig;
     const a = document.activeElement;

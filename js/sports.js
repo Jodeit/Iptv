@@ -32,7 +32,9 @@ export const leagueOf = (p) => {
   for (const [re, path] of LEAGUES) if (re.test(text)) return path;
   return '';
 };
-const net = (s) => String(s || '').toLowerCase().replace(/\b(hd|us|usa|fhd|4k)\b/g, '').replace(/[^a-z0-9]/g, '');
+// Channel names and ESPN's network names for the same channel, brought to one spelling
+const ALIAS = { foxsports1: 'fs1', foxsports2: 'fs2', bigtennetwork: 'btn', accnetwork: 'accn', cbssportsnetwork: 'cbssn', espnnews: 'espnews', secnetworkplus: 'secnetwork' };
+const net = (s) => { const k = String(s || '').toLowerCase().replace(/\b(hd|us|usa|fhd|4k)\b/g, '').replace(/[^a-z0-9]/g, ''); return ALIAS[k] || k; };
 
 const ord = (n) => ['', '1st', '2nd', '3rd', '4th'][n] || `${n}th`;
 function normalize(ev) {
@@ -73,8 +75,34 @@ export function want(league) {
   const job = get(`${BASE}${league}/scoreboard`)
     .then((d) => boards.set(league, { at: Date.now(), ok: true, events: (d.events || []).map(normalize).filter(Boolean) }))
     .catch(() => boards.set(league, { at: Date.now(), ok: false, events: [] }))
-    .finally(() => { pending.delete(league); for (const f of listeners) f(); });
+    .finally(() => { pending.delete(league); index = null; for (const f of listeners) f(); });
   pending.set(league, job);
+}
+// Every league at once, for the scoreboard
+export const wantAll = () => { for (const l of new Set(LEAGUES.map((x) => x[1]))) want(l); };
+const clock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+let index = null; // network -> games that are live now or start within a few hours
+function games() {
+  if (index) return index;
+  index = new Map();
+  const now = Date.now();
+  for (const b of boards.values()) for (const e of b.events || []) {
+    if (e.state === 'post' || (e.state === 'pre' && e.start > now + 4 * 3600e3)) continue;
+    for (const n of e.nets) { if (!index.has(n)) index.set(n, []); index.get(n).push(e); }
+  }
+  for (const list of index.values()) list.sort((a, b) => (a.state === 'in' ? 0 : 1) - (b.state === 'in' ? 0 : 1) || a.start - b.start);
+  return index;
+}
+// What this channel is carrying on the scoreboard: live games first, then the next one up. null if none.
+export function gameFor(ch) {
+  const list = games().get(ch.net ? net(ch.net) : net(ch.clean || ch.name));
+  if (!list?.length) return null;
+  const e = list[0], more = list.filter((x) => x.state === 'in').length;
+  return {
+    title: more > 1 ? `${e.title} +${more - 1}` : e.title,
+    status: e.state === 'in' ? [e.detail, e.score].filter(Boolean).join(' · ') : `starts ${clock(e.start)}`,
+    live: e.state === 'in', start: e.start,
+  };
 }
 export const onChange = (f) => { listeners.add(f); };
 
