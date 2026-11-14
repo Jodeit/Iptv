@@ -603,7 +603,15 @@ function initTV() {
     const lists = bodyEl.querySelector('.tvh-lists');
     for (const l of p.doc.playlists) {
       const b = el('button', `btn ghost pl-row${src?.url === l.url ? ' cur' : ''}`, `<span>${esc(l.name)}</span>${src?.url === l.url ? '<small>Showing now</small>' : ''}`);
-      b.onclick = () => { O().loadPlaylist(l.url, l.name, { fresh: true }); closeHome(); };
+      b.onclick = async () => {
+        // Stay on the menu: show that it is loading, then confirm and land on the new channel list
+        if (b.disabled) return;
+        b.disabled = true; b.querySelector('small')?.remove(); b.append(el('small', '', 'Loading…'));
+        await O().loadPlaylist(l.url, l.name, { fresh: true });
+        const n = liveAll().length;
+        if (n) { tab = 'live'; group = ''; genre = ''; autoView(); T().toast(`Loaded “${l.name}” · ${n.toLocaleString()} channel${n === 1 ? '' : 's'}`); renderTabs(); renderBody(); (bodyEl.querySelector('.tvh-row') || tabsEl.firstElementChild)?.focus(); }
+        else if (isOpen.home() && tab === 'phone') renderPhone();
+      };
       lists.append(b);
     }
     if (!n) lists.innerHTML = '<p class="tvh-note dim">None yet. Add one on your phone.</p>';
