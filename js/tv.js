@@ -116,6 +116,12 @@ function initTV() {
     if (c && c !== lastShown) { lastShown = c; ready(); showOsd(); }
   }, 400);
 
+  // Whether a picture is on screen: with one, Home is frosted glass over it; without, it sits on a wall-coloured backdrop.
+  setInterval(() => {
+    const v = T()?.video;
+    html.classList.toggle('tv-picture', !!v && !!O().state.current && v.readyState >= 2 && !v.ended && v.videoWidth > 0);
+  }, 700);
+
   // ---------- Updates ----------
   // The app stays open in the background, so a deploy would otherwise wait until someone closed it. Once a
   // minute (and whenever the app comes back to the screen) the deployed files are compared with the ones this
@@ -237,7 +243,7 @@ function initTV() {
     return b;
   }
   function paintRow(b, ch) {
-    const nn = T().guide.nowNext(ch);
+    const nn = T().guide.peek(ch); // looks only; requestAround() asks for what's near the cursor
     const small = b.querySelector('small'), prog = b.querySelector('.prog');
     if (nn?.now) {
       small.textContent = `${nn.now.title}${nn.next ? `  ·  next ${nn.next.title}` : ''}`;
@@ -249,8 +255,19 @@ function initTV() {
       small.textContent = group ? '' : (ch.group || '');
       small.style.display = small.textContent ? '' : 'none';
       prog.classList.remove('on');
-      T().guide.request?.(ch);
     }
+  }
+  // The guide loads a few channels at a time from a queue that keeps only the most recent requests and serves
+  // the newest first. Asking for a whole page of rows in order therefore dropped the ones on screen in any
+  // group bigger than ~60. Ask only around the cursor, far to near, so the highlighted channel is served first.
+  function requestAround(i) {
+    const g = T().guide;
+    if (!g.available()) return;
+    if (g.source?.xtream) {
+      const lo = Math.max(0, i - 4), hi = Math.min(listCache.length - 1, i + 14);
+      for (let k = hi; k >= lo; k--) if (k !== i && listCache[k]) g.request(listCache[k]);
+    }
+    if (listCache[i]) g.nowNext(listCache[i]); // the channel itself last: it is served first (and starts an XMLTV load)
   }
   function addRows() {
     const next = listCache.slice(shown, shown + ROW_PAGE);
@@ -278,7 +295,7 @@ function initTV() {
   }
   bodyEl.addEventListener('focusin', (e) => {
     const row = e.target.closest?.('.tvh-row');
-    if (row) paintInfo(listCache[+row.dataset.i]);
+    if (row) { requestAround(+row.dataset.i); paintInfo(listCache[+row.dataset.i]); }
   });
 
   function renderBody(withChips = true) {
@@ -383,13 +400,16 @@ function initTV() {
   // Rows' what's-on lines fill in as guide data arrives.
   setInterval(() => {
     if (!isOpen.home() || tab !== 'live') return;
+    const f = document.activeElement?.closest?.('.tvh-row');
+    const at = f ? +f.dataset.i : 0;
     for (const row of bodyEl.querySelectorAll('.tvh-row')) {
-      const ch = listCache[+row.dataset.i];
+      const i = +row.dataset.i;
+      if (Math.abs(i - at) > 20) continue;
+      const ch = listCache[i];
       if (ch) paintRow(row, ch);
     }
-    const f = document.activeElement?.closest?.('.tvh-row');
-    if (f) paintInfo(listCache[+f.dataset.i]);
-  }, 5000);
+    if (f) paintInfo(listCache[at]);
+  }, 1500);
 
   // ---------- Setup: link a phone ----------
   const body = $('tvsBody');
@@ -400,6 +420,7 @@ function initTV() {
     hideOsd();
     closeHome();
     setup.classList.remove('hidden');
+    document.documentElement.classList.add('setup-open'); // keeps the app's toasts off the setup card
     ready();
     document.querySelector(focusSel || '#tvsSkip')?.focus();
   }
@@ -453,6 +474,7 @@ function initTV() {
       }
     } finally {
       setup.classList.add('hidden');
+      html.classList.remove('setup-open');
       running = false;
       // Playlists arrived but nothing is loaded yet (the phone hadn't set a "last playlist").
       const o = O(), first = o.profiles.doc.playlists[0];
@@ -460,7 +482,7 @@ function initTV() {
       settleOnHome();
     }
   }
-  $('tvsSkip').onclick = () => { dismissed = true; abort?.abort(); setup.classList.add('hidden'); settleOnHome(); };
+  $('tvsSkip').onclick = () => { dismissed = true; abort?.abort(); setup.classList.add('hidden'); html.classList.remove('setup-open'); settleOnHome(); };
 
   // With nothing playing, the useful screen is the channel list, not a black picture.
   async function settleOnHome() {
