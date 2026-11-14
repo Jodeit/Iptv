@@ -132,10 +132,25 @@ export class GalleryView {
     await this.showCategory(pick);
   }
 
-  close() {
+  // The TV's own Movies / Shows grid opens a title straight into its detail page, without the gallery grid behind it.
+  openDirect(item) {
+    this.kind = item.kind;
+    this.direct = true;
+    this.items ??= [];
+    this.itemsById ??= new Map();
+    this.itemsById.set(item.id, item);
+    this.root.classList.remove('hidden');
+    this.app.onToggle?.(true);
+    return this.showPreview(item);
+  }
+
+  // viaBack: closed by stepping back (Esc / Back), as opposed to starting playback
+  close(viaBack = false) {
+    this.direct = false;
     this.root.classList.add('hidden');
     this.closePreview();
     this.app.onToggle?.(false);
+    this.app.onClosed?.(viaBack);
   }
 
   async showCategory(catId) {
@@ -512,7 +527,7 @@ export class GalleryView {
 
   back() {
     const prev = this.stack?.pop();
-    if (!prev) { this.closePreview(); return; }
+    if (!prev) { if (this.direct) { this.close(true); return; } this.closePreview(); return; }
     const stack = this.stack;
     this.showPreview(prev);
     this.stack = stack;
