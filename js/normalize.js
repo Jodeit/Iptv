@@ -101,7 +101,8 @@ export const isForeign = (ch) => {
 };
 export function regionScore(ch) {
   const t = tokens(`${ch.name} ${ch.group || ''}`);
-  return (t.includes('US') || t.includes('USA') ? 30 : 0) - (t.some((x) => FOREIGN.has(x)) ? 30 : 0);
+  // ESPN+ and other "PLUS" feeds are not the channel of the same name
+  return (t.includes('US') || t.includes('USA') ? 30 : 0) - (t.some((x) => FOREIGN.has(x)) ? 30 : 0) - (t.includes('PLUS') || /\+/.test(ch.name) ? 20 : 0);
 }
 
 // Higher is better. 4K/UHD and RAW streams are the heaviest on a TV's decoder and network, so a plain HD or FHD copy wins.

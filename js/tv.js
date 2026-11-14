@@ -75,7 +75,7 @@ function initTV() {
   const visibleList = () => {
     if (view === 'now') {
       computeNow();
-      if (genre === SCORES) return scoreData.map((x) => x.ch);
+      if (genre === SCORES) return [...scoreData.map((x) => x.ch), dayBtn]; // the last tile asks for tomorrow
       return nowData.filter((x) => !genre || x.genre === genre).map((x) => x.ch);
     }
     const all = liveAll();
@@ -100,20 +100,30 @@ function initTV() {
     }
     nowData = out;
     nowMap = new Map(out.map((x) => [x.ch, x]));
-    // Scoreboard: one entry per game on a channel you have (live first, then what is coming up). The entry is a
-    // copy of the channel that carries its game, so playing it plays the channel.
-    scoreData = [];
+    // Scoreboard: one entry per game, on the channel of yours that carries it (live, later today, finished, and
+    // tomorrow's once asked for). The entry is a copy of the channel (so the tile can say which game it is);
+    // playing it plays the real channel.
+    const best = new Map();
     for (const ch of liveAll()) {
       for (const g of sports.gamesFor(ch)) {
-        const w = Object.create(ch, { _game: { value: g }, _gkey: { value: `${ch.id}|${g.key}` }, _sect: { value: '', writable: true } });
-        scoreData.push({ ch: w, g });
+        if (g.when === 'tomorrow' && !showTomorrow) continue;
+        // The same game can be on two of your channels ("ESPN" and "ESPN 1"): keep one, preferring the numbered feed
+        const rank = /\b1$/.test(ch.clean || cleanName(ch.name)) ? 2 : 1;
+        const had = best.get(g.key);
+        if (!had || rank > had.rank) best.set(g.key, { ch, g, rank });
       }
     }
-    scoreData.sort((a, b) => (b.g.live - a.g.live) || a.g.start - b.g.start);
-    const firstLater = scoreData.findIndex((x) => !x.g.live);
-    scoreData.forEach((x, k) => { x.ch._sect = k === 0 && firstLater !== 0 ? 'Live now' : k === firstLater ? 'Coming up' : ''; });
+    const order = { live: 0, later: 1, final: 2, tomorrow: 3 };
+    scoreData = [...best.values()].map(({ ch, g }) => ({
+      g,
+      ch: Object.create(ch, { _game: { value: g }, _real: { value: ch }, _gkey: { value: `${ch.id}|${g.key}` }, _sect: { value: '', writable: true } }),
+    }));
+    scoreData.sort((a, b) => order[a.g.when] - order[b.g.when] || (a.g.when === 'final' ? b.g.start - a.g.start : a.g.start - b.g.start));
+    const LABEL = { live: 'Live now', later: 'Later today', final: 'Final', tomorrow: 'Tomorrow' };
+    scoreData.forEach((x, k) => { x.ch._sect = k === 0 || scoreData[k - 1].g.when !== x.g.when ? LABEL[x.g.when] : ''; });
   }
-  let scoreData = [], scoreSig = '';
+  let scoreData = [], scoreSig = '', showTomorrow = false;
+  const dayBtn = { _day: true, id: '__day', name: '' };
   const SCORES = '__scores';
   // A scoreboard arrived: swap "College Football" for the game in the rows already on screen
   sports.onChange(() => {
@@ -343,6 +353,7 @@ function initTV() {
       tab = 'vod'; vodKind = k;
       markTabs();
       renderBody();
+      syncGuideMode();
       return;
     }
     const nextTab = k === 'phone' ? 'phone' : 'live';
@@ -355,6 +366,7 @@ function initTV() {
     }
     markTabs();
     renderBody();
+    syncGuideMode();
   }
   function focusFirstInBody() {
     (bodyEl.querySelector('.tvh-row.playing') || bodyEl.querySelector('button'))?.focus();
@@ -398,10 +410,10 @@ function initTV() {
   // Scoreboard tile: both teams with logo and score, the period or clock, and the channel it is on (small)
   function fillGame(b, ch, g) {
     const side = (t, lead) => `<div class="tm${t.won || lead ? ' lead' : ''}">${t.logo ? `<img class="tl" alt="" src="${esc(t.logo)}" referrerpolicy="no-referrer">` : '<i class="tl"></i>'}<span class="tn">${t.rank ? `<em>${t.rank}</em>` : ''}${esc(t.name)}</span><b class="ts">${esc(String(t.score))}</b></div>`;
-    const a = +g.away.score, h = +g.home.score, live = g.live && !isNaN(a) && !isNaN(h);
+    const a = +g.away.score, h = +g.home.score, live = (g.live || g.when === 'final') && !isNaN(a) && !isNaN(h); // who is ahead (or won)
     b.innerHTML = `<span class="g-teams">${side(g.away, live && a > h)}${side(g.home, live && h > a)}</span>
       <span class="g-state ${g.live ? 'live' : ''}"><b>${esc(g.period)}</b><small>${ch.logo ? `<img alt="" src="${esc(ch.logo)}" referrerpolicy="no-referrer">` : ''}<span>${esc(ch.net || ch.clean || cleanName(ch.name))}</span></small></span>
-      ${!g.live && g.odds ? `<span class="g-odds">${g.odds.line ? `<b>${esc(g.odds.line)}</b>` : ''}${g.odds.total ? `<span>O/U ${esc(String(g.odds.total))}</span>` : ''}</span>` : ''}
+      ${(g.when === 'later' || g.when === 'tomorrow') && g.odds ? `<span class="g-odds">${g.odds.line ? `<b>${esc(g.odds.line)}</b>` : ''}${g.odds.total ? `<span>O/U ${esc(String(g.odds.total))}</span>` : ''}</span>` : ''}
       <span class="star">★</span>`;
     b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
   }
@@ -426,6 +438,12 @@ function initTV() {
       fillMovie(b, ch, mv);
       return b;
     }
+    if (scoreView() && ch._day) {
+      b.dataset.i = i;
+      b.classList.add('daybtn');
+      b.innerHTML = showTomorrow ? 'Hide tomorrow’s games' : 'Show tomorrow’s games ▸';
+      return b;
+    }
     if (scoreView() && ch._game) {
       b.dataset.i = i;
       b.classList.add('game');
@@ -447,6 +465,7 @@ function initTV() {
   const titleOf = (it) => it.sp?.title || it.p.title;
   function paintRow(b, ch) {
     if (b.classList.contains('movie')) { const it = nowMap.get(ch); if (it) fillMovie(b, ch, it); return; }
+    if (b.classList.contains('daybtn')) return;
     if (b.classList.contains('game')) { fillGame(b, ch, ch._game); return; }
     if (view === 'now') {
       const it = nowMap.get(ch);
@@ -595,15 +614,29 @@ function initTV() {
   home.append(cap);
   function paintCap() {
     const c = O().state.current;
-    const nn = c && T().guide.peek(c);
-    cap.innerHTML = c ? `<b>${esc(c.clean || cleanName(c.name))}</b>${nn?.now ? `<div class="cap-now">${esc(nn.now.title)} <small>until ${esc(fmtClock(nn.now.stop))}</small></div><i class="prog on"><u style="width:${Math.round(Math.min(100, Math.max(0, ((Date.now() - nn.now.start) / ((nn.now.stop - nn.now.start) || 1)) * 100)))}%"></u></i>` : ''}<small class="dim">Back returns to the picture</small>` : '';
+    const nn = c && T().guide.nowNext(c);
+    const p = nn?.now, pct = p ? Math.round(Math.min(100, Math.max(0, ((Date.now() - p.start) / ((p.stop - p.start) || 1)) * 100))) : 0;
+    cap.innerHTML = c ? `<b>${esc(c.clean || cleanName(c.name))}</b>${p ? `<div class="cap-now">${esc(p.title)} <small>until ${esc(fmtClock(p.stop))}</small></div><i class="prog on"><u style="width:${pct}%"></u></i>${p.desc && p.desc.length > 3 ? `<p class="cap-desc">${esc(p.desc)}</p>` : ''}${nn.next ? `<div class="cap-next"><b>Next</b> ${esc(nn.next.title)} <small>${esc(fmtClock(nn.next.start))}</small></div>` : ''}` : ''}<small class="dim">Back returns to the picture</small>` : '';
   }
-  function openHome() {
+  setInterval(() => { if (document.documentElement.classList.contains('guide-mode')) paintCap(); }, 2000); // guide data arrives late
+  // The picture window belongs to the live tabs (On now, Channels). Movies, Shows and Phone are the full-width menu.
+  let guideSession = false, savedNav = null;
+  function syncGuideMode() {
+    const on = guideSession && tab === 'live';
+    document.documentElement.classList.toggle('guide-mode', on);
+    if (on) paintCap();
+  }
+  function openHome(opts = {}) {
     if (screen() === 'setup') return;
     hideOsd();
-    const guideMode = document.documentElement.classList.contains('tv-picture') && !!O().state.current;
-    document.documentElement.classList.toggle('guide-mode', guideMode);
-    if (guideMode) paintCap();
+    guideSession = document.documentElement.classList.contains('tv-picture') && !!O().state.current;
+    // From the picture you get the live guide; coming back from a title's page you stay where you were (Movies / Shows)
+    if (guideSession && !opts.keepTab && tab !== 'live' && liveAll().length) { tab = 'live'; group = ''; genre = ''; }
+    // ▲▼ from the picture: the playing channel's folder, as a plain channel list (put back as it was when Home closes)
+    if (opts.browse && O().state.current && liveAll().length) {
+      savedNav ??= { tab, view, group, genre };
+      tab = 'live'; view = 'channels'; genre = ''; group = O().state.current.group || '';
+    }
     home.classList.remove('hidden');
     document.documentElement.classList.add('home-open');
     ready();
@@ -614,13 +647,20 @@ function initTV() {
     if (view === 'now') { ensureGuide(); computeNow(true); }
     renderTabs();
     renderBody();
+    syncGuideMode();
     requestAnimationFrame(() => {
-      const row = bodyEl.querySelector('.tvh-row.playing') || bodyEl.querySelector('.tvh-row');
+      let row = bodyEl.querySelector('.tvh-row.playing') || bodyEl.querySelector('.tvh-row');
+      if (opts.browse && row) { // one step from the playing channel, without tuning it
+        const i = +row.dataset.i + opts.browse;
+        while (shown <= i && shown < listCache.length) addRows();
+        row = bodyEl.querySelector(`.tvh-row[data-i="${Math.max(0, Math.min(listCache.length - 1, i))}"]`) || row;
+      }
       (row || bodyEl.querySelector('button') || tabsEl.firstElementChild)?.focus();
       row?.scrollIntoView({ block: 'center' });
     });
   }
-  function closeHome() { home.classList.add('hidden'); document.documentElement.classList.remove('home-open', 'guide-mode'); document.activeElement?.blur?.(); }
+  function closeHome() { home.classList.add('hidden'); document.documentElement.classList.remove('home-open', 'guide-mode'); guideSession = false;
+    if (savedNav) { ({ tab, view, group, genre } = savedNav); savedNav = null; } document.activeElement?.blur?.(); }
   // A playlist can finish loading (or change after a sync) while Home is already open: rebuild instead of
   // leaving the old list on screen.
   let libSeen = '';
@@ -901,7 +941,7 @@ function initTV() {
     detail.classList.add('hidden');
     document.documentElement.classList.remove('detail-open');
     document.activeElement?.blur?.();
-    if (viaBack && vodReturn) { vodReturn = false; openHome(); }
+    if (viaBack && vodReturn) { vodReturn = false; openHome({ keepTab: true }); }
   }
   const playFromDetail = (item, at) => { vodReturn = false; closeDetail(false); T().vod.play(item, at || 0); };
   function paintDetail() {
@@ -1211,11 +1251,20 @@ function initTV() {
     const vod = isVod();
     const v = T()?.video;
     switch (e.key) {
-      case 'ArrowUp': case 'ChannelUp':
+      // ▲▼ scroll the channel list without changing the picture; OK tunes. The channel buttons still zap.
+      case 'ArrowUp':
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (vod) showOsd(); else openHome({ browse: -1 });
+        break;
+      case 'ArrowDown':
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (vod) showOsd(); else openHome({ browse: 1 });
+        break;
+      case 'ChannelUp':
         e.preventDefault(); e.stopImmediatePropagation();
         if (vod) showOsd(); else surf(1);
         break;
-      case 'ArrowDown': case 'ChannelDown':
+      case 'ChannelDown':
         e.preventDefault(); e.stopImmediatePropagation();
         if (vod) showOsd(); else surf(-1);
         break;
@@ -1246,16 +1295,17 @@ function initTV() {
     const t = document.activeElement;
     if (t?.classList.contains('tvh-row') && !holdFired) {
       const ch = listCache[+t.dataset.i];
-      if (ch && tab === 'vod') openVod(ch, +t.dataset.i);
-      else if (ch) { closeHome(); T().play(ch); }
+      if (ch?._day) { showTomorrow = !showTomorrow; if (showTomorrow) sports.wantTomorrow(); computeNow(true); renderChips(); renderBody(false); bodyEl.querySelector('.tvh-row.daybtn')?.focus(); }
+      else if (ch && tab === 'vod') openVod(ch, +t.dataset.i);
+      else if (ch) { closeHome(); T().play(ch._real || ch); }
     }
     holdFired = false;
   }, true);
 
   function toggleFavRow(row) {
     const ch = listCache[+row.dataset.i];
-    if (!ch) return;
-    T().toggleFav(ch);
+    if (!ch || ch._day) return;
+    T().toggleFav(ch._real || ch);
     row.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
     T().toast(T().isFav(ch.id) ? 'Added to favorites' : 'Removed from favorites');
     if (tab === 'vod') return;
@@ -1304,7 +1354,7 @@ function initTV() {
   // ---------- Boot ----------
   const boot = () => {
     T().onRating?.(onRatingArrived);
-    T().vod?.onClosed((viaBack) => { if (viaBack && vodReturn) { vodReturn = false; openHome(); } });
+    T().vod?.onClosed((viaBack) => { if (viaBack && vodReturn) { vodReturn = false; openHome({ keepTab: true }); } });
     import('./qr.js').catch(() => {}); // warm the cache so the setup screen draws its code at once
     T().video.controls = false;
     // Android WebView draws a large grey play icon on a <video> that has nothing to show; a transparent poster replaces it.
