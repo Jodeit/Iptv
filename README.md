@@ -352,6 +352,9 @@ pop-out player are hidden there; setup and settings happen on the phone and sync
   **Settings → Playback → TV background** on the phone (presets or any colour); it syncs with the profile and the TV
   also uses it for the startup splash. Screens render colours cooler than they look to the eye, so pick warmer than
   the wall seems.
+- **Load screen:** the Tuner fish cut from oak (grain, soft shadow) on the same plaster, in `img/tuna.svg`, inlined
+  in the stylesheet so it is there on the first frame; the Android app shows the same fish on cream (no black
+  flash) the moment it starts, which needs the newer APK.
 - **Setup:** a TV with no playlist shows a setup screen; link it from your phone (see Profiles above).
 - The remote's media keys (play/pause, next/previous, fast-forward/rewind) work everywhere.
 

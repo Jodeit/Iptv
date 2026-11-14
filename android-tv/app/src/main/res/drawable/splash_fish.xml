@@ -1,0 +1,8 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="180dp" android:height="180dp" android:viewportWidth="32" android:viewportHeight="32">
+    <!-- The Tuner fish in oak, matching the web splash (img/tuna.svg) -->
+    <path android:fillColor="#B87C42"
+        android:pathData="M5,16C9,9 19,8 24,14L29,9 27.5,16 29,23 24,18C19,24 9,23 5,16ZM13,10.6 16,6 18.4,10ZM14,21.4 16,25.5 18.4,22Z" />
+    <path android:fillColor="#F3E7C6"
+        android:pathData="M8.25,15a1.25,1.25 0 1,0 2.5,0a1.25,1.25 0 1,0 -2.5,0Z" />
+</vector>
