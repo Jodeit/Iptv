@@ -33,8 +33,8 @@ export const leagueOf = (p) => {
   return '';
 };
 // Channel names and ESPN's network names for the same channel, brought to one spelling
-const ALIAS = { foxsports1: 'fs1', foxsports2: 'fs2', bigtennetwork: 'btn', accnetwork: 'accn', cbssportsnetwork: 'cbssn', espnnews: 'espnews', secnetworkplus: 'secnetwork' };
-const net = (s) => { const k = String(s || '').toLowerCase().replace(/\b(hd|us|usa|fhd|4k)\b/g, '').replace(/[^a-z0-9]/g, ''); return ALIAS[k] || k; };
+const ALIAS = { espn1: 'espn', foxsports1: 'fs1', foxsports2: 'fs2', bigtennetwork: 'btn', accnetwork: 'accn', cbssportsnetwork: 'cbssn', espnnews: 'espnews', secnetworkplus: 'secnetwork' };
+const net = (s) => { const k = String(s || '').toLowerCase().replace(/\+/g, 'plus').replace(/\b(hd|us|usa|fhd|4k)\b/g, '').replace(/[^a-z0-9]/g, ''); return ALIAS[k] || k; };
 
 const ord = (n) => ['', '1st', '2nd', '3rd', '4th'][n] || `${n}th`;
 function normalize(ev) {
@@ -67,7 +67,7 @@ function normalize(ev) {
     state: st.state, // pre | in | post
     start: Date.parse(ev.date) || 0,
     nets,
-    detail: live ? period : st.state === 'post' ? 'Final' : '',
+    detail: live ? period : st.state === 'post' ? (String(st.shortDetail || '').replace(/^Final\/?/i, 'Final ').trim() || 'Final') : '',
     away: side(away), home: side(home),
     odds: (() => { const o = c.odds?.[0]; return o && (o.details || o.overUnder) ? { line: o.details || '', total: o.overUnder || '' } : null; })(),
     score,
@@ -96,30 +96,57 @@ export function want(league) {
 // Every league at once, for the scoreboard
 export const wantAll = () => { for (const l of new Set(LEAGUES.map((x) => x[1]))) want(l); };
 const clock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-let index = null; // network -> games that are live now or start within a few hours
+let index = null; // network -> games: live now, later today, final, and (once asked for) tomorrow
+// "Today" runs until 3 am, so a late game is still tonight's
+const cutoff = () => { const d = new Date(); d.setHours(27, 0, 0, 0); return d.getTime(); };
 function games() {
   if (index) return index;
   index = new Map();
-  const now = Date.now();
+  const cut = cutoff(), seen = new Set();
   for (const b of boards.values()) for (const e of b.events || []) {
-    if (e.state === 'post' || (e.state === 'pre' && e.start > now + 36 * 3600e3)) continue; // live now, or up to a day and a half ahead
-    for (const n of e.nets) { if (!index.has(n)) index.set(n, []); index.get(n).push(e); }
+    const key = `${e.title}|${e.start}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const when = e.state === 'in' ? 'live' : e.state === 'post' ? 'final' : e.start < cut ? 'later' : e.start < cut + 864e5 ? 'tomorrow' : '';
+    if (!when) continue;
+    const g = { ...e, when };
+    for (const n of e.nets) { if (!index.has(n)) index.set(n, []); index.get(n).push(g); }
   }
-  for (const list of index.values()) list.sort((a, b) => (a.state === 'in' ? 0 : 1) - (b.state === 'in' ? 0 : 1) || a.start - b.start);
+  const order = { live: 0, later: 1, final: 2, tomorrow: 3 };
+  for (const list of index.values()) list.sort((a, b) => order[a.when] - order[b.when] || (a.when === 'final' ? b.start - a.start : a.start - b.start));
   return index;
+}
+// Tomorrow's slate is only fetched when asked for
+const ymd = (t) => { const d = new Date(t); return `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, '0')}${String(d.getDate()).padStart(2, '0')}`; };
+export function wantTomorrow() {
+  const day = ymd(Date.now() + 864e5);
+  for (const l of new Set(LEAGUES.map((x) => x[1]))) {
+    const key = `${l}#${day}`, b = boards.get(key);
+    if ((b && Date.now() - b.at < (b.ok ? FRESH * 5 : RETRY)) || pending.has(key)) continue;
+    const job = get(`${BASE}${l}/scoreboard?dates=${day}`)
+      .then((d) => boards.set(key, { at: Date.now(), ok: true, events: (d.events || []).map(normalize).filter(Boolean) }))
+      .catch(() => boards.set(key, { at: Date.now(), ok: false, events: [] }))
+      .finally(() => { pending.delete(key); index = null; for (const f of listeners) f(); });
+    pending.set(key, job);
+  }
 }
 const sameDay = (t) => new Date(t).toDateString() === new Date().toDateString();
 const dayClock = (t) => (sameDay(t) ? clock(t) : `${new Date(t).toLocaleDateString([], { weekday: 'short' })} ${clock(t)}`);
-// Every game this channel is carrying that is live or still to come, live ones first. [] if none.
+// The scoreboard's name for a channel. Channels in an "ESPN PLUS" folder are ESPN+ feeds, not ESPN.
+const chKey = (ch) => {
+  let k = ch.net ? net(ch.net) : net(ch.clean || ch.name);
+  if (/\bPLUS\b|\+/i.test(String(ch.group || '')) && !k.endsWith('plus')) k += 'plus';
+  return k;
+};
+// Every game this channel is carrying: live, later today, finished, and tomorrow's. [] if none.
 export function gamesFor(ch) {
-  const list = games().get(ch.net ? net(ch.net) : net(ch.clean || ch.name)) || [];
-  const seen = new Set();
-  return list.filter((e) => { const k = `${e.title}|${e.start}`; if (seen.has(k)) return false; seen.add(k); return true; }).map((e) => ({
+  const list = games().get(chKey(ch)) || [];
+  return list.map((e) => ({
     key: `${e.title}|${e.start}`,
-    title: e.title,
-    live: e.state === 'in', start: e.start, away: e.away, home: e.home, odds: e.odds,
-    period: e.state === 'in' ? e.detail : `Starts ${dayClock(e.start)}`,
-    status: e.state === 'in' ? [e.detail, e.score].filter(Boolean).join(' · ') : `starts ${dayClock(e.start)}`,
+    title: e.title, when: e.when,
+    live: e.when === 'live', start: e.start, away: e.away, home: e.home, odds: e.odds,
+    period: e.when === 'live' ? e.detail : e.when === 'final' ? e.detail || 'Final' : `Starts ${dayClock(e.start)}`,
+    status: e.when === 'live' ? [e.detail, e.score].filter(Boolean).join(' · ') : e.when === 'final' ? [e.detail || 'Final', e.score].filter(Boolean).join(' · ') : `starts ${dayClock(e.start)}`,
   }));
 }
 export const onChange = (f) => { listeners.add(f); };
@@ -130,7 +157,7 @@ export function match(ch, p) {
   const league = leagueOf(p);
   const b = league && boards.get(league);
   if (!b?.ok) return null;
-  const me = ch.net ? net(ch.net) : net(ch.clean || ch.name);
+  const me = chKey(ch);
   if (!me) return null;
   const here = b.events.filter((e) => e.nets.has(me) && e.state !== 'post' && e.start < p.stop + 30 * 60_000);
   if (!here.length) return null;
