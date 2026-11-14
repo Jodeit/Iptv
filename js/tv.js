@@ -829,8 +829,14 @@ function initTV() {
   const ageLevel = (i) => AGE[vodMeta.get(i.id)?.cert || T().vod.peek(i)?.rated] || 0;
   // Looks up the age rating of every title in the list (TMDB allows plenty at once; results are cached in the profile)
   async function fetchAges() {
-    const run = ++ageRun, list = vodItems.filter((i) => !vodMeta.has(i.id)).slice(0, 4000), total = list.length;
-    if (!total) return;
+    const run = ++ageRun;
+    await T().vod.metaReady?.();
+    // Everything already known (from this device or the profile) is filled in at once
+    for (const i of vodItems) if (!vodMeta.has(i.id)) { const hit = T().vod.metaPeek?.(i); if (hit) vodMeta.set(i.id, hit); }
+    vodRefresh();
+    // Only the rest is looked up
+    const list = vodItems.filter((i) => !vodMeta.has(i.id)).slice(0, 4000), total = list.length;
+    if (!total || ageRun !== run) return;
     let next = 0, done = 0, last = performance.now();
     const status = () => { const s = chipsEl.querySelector('.vod-age'); if (s) s.textContent = done < total ? `Checking age ratings · ${done.toLocaleString()} of ${total.toLocaleString()}` : ''; };
     const worker = async () => {

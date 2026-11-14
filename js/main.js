@@ -321,13 +321,26 @@ const metaKey = (item) => {
   return `${item.kind === 'series' ? 't' : 'm'}:${item.tmdb || `${title.toLowerCase()}|${year || ''}`}`;
 };
 let metaBatch = {}, metaTimer = 0;
+// A second copy lives on this device only (browser storage, no size cap, one read per session): the profile keeps just
+// the newest 6,000 titles, and thousands of per-title cache reads are slow. A rating that was found stays for 30 days;
+// a title with none is asked again after a week.
+let localMeta = {};
+const localMetaReady = cacheGet('tmdb-meta-local').then((v) => { localMeta = v?.map || {}; }).catch(() => {});
+let localMetaTimer = 0;
+const saveLocalMeta = () => { clearTimeout(localMetaTimer); localMetaTimer = setTimeout(() => cachePut('tmdb-meta-local', { map: localMeta }).catch(() => {}), 4000); };
+const metaFresh = (rec) => !!rec && Date.now() - rec[2] < (rec[0] ? META_TTL : 7 * 86400000);
+const metaRecord = (item) => { const k = metaKey(item); const r = [profiles.doc.tmdbMeta?.[k], metaBatch[k], localMeta[k]].find(metaFresh); return r; };
 async function tmdbMeta(item) {
+  await localMetaReady;
   const key = metaKey(item);
-  const have = profiles.doc.tmdbMeta?.[key] || metaBatch[key];
-  if (have && Date.now() - have[2] < META_TTL) return { cert: have[0], pop: have[1] };
+  const have = metaRecord(item);
+  if (have) { if (!localMeta[key]) { localMeta[key] = have; saveLocalMeta(); } return { cert: have[0], pop: have[1] }; }
   const ref = await similar.tmdbId(item);
   const meta = ref ? await similar.meta(ref) : { cert: '', pop: 0 };
-  metaBatch[key] = [meta.cert, Math.round(meta.pop * 10) / 10, Date.now()];
+  const rec = [meta.cert, Math.round(meta.pop * 10) / 10, Date.now()];
+  metaBatch[key] = rec;
+  localMeta[key] = rec;
+  saveLocalMeta();
   clearTimeout(metaTimer);
   metaTimer = setTimeout(() => {
     const batch = metaBatch;
@@ -2214,6 +2227,10 @@ window.o3xr = {
       open: (item) => gallery.openDirect(item),
       // US age rating ('PG-13', 'TV-MA'…) from TMDB, cached in the profile for 30 days
       meta: (item) => tmdbMeta(item),
+      // What is already known about a title's rating, without asking anyone (undefined if not yet): the TV reads this
+      // for the whole list at once, and only looks up the rest
+      metaPeek: (item) => { const r = metaRecord(item); return r ? { cert: r[0] } : undefined; },
+      metaReady: () => localMetaReady,
       hasMeta: () => !!profiles.doc.tmdbKey,
       // A title's page: details for a film, the episode list for a show
       details: (item) => (kindOf(item) === 'series'
