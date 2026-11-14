@@ -24,6 +24,9 @@ const CATEGORY = [
   [/movie|film|cinema/i, 'Movies'], [/document|factual|nature|history|science/i, 'Documentary'], [/music|concert/i, 'Music'],
 ];
 
+const MOVIE_NETWORK = /\b(hbo|showtime|cinemax|starz|encore|epix|mgm\+?|tcm|movies?|films?|cine|flix|paramount\+? with showtime)\b/i;
+const EVENT = /\b(live|tonight|today|show|special|awards?|ceremony|festival|parade|marathon|coverage|news|report|hour|season|episodes?)\b/i;
+
 function fromText(text) {
   for (const [g, re] of RULES) if (re.test(text)) return g;
   return null;
@@ -36,5 +39,10 @@ export function genreOf(p, ch) {
   if (t) return { genre: t, via: 'text' };
   const c = fromText(`${ch?.name || ''} ${ch?.group || ''}`);
   if (c) return { genre: c, via: 'channel' };
+  // Nothing in the text said what it is. A long programme is a film, mostly: on a movie network from 80 minutes
+  // (HBO Signature also airs hour-long series), anywhere else from 95 and only when it doesn't sound like an event.
+  const mins = p?.stop > p?.start ? (p.stop - p.start) / 60000 : 0;
+  if (mins >= 80 && MOVIE_NETWORK.test(ch?.name || '')) return { genre: 'Movies', via: 'length' };
+  if (mins >= 95 && !EVENT.test(p?.title || '')) return { genre: 'Movies', via: 'length' };
   return { genre: 'Shows', via: 'default' };
 }
