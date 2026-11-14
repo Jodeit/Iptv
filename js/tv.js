@@ -631,7 +631,7 @@ function initTV() {
   function openHome(opts = {}) {
     if (screen() === 'setup') return;
     hideOsd();
-    guideSession = document.documentElement.classList.contains('tv-picture') && !!O().state.current;
+    guideSession = !opts.menu && document.documentElement.classList.contains('tv-picture') && !!O().state.current; // the picture window is for the guide, not the main menu
     // From the picture you get the live guide; coming back from a title's page you stay where you were (Movies / Shows)
     if (guideSession && !opts.keepTab && tab !== 'live' && liveAll().length) { tab = 'live'; group = ''; genre = ''; }
     // ▲▼ from the picture: the playing channel's folder, as a plain channel list (put back as it was when Home closes)
@@ -1397,7 +1397,7 @@ function initTV() {
       closeHome();
       return true;
     }
-    if (s === 'player') { openHome(); return true; } // Back while watching opens the guide instead of quitting
+    if (s === 'player') { openHome({ menu: true }); return true; } // Back while watching opens the main menu (◀ opens the guide)
     return false;
   }
 
