@@ -1756,7 +1756,7 @@ function renderProfiles() {
   }
   $('pfStatus').textContent = !active
     ? 'Not synced. Create a profile or link this device to sync.'
-    : (st.state === 'synced' ? `Synced ${ago(st.at)}` : st.message || 'Synced') + ` · ${profiles.doc.playlists.length} playlist${profiles.doc.playlists.length === 1 ? '' : 's'}`;
+    : (st.state === 'synced' ? `Synced ${ago(st.at)}` : st.message || 'Synced') + ` · ${profiles.doc.playlists.length} playlist${profiles.doc.playlists.length === 1 ? '' : 's'} · #${active.id.slice(0, 4)} v${active.version}`;
   $('pfActions').classList.toggle('hidden', !active);
   $('pfDanger').classList.toggle('hidden', !active);
   if (active && document.activeElement !== $('pfRename')) $('pfRename').value = active.name;

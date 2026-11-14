@@ -297,7 +297,7 @@ function initTV() {
     const p = P(), a = p.active(), st = p.status;
     if (!a) { line.textContent = 'Link a phone to get your playlists'; bar.classList.remove('on'); return; }
     const busy = st.state === 'syncing' || st.state === 'pending';
-    const detail = `${p.doc.playlists.length} playlist${p.doc.playlists.length === 1 ? '' : 's'} · v${a.version}`;
+    const detail = `${p.doc.playlists.length} playlist${p.doc.playlists.length === 1 ? '' : 's'} · #${a.id.slice(0, 4)} v${a.version}`;
     line.className = `tvh-sync ${st.state === 'offline' || st.state === 'error' ? 'bad' : ''}`;
     line.textContent = busy ? st.message || 'Syncing…'
       : st.state === 'synced' ? `Synced ${ageText(st.at)} · ${detail}`
