@@ -762,7 +762,7 @@ function setChannels(channels, label, source = null) {
   state.group = '';
   rebuildLibrary();
   showAccount(source);
-  toast(`${label}: ${state.library.length.toLocaleString()} channels${state.library.length < channels.length ? ' after filter' : ''}`);
+  if (!isTV) toast(`${label}: ${state.library.length.toLocaleString()} channels${state.library.length < channels.length ? ' after filter' : ''}`); // the TV has its own status line
   // Jump to the list after loading from Sources, but not when a profile switch or sync
   // reloads the playlist while you're on another tab.
   if (document.querySelector('.tab.active')?.dataset.tab === 'sources') {
@@ -2170,6 +2170,9 @@ if (interrupted && Date.now() - interrupted.at < 10 * 60 * 1000) {
 else if (last?.local && store.get('localText', null)) setChannels(parseM3U(store.get('localText', '')), last.local);
 else loadBuiltinDemo();
 
+const vodClosedListeners = new Set(); // the TV's Movies / Shows grid wants to know when a title's page is backed out of
+gallery.app.onClosed = (viaBack) => { for (const f of vodClosedListeners) f(viaBack); };
+
 // Debug handle for the console.
 window.o3xr = {
   theater, vrPanel, state, settings, profiles, gallery, ratings, similar, loadPlaylist: loadPlaylistUrl,
@@ -2187,6 +2190,18 @@ window.o3xr = {
     openGallery(kind) { state.kind = kind; rebuildGroups(); guideView.close(); gallery.open(kind); },
     galleryOpen: () => gallery.isOpen(),
     source: () => state.source,
+    // The TV's Movies and Shows grids
+    vod: {
+      categories: (kind) => gallery.app.categories(kind),
+      load: (kind, id) => gallery.app.loadCategory(kind, id),
+      continueList: (kind) => gallery.app.continueList(kind).map((x) => x.item),
+      progress: (item) => getProgress(item),
+      title: (item) => parseTitle(item.name),
+      rating: (item) => ratings.get(item),
+      peek: (item) => ratings.peek(item),
+      open: (item) => gallery.openDirect(item),
+      onClosed: (f) => vodClosedListeners.add(f),
+    },
     // Rotten Tomatoes score and poster for a film title (undefined while it is being looked up)
     rating: (title) => ratings.get({ name: title, kind: 'movie' }),
     onRating: (f) => ratingListeners.add(f),

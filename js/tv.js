@@ -50,7 +50,7 @@ function initTV() {
   const tabsEl = home.querySelector('.tvh-tabs'), chipsEl = home.querySelector('.tvh-chips'), bodyEl = home.querySelector('.tvh-body'), infoEl = home.querySelector('.tvh-info');
 
   // ---------- State ----------
-  let tab = 'live';            // 'live' | 'phone' (Movies and Shows open the poster gallery)
+  let tab = 'live';            // 'live' | 'phone' | 'vod' (Movies and Shows)
   let group = '';              // '' = all, FAV = favorites, else a group name
   const FAV = '\u0000fav';
   // 'channels' browses the provider's folders; 'now' groups by what is airing right now (Sports, Movies, News…)
@@ -136,7 +136,11 @@ function initTV() {
     const f = document.activeElement?.closest?.('.tvh-row');
     if (f) paintInfo(listCache[+f.dataset.i]);
   });
-  const onRatingArrived = () => {
+  const onRatingArrived = (item) => {
+    if (tab === 'vod' && isOpen.home()) {
+      for (const row of bodyEl.querySelectorAll('.tvh-row.vod')) { const it = listCache[+row.dataset.i]; if (it && (!item || it.id === item.id)) fillVod(row, it); }
+      return;
+    }
     if (!posterView() || !isOpen.home()) return;
     for (const row of bodyEl.querySelectorAll('.tvh-row.movie')) paintRow(row, listCache[+row.dataset.i]);
   };
@@ -303,10 +307,15 @@ function initTV() {
       const b = el('button', 'tvh-tab', esc(label));
       b.dataset.tab = k;
       b.onclick = () => {
-        if (k === 'movie' || k === 'series') { closeHome(); T().openGallery(k); } else { goTab(k); commitView(); focusFirstInBody(); }
+        goTab(k); commitView(); focusFirstInBody();
       };
-      // Channels, On now and Phone switch as soon as they get focus, so ◀ ▶ browses without pressing OK.
-      b.onfocus = () => { if (k !== 'movie' && k !== 'series') goTab(k); };
+      // Tabs switch as soon as they get focus, so ◀ ▶ browses without pressing OK. Movies and Shows wait a moment, so
+      // passing over them does not fetch a category.
+      b.onfocus = () => {
+        clearTimeout(vodTabTimer);
+        if (k === 'movie' || k === 'series') vodTabTimer = setTimeout(() => { if (document.activeElement === b) goTab(k); }, 350);
+        else goTab(k);
+      };
       tabsEl.append(b);
     }
     tabsEl.append(ver);
@@ -315,7 +324,7 @@ function initTV() {
   const markTabs = () => {
     for (const b of tabsEl.querySelectorAll('.tvh-tab')) {
       const k = b.dataset.tab;
-      b.classList.toggle('on', k === 'phone' ? tab === 'phone' : k === 'live' ? tab === 'live' && view === 'channels' : k === 'now' ? tab === 'live' && view === 'now' : false);
+      b.classList.toggle('on', k === 'movie' || k === 'series' ? tab === 'vod' && vodKind === k : k === 'phone' ? tab === 'phone' : k === 'live' ? tab === 'live' && view === 'channels' : k === 'now' ? tab === 'live' && view === 'now' : false);
     }
   };
   // Remember the view when you actually use it (OK, or ▼ into the list), not merely by passing over its tab.
@@ -326,6 +335,13 @@ function initTV() {
   }
   // Switch what the body shows: 'live' (Channels), 'now' (On now) or 'phone'.
   function goTab(k) {
+    if (k === 'movie' || k === 'series') {
+      if (tab === 'vod' && vodKind === k) { markTabs(); return; }
+      tab = 'vod'; vodKind = k;
+      markTabs();
+      renderBody();
+      return;
+    }
     const nextTab = k === 'phone' ? 'phone' : 'live';
     const nextView = k === 'now' ? 'now' : 'channels';
     if (nextTab === tab && (nextTab === 'phone' || nextView === view)) { markTabs(); return; }
@@ -343,7 +359,8 @@ function initTV() {
 
   function renderChips() {
     chipsEl.innerHTML = '';
-    chipsEl.classList.toggle('hidden', tab !== 'live');
+    chipsEl.classList.toggle('hidden', tab !== 'live' && tab !== 'vod');
+    if (tab === 'vod') { renderVodChips(); return; }
     if (tab !== 'live') return;
     const add = (k, label, n, current, set) => {
       const b = el('button', `tvh-chip${k === current ? ' on' : ''}`, `<span class="nm">${esc(label)}</span><span class="n">${n}</span>`);
@@ -396,6 +413,7 @@ function initTV() {
     b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
   }
   function rowFor(ch, i) {
+    if (tab === 'vod') return vodCard(ch, i);
     const b = el('button', 'tvh-row');
     const mv = posterView() && nowMap.get(ch);
     if (mv) {
@@ -494,9 +512,10 @@ function initTV() {
   }
   // Moving right into the list tucks the category column away into a thin drawer; moving left reopens it.
   const mainEl = home.querySelector('.tvh-main');
-  home.addEventListener('focusin', (e) => { mainEl.classList.toggle('drawer', tab === 'live' && bodyEl.contains(e.target)); });
+  home.addEventListener('focusin', (e) => { mainEl.classList.toggle('drawer', (tab === 'live' || tab === 'vod') && bodyEl.contains(e.target)); });
   bodyEl.addEventListener('focusin', (e) => {
     const row = e.target.closest?.('.tvh-row');
+    if (row && tab === 'vod') { vodFocusI = +row.dataset.i; return; }
     if (row) { requestAround(+row.dataset.i); paintInfo(listCache[+row.dataset.i]); }
   });
 
@@ -506,6 +525,7 @@ function initTV() {
     bodyEl.className = `tvh-body ${tab}${tab === 'live' && scoreView() ? ' grid' : tab === 'live' && posterView() ? ' grid posters' : ''}`; // games and films are tiles
     infoEl.classList.add('hidden');
     if (tab === 'phone') return renderPhone();
+    if (tab === 'vod') return renderVod();
     listCache = visibleList();
     shown = 0;
     if (!listCache.length) {
@@ -654,6 +674,137 @@ function initTV() {
     if (f) paintInfo(listCache[at]);
   }, 1500);
 
+  // ---------- Movies and Shows ----------
+  // Filters and categories in the left column, posters in the grid, like the films in On now. OK opens the title's
+  // page (details, resume, episodes); Back from there returns to the same spot in the grid.
+  let vodTabTimer = 0, vodKind = 'movie', vodItems = [], vodSeq = 0, vodFocusI = 0, vodRestore = null, vodReturn = false;
+  const vodCats = { movie: '', series: '' };
+  const vodF = { sort: 'added', rating: 0, year: '', genre: '', fav: false, unwatched: false };
+  const CONTINUE = '__continue';
+  const SORTS = [['added', 'Recently added'], ['rt', 'Rotten Tomatoes'], ['rating', 'Top rated'], ['year', 'Newest'], ['title', 'A–Z']];
+  const YEARS = [['', 'Any'], ['2020', '2020s'], ['2010', '2010s'], ['2000', '2000s'], ['1990', '1990s'], ['old', 'Before 1990']];
+  const vodIO = new IntersectionObserver((es) => {
+    // Scores cost a lookup each, so only posters that stay on screen for a moment ask
+    for (const e of es) {
+      clearTimeout(e.target._t);
+      if (e.isIntersecting) e.target._t = setTimeout(() => { const it = listCache[+e.target.dataset.i]; if (it) T().vod.rating(it); }, 500);
+    }
+  }, { root: bodyEl });
+  const vodScore = (i) => {
+    const r = T().vod.peek(i), imdb = parseFloat(r?.imdb);
+    return imdb > 0 ? imdb : r?.rt != null ? r.rt / 10 : +i.rating || 0;
+  };
+  const vodGenres = () => [...new Set(vodItems.flatMap((i) => String(i.genre || '').split(/[,/]/).map((g) => g.trim()).filter(Boolean)))].sort((a, b) => a.localeCompare(b));
+  function vodList() {
+    const f = vodF;
+    const out = vodItems.filter((i) => {
+      if (f.rating && vodScore(i) < f.rating) return false;
+      if (f.year) { if (!i.year) return false; if (f.year === 'old' ? i.year >= 1990 : i.year < +f.year || i.year >= +f.year + 10) return false; }
+      if (f.genre && !String(i.genre || '').split(/[,/]/).some((g) => g.trim() === f.genre)) return false;
+      if (f.fav && !T().isFav(i.id)) return false;
+      if (f.unwatched) { const p = T().vod.progress(i); if (p?.d && p.t / p.d > 0.9) return false; }
+      return true;
+    });
+    const by = {
+      added: (a, b) => (b.added || 0) - (a.added || 0),
+      rt: (a, b) => (T().vod.peek(b)?.rt ?? -1) - (T().vod.peek(a)?.rt ?? -1),
+      rating: (a, b) => (b.rating || 0) - (a.rating || 0),
+      year: (a, b) => (b.year || 0) - (a.year || 0),
+      title: (a, b) => cleanName(a.name).localeCompare(cleanName(b.name)),
+    }[f.sort];
+    return out.sort(by);
+  }
+  function renderVodChips() {
+    const keep = document.activeElement?.closest?.('.tvh-chips') ? document.activeElement.dataset.key : null;
+    chipsEl.innerHTML = '';
+    const mode = (key, label, value, press) => {
+      const b = el('button', 'tvh-chip mode', `<span class="nm">${esc(label)}</span><span class="n">${esc(value)}</span>`);
+      b.dataset.key = key;
+      b.onclick = () => { press(); renderVodChips(); renderVodList(); };
+      chipsEl.append(b);
+    };
+    const cycle = (list, cur) => list[(list.indexOf(cur) + 1) % list.length];
+    const si = SORTS.findIndex(([k]) => k === vodF.sort);
+    mode('sort', 'Sort', SORTS[si][1], () => { vodF.sort = SORTS[(si + 1) % SORTS.length][0]; });
+    mode('rating', 'Rating', vodF.rating ? `${vodF.rating}+` : 'Any', () => { vodF.rating = cycle([0, 6, 7, 8], vodF.rating); });
+    const yi = YEARS.findIndex(([k]) => k === vodF.year);
+    mode('year', 'Year', YEARS[yi][1], () => { vodF.year = YEARS[(yi + 1) % YEARS.length][0]; });
+    const genres = vodGenres();
+    if (genres.length) mode('genre', 'Genre', vodF.genre || 'Any', () => { vodF.genre = cycle(['', ...genres], vodF.genre); });
+    mode('fav', '★ Favorites', vodF.fav ? 'On' : 'Off', () => { vodF.fav = !vodF.fav; });
+    mode('unwatched', 'Hide watched', vodF.unwatched ? 'On' : 'Off', () => { vodF.unwatched = !vodF.unwatched; });
+    chipsEl.append(el('div', 'tvh-gstatus', 'Categories'));
+    const cur = vodCats[vodKind];
+    const cats = [...(T().vod.continueList(vodKind).length ? [{ id: CONTINUE, name: 'Continue watching' }] : []), ...(T().vod.categories(vodKind) || [])];
+    for (const c of cats.slice(0, 200)) {
+      const b = el('button', `tvh-chip${c.id === cur ? ' on' : ''}`, `<span class="nm">${esc(c.name)}</span>`);
+      b.dataset.key = `c:${c.id}`;
+      b.onclick = () => { vodCats[vodKind] = c.id; renderVodChips(); renderVod(); chipsEl.querySelector('.tvh-chip.on:not(.mode)')?.focus(); };
+      chipsEl.append(b);
+    }
+    if (keep) chipsEl.querySelector(`.tvh-chip[data-key="${CSS.escape(keep)}"]`)?.focus();
+  }
+  async function renderVod() {
+    const seq = ++vodSeq;
+    bodyEl.className = 'tvh-body vod grid posters';
+    bodyEl.innerHTML = '';
+    infoEl.classList.add('hidden');
+    const cats = [...(T().vod.continueList(vodKind).length ? [{ id: CONTINUE }] : []), ...(T().vod.categories(vodKind) || [])];
+    if (!cats.some((c) => c.id === vodCats[vodKind])) vodCats[vodKind] = cats[0]?.id || '';
+    const cat = vodCats[vodKind];
+    if (!cat) { bodyEl.innerHTML = '<p class="tvh-empty">Nothing here yet.</p>'; listCache = []; return; }
+    bodyEl.innerHTML = '<p class="tvh-empty">Loading…</p>';
+    try {
+      vodItems = cat === CONTINUE ? T().vod.continueList(vodKind) : await T().vod.load(vodKind, cat);
+    } catch (e) {
+      if (seq === vodSeq) bodyEl.innerHTML = `<p class="tvh-empty">Couldn’t load this category: ${esc(e.message)}</p>`;
+      return;
+    }
+    if (seq !== vodSeq) return;
+    if (!chipsEl.contains(document.activeElement)) renderVodChips(); // genres are known now
+    renderVodList();
+  }
+  function renderVodList() {
+    vodIO.disconnect();
+    bodyEl.className = 'tvh-body vod grid posters';
+    bodyEl.innerHTML = '';
+    listCache = vodList();
+    shown = 0;
+    if (!listCache.length) { bodyEl.innerHTML = `<p class="tvh-empty">${vodItems.length ? 'Nothing matches these filters.' : 'Nothing in this category.'}</p>`; return; }
+    addRows();
+    if (vodRestore != null) {
+      const i = vodRestore; vodRestore = null;
+      while (shown <= i && shown < listCache.length) addRows();
+      const row = bodyEl.querySelector(`.tvh-row[data-i="${i}"]`) || bodyEl.querySelector('.tvh-row');
+      row?.focus(); row?.scrollIntoView({ block: 'center' });
+    }
+  }
+  function vodCard(item, i) {
+    const b = el('button', 'tvh-row movie vod');
+    b.dataset.i = i;
+    fillVod(b, item);
+    vodIO.observe(b);
+    return b;
+  }
+  function fillVod(b, item) {
+    const r = T().vod.peek(item), { title } = T().vod.title(item);
+    const poster = item.logo || r?.poster;
+    const badge = r?.rt != null ? `<span class="pc-rt"><i>🍅</i>${r.rt}%</span>` : r?.imdb ? `<span class="pc-rt"><i>★</i>${esc(r.imdb)}</span>` : +item.rating > 0 ? `<span class="pc-rt"><i>★</i>${(+item.rating).toFixed(1)}</span>` : '';
+    const p = T().vod.progress(item);
+    const meta = [item.year || r?.year, String(item.genre || r?.genre || '').split(/[,/]/)[0].trim()].filter(Boolean).join(' · ');
+    b.innerHTML = `<span class="pc-img">${poster ? `<img alt="" src="${esc(poster)}" referrerpolicy="no-referrer">` : `<em>${esc(title || item.name)}</em>`}${badge}</span>
+      <b>${esc(title || item.name)}</b><small>${esc(meta)}</small>${p?.d ? `<i class="prog on"><u style="width:${Math.round(Math.min(100, (p.t / p.d) * 100))}%"></u></i>` : ''}<span class="star">★</span>`;
+    const img = b.querySelector('img');
+    if (img) img.onerror = () => { const em = el('em', '', esc(title || item.name)); img.replaceWith(em); };
+    b.querySelector('.star').style.visibility = T().isFav(item.id) ? 'visible' : 'hidden';
+  }
+  function openVod(item, i) {
+    vodRestore = i;
+    vodReturn = true;
+    closeHome();
+    T().vod.open(item);
+  }
+
   // ---------- Setup: link a phone ----------
   const body = $('tvsBody');
   const fmt = (c) => `${c.slice(0, 4)} ${c.slice(4)}`;
@@ -800,7 +951,7 @@ function initTV() {
       return false;
     }
     if (t?.classList.contains('tvh-row')) {
-      const chip = tab === 'live' && !chipsEl.classList.contains('hidden') ? (chipsEl.querySelector('.tvh-chip.on') || chipsEl.querySelector('.tvh-chip')) : null;
+      const chip = (tab === 'live' || tab === 'vod') && !chipsEl.classList.contains('hidden') ? (chipsEl.querySelector('.tvh-chip.on') || chipsEl.querySelector('.tvh-chip')) : null;
       const grid = bodyEl.classList.contains('grid');
       const first = bodyEl.querySelector('.tvh-row');
       if (key === 'ArrowLeft') {
@@ -908,7 +1059,8 @@ function initTV() {
     const t = document.activeElement;
     if (t?.classList.contains('tvh-row') && !holdFired) {
       const ch = listCache[+t.dataset.i];
-      if (ch) { closeHome(); T().play(ch); }
+      if (ch && tab === 'vod') openVod(ch, +t.dataset.i);
+      else if (ch) { closeHome(); T().play(ch); }
     }
     holdFired = false;
   }, true);
@@ -919,6 +1071,7 @@ function initTV() {
     T().toggleFav(ch);
     row.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
     T().toast(T().isFav(ch.id) ? 'Added to favorites' : 'Removed from favorites');
+    if (tab === 'vod') return;
     if (group === FAV) renderBody();
     else renderChips();
   }
@@ -964,6 +1117,7 @@ function initTV() {
   // ---------- Boot ----------
   const boot = () => {
     T().onRating?.(onRatingArrived);
+    T().vod?.onClosed((viaBack) => { if (viaBack && vodReturn) { vodReturn = false; openHome(); } });
     import('./qr.js').catch(() => {}); // warm the cache so the setup screen draws its code at once
     T().video.controls = false;
     // Android WebView draws a large grey play icon on a <video> that has nothing to show; a transparent poster replaces it.
