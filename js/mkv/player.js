@@ -9,18 +9,20 @@
 import { ByteReader } from './ebml.js';
 import { MatroskaDemuxer, ID } from './demux.js';
 import { Remuxer } from './remux.js';
+import { AudioTranscoder } from '../audio-transcode.js';
 
 const BEHIND = 30; // seconds kept behind the playhead
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export class MkvPlayer {
-  constructor(video, url, { onWarn = () => {}, onFatal = () => {}, onLog = () => {}, startAt = 0, ahead = 45, preroll = 0 } = {}) {
+  constructor(video, url, { onWarn = () => {}, onNote = () => {}, onFatal = () => {}, onLog = () => {}, startAt = 0, ahead = 45, preroll = 0 } = {}) {
     this.maxAhead = ahead; // seconds buffered before pausing the download
     this.preroll = preroll; // seconds to build up before playback may start
     this.video = video;
     this.url = url;
     this.onWarn = onWarn;
+    this.onNote = onNote; // information, not a problem
     this.onFatal = onFatal;
     this.onLog = onLog;
     this.startAt = startAt;
@@ -75,6 +77,11 @@ export class MkvPlayer {
     this.remux = new Remuxer(this.demux, { canPlay });
     const setup = this.remux.setup(first);
     for (const w of setup.warnings) this.onWarn(w);
+    for (const n of setup.notes || []) this.onLog(`MKV: ${n}`);
+    if (setup.audio?.transcode) {
+      this.transcoder = new AudioTranscoder({ onLog: (l) => this.onLog(`MKV: ${l}`) });
+      this.onNote('Converting this audio so it can play. The first time, the decoder (about 32 MB) has to download.');
+    }
     this.onLog(`MKV: ${[setup.video && `video ${setup.video.cfg.codec}`, setup.audio && `audio ${setup.audio.cfg.codec}`,
       setup.subs.length && `${setup.subs.length} subtitle track(s)`].filter(Boolean).join(', ')}; ${this.demux.duration ? `${Math.round(this.demux.duration / 60)} min` : 'unknown length'}; seeking ${this.rangeOK ? 'supported' : 'not supported by server'}`);
 
@@ -133,6 +140,15 @@ export class MkvPlayer {
     const out = this.remux.process(c);
     if (out.video && this.buffers.video) await this.append(this.buffers.video, out.video);
     if (out.audio && this.buffers.audio) await this.append(this.buffers.audio, out.audio);
+    if (out.audioBlocks && this.transcoder && this.buffers.audio) {
+      try {
+        const conv = await this.transcoder.convert(this.remux.sel.audio.transcode, out.audioBlocks);
+        if (conv && !this.dead) await this.append(this.buffers.audio, this.remux.aacFragment(conv.aus, conv.start));
+        this.transcoder.logStats();
+      } catch (err) {
+        if (!this.audioFailed) { this.audioFailed = true; this.onWarn(`Couldn’t convert the audio (${err.message}); playing without sound.`); }
+      }
+    }
     for (const cue of out.cues) this.addCue(cue);
   }
 
@@ -202,6 +218,7 @@ export class MkvPlayer {
       try { sb.remove(0, Infinity); await idle(sb); } catch { /* nothing buffered */ }
     }
     this.remux.reset();
+    this.transcoder?.reset(); // the next audio does not follow what was converted last
     this.r = await this.open(this.demux.segmentStart + pos);
     this.demux.pending = null;
     if (!this.demux.cues.length) await resyncToCluster(this.r);
@@ -249,6 +266,7 @@ export class MkvPlayer {
     this.dead = true;
     this.video.removeEventListener('seeking', this.onSeeking);
     this.r?.cancel();
+    this.transcoder?.destroy();
     for (const el of this.trackEls) el.remove();
     if (this.objectUrl) URL.revokeObjectURL(this.objectUrl);
   }
