@@ -985,7 +985,14 @@ function initTV() {
       synthetic = false;
       return true;
     }
-    if (s === 'home') { closeHome(); return true; } // straight back to the picture, no channel banner
+    if (s === 'home') {
+      // With a picture behind it, Back returns to the picture (no channel banner). With nothing playing there is
+      // nowhere to return to, so Back leaves the app.
+      if (!document.documentElement.classList.contains('tv-picture') || !O().state.current) return false;
+      closeHome();
+      return true;
+    }
+    if (s === 'player') { openHome(); return true; } // Back while watching opens the guide instead of quitting
     return false;
   }
 
