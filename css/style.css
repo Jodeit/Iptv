@@ -921,3 +921,9 @@ html.setup-open .toast { display: none !important; }
 .tvs-qr:empty { background: rgba(60,50,30,.08); border-radius: 18px; }
 .tvs-scan .muted { font-size: 15px; margin: 4px 0 0; }
 .tvs-scan .tvs-code { font-size: 26px; letter-spacing: .1em; margin-top: 2px; }
+
+/* Channel logos are often white: give them a warm slate tile so they read on the cream glass */
+html.tv .tvh-row img:not([style*="none"]), html.tv .tvh-info img {
+  background: linear-gradient(160deg, rgba(88,70,48,.78), rgba(54,42,28,.86)); border-radius: 9px; padding: 4px 6px;
+  box-shadow: 0 2px 6px rgba(60,44,20,.22), inset 0 1px 0 rgba(255,255,255,.18); box-sizing: border-box;
+}

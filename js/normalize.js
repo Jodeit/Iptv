@@ -23,6 +23,9 @@ export const MARKET_ALIASES = {
   AUSTIN: ['KVUE', 'KXAN', 'KEYE', 'KTBC', 'KLRU', 'KNVA', 'KAKW'],
 };
 
+// Used when no home market has been typed in. Switch it off with "only local stations" in the content filter.
+export const DEFAULT_MARKET = 'Austin';
+
 const tokens = (s) => String(s).toUpperCase().split(/[^A-Z0-9]+/).filter(Boolean);
 
 export function cleanName(raw, group = '') {

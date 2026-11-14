@@ -13,6 +13,7 @@
 
 import { kindOf } from './filter.js';
 import { genreOf, GENRES } from './genre.js';
+import * as sports from './sports.js';
 import { VERSION } from './version.js';
 
 if (/TunerTV/.test(navigator.userAgent)) initTV();
@@ -85,11 +86,29 @@ function initTV() {
     const g = T().guide, t = nowAt, out = [];
     for (const ch of liveAll()) {
       const nn = g.peek(ch, t);
-      if (nn?.now) out.push({ ch, p: nn.now, nx: nn.next, genre: genreOf(nn.now, ch).genre });
+      if (!nn?.now) continue;
+      const genre = genreOf(nn.now, ch).genre;
+      const x = { ch, p: nn.now, nx: nn.next, genre };
+      if (genre === 'Sports') { sports.want(sports.leagueOf(nn.now)); x.sp = sports.match(ch, nn.now); }
+      out.push(x);
     }
     nowData = out;
     nowMap = new Map(out.map((x) => [x.ch, x]));
   }
+  // A scoreboard arrived: swap "College Football" for the game in the rows already on screen
+  sports.onChange(() => {
+    if (view !== 'now' || !isOpen.home()) return;
+    computeNow(true);
+    for (const row of bodyEl.querySelectorAll('.tvh-row')) {
+      const ch = listCache[+row.dataset.i], it = ch && nowMap.get(ch);
+      if (!it) continue;
+      row.querySelector('b').textContent = it.sp?.title || it.p.title;
+      paintRow(row, ch);
+    }
+    const f = document.activeElement?.closest?.('.tvh-row');
+    if (f) paintInfo(listCache[+f.dataset.i]);
+  });
+  setInterval(() => { if (view === 'now' && isOpen.home()) for (const x of nowData) if (x.genre === 'Sports') sports.want(sports.leagueOf(x.p)); }, 60000);
   const nowCounts = () => { const m = new Map(); for (const x of nowData) m.set(x.genre, (m.get(x.genre) || 0) + 1); return m; };
   // One big request for the whole lineup when the provider offers it, else a slow background crawl.
   function ensureGuide() {
@@ -327,7 +346,7 @@ function initTV() {
     b.dataset.i = i; // position in listCache; ids can repeat when a provider lists a stream twice
     b.classList.toggle('playing', ch === O().state.current);
     b.innerHTML = `<img alt="" referrerpolicy="no-referrer"><span class="meta"><b></b><small></small><i class="prog"><u></u></i></span><span class="star">★</span>`;
-    b.querySelector('b').textContent = view === 'now' && nowMap.get(ch) ? nowMap.get(ch).p.title : (ch.clean || cleanName(ch.name));
+    b.querySelector('b').textContent = view === 'now' && nowMap.get(ch) ? (nowMap.get(ch).sp?.title || nowMap.get(ch).p.title) : (ch.clean || cleanName(ch.name));
     if (ch.logo) b.querySelector('img').src = ch.logo; else b.querySelector('img').style.display = 'none';
     b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
     paintRow(b, ch);
@@ -338,7 +357,7 @@ function initTV() {
       const it = nowMap.get(ch);
       if (!it) return;
       const small = b.querySelector('small'), prog = b.querySelector('.prog');
-      small.textContent = `${ch.clean || cleanName(ch.name)}  ·  until ${fmtClock(it.p.stop)}`;
+      small.textContent = `${ch.clean || cleanName(ch.name)}  ·  ${it.sp?.status ? `${it.sp.status}  ·  ` : ''}until ${fmtClock(it.p.stop)}`;
       small.style.display = '';
       prog.classList.add('on');
       prog.firstElementChild.style.width = `${Math.round(Math.min(100, Math.max(0, ((Date.now() - it.p.start) / (it.p.stop - it.p.start)) * 100)))}%`;
@@ -385,7 +404,9 @@ function initTV() {
     const parts = [`<div class="i-name">${esc((ch.clean || cleanName(ch.name)))}</div>`, `<div class="i-meta">${esc(ch.group || '')}</div>`];
     if (nn?.now) {
       const pct = Math.min(100, Math.max(0, ((Date.now() - nn.now.start) / (nn.now.stop - nn.now.start)) * 100));
-      parts.push(`<div class="i-now"><b>Now</b> ${esc(nn.now.title)} <span>until ${esc(fmtClock(nn.now.stop))}</span></div>`);
+      const sp = nowMap.get(ch)?.sp;
+      parts.push(`<div class="i-now"><b>Now</b> ${esc(sp ? `${sp.title}` : nn.now.title)} <span>${esc(sp?.status ? `${sp.status} · ` : '')}until ${esc(fmtClock(nn.now.stop))}</span></div>`);
+      if (sp) parts.push(`<div class="i-meta">${esc(nn.now.title)}</div>`);
       parts.push(`<div class="i-bar"><u style="width:${pct}%"></u></div>`);
       if (nn.next) parts.push(`<div class="i-next"><b>Next</b> ${esc(nn.next.title)} <span>${esc(fmtClock(nn.next.start))}</span></div>`);
       if (view === 'now' && nn.now.desc && nn.now.desc.length > 3) parts.push(`<div class="i-desc">${esc(nn.now.desc.slice(0, 220))}</div>`);

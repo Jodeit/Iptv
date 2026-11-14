@@ -6,7 +6,7 @@ import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, 
 import { XtreamLibrary } from './xtream.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
 import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
-import { annotate, localFilter, dedupe } from './normalize.js';
+import { annotate, localFilter, dedupe, DEFAULT_MARKET } from './normalize.js';
 import { VERSION } from './version.js';
 import { Profiles, emptyDoc, canSync, capMeta, mergeProgress } from './profiles.js';
 import { Guide } from './epg.js';
@@ -1096,8 +1096,8 @@ function rebuildLibrary() {
     }
   }
   // Local stations: with a home market set, other cities' ABC / CBS / NBC / FOX / PBS / CW… stations are hidden
-  if (cf.market?.trim() && cf.localOnly !== false) {
-    const kept = localFilter(lib, cf.market);
+  if (cf.localOnly !== false) {
+    const kept = localFilter(lib, cf.market?.trim() || DEFAULT_MARKET);
     if (kept.length < lib.length) {
       state.filterNote += ` · ${(lib.length - kept.length).toLocaleString()} other-city stations hidden`;
       lib = kept;
@@ -1111,7 +1111,7 @@ function rebuildLibrary() {
     }
   }
   state.library = lib;
-  $('cfToggle').classList.toggle('on', cf.on || !!cf.market?.trim());
+  $('cfToggle').classList.toggle('on', cf.on || (cf.localOnly !== false));
 
   const xl = state.xlib;
   const hasVod = xl ? !!(xl.cats.movie.length || xl.cats.series.length) : lib.some((c) => kindOf(c) !== 'live');

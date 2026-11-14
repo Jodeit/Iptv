@@ -367,3 +367,9 @@ pop-out player are hidden there; setup and settings happen on the phone and sync
    - put the APK on a USB stick / host it and install with the **Downloader** app (allow "Install unknown apps" for it).
 
 To build locally instead: `cd android-tv && gradle :app:assembleRelease [-PappUrl=https://…]` with the Android SDK installed.
+
+## On now: game details, logos and home market
+
+- **Game details:** a guide entry like "College Football" is replaced by the actual game ("Michigan at Ohio State · 3rd 4:12 · 10–14"), matched from ESPN's public scoreboard by league and by the network the channel carries. It is best-effort: with no match or no network the guide's own title stays. Leagues covered: college and pro football, basketball (men's and women's college, NBA, WNBA), MLB, NHL and the main soccer leagues.
+- **Logos:** channel logos sit on a warm slate tile, so white logos stay visible on the cream glass.
+- **Home market:** other cities' ABC / CBS / NBC / FOX / PBS / CW stations are hidden for the home market, which is **Austin** unless you type another in the content filter (turn "only local stations" off to see everything). Copies of one station (HD / FHD / duplicates in other folders) merge into one.
