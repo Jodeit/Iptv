@@ -109,6 +109,25 @@ function initTV() {
     if (c && c !== lastShown) { lastShown = c; showOsd(); }
   }, 400);
 
+  // ---------- Version / update ----------
+  // The tag at the top of Home shows the running version; when a newer one is deployed it says so, and OK
+  // reloads the page (the app stays open in the background, so closing it was the only way before).
+  let verEl = null, latest = null;
+  function paintVersion() {
+    if (!verEl) return;
+    const newer = latest && latest !== VERSION;
+    verEl.classList.toggle('new', !!newer);
+    verEl.textContent = newer ? `Update to ${latest}: press OK` : `Tuner ${VERSION} ↻`;
+  }
+  async function checkUpdate() {
+    try {
+      const t = await (await fetch(`js/version.js?${Date.now()}`, { cache: 'no-store' })).text();
+      latest = /VERSION = '([^']+)'/.exec(t)?.[1] || null;
+    } catch { /* offline: keep what we know */ }
+    paintVersion();
+  }
+  setInterval(checkUpdate, 10 * 60 * 1000);
+
   // ---------- Home ----------
   function renderTabs() {
     tabsEl.innerHTML = '';
@@ -118,7 +137,10 @@ function initTV() {
     if (T().hasKind('series')) defs.push(['series', 'Shows']);
     defs.push(['phone', 'Phone']);
     if (!defs.some(([k]) => k === tab)) tab = defs[0][0];
-    const ver = el('span', 'tvh-version', `Tuner ${esc(VERSION)}`);
+    const ver = el('button', 'tvh-version', '');
+    ver.onclick = () => location.reload();
+    verEl = ver;
+    paintVersion();
     for (const [k, label] of defs) {
       const b = el('button', `tvh-tab${k === tab ? ' on' : ''}`, esc(label));
       b.dataset.tab = k;
@@ -261,6 +283,7 @@ function initTV() {
     home.classList.remove('hidden');
     document.documentElement.classList.add('home-open');
     P().pull(); // anything new from the phone
+    checkUpdate();
     renderTabs();
     renderBody();
     requestAnimationFrame(() => {
