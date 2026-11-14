@@ -1899,7 +1899,19 @@ async function linkTv(code) {
   const name = await profiles.tvOffer(code);
   toast(`Sent “${name}” to the TV. Approve it on the TV screen.`);
   tvDismissed.add(code.toUpperCase().replace(/[^0-9A-Z]/g, ''));
+  scannedTv = '';
+  renderTvs();
   setTimeout(refreshTvs, 4000);
+}
+
+// Opened from the QR on a TV (/?tv=CODE): offer to link that TV straight away
+let scannedTv = '';
+{
+  const q = new URLSearchParams(location.search).get('tv');
+  if (q && /^[0-9A-Za-z]{8}$/.test(q)) {
+    scannedTv = q.toUpperCase();
+    history.replaceState(null, '', location.pathname); // the code is single-use; do not keep it in the address bar
+  }
 }
 
 function renderTvs() {
@@ -1922,8 +1934,10 @@ function renderTvs() {
   }
   $('pfTvNone').classList.toggle('hidden', !!nearbyTvs.length);
   const fresh = nearbyTvs.filter((c) => !tvDismissed.has(c));
-  $('tvBanner').classList.toggle('hidden', !fresh.length);
-  $('tvBanner').dataset.code = fresh[0] || '';
+  const code = scannedTv || fresh[0] || '';
+  $('tvBanner').classList.toggle('hidden', !code);
+  $('tvBanner').dataset.code = code;
+  $('tvBanner').querySelector('span').textContent = scannedTv ? `📺 Link the TV showing ${fmtCode(scannedTv)}?` : '📺 A TV on your Wi-Fi is ready to link';
 }
 
 async function refreshTvs() {
@@ -1932,7 +1946,7 @@ async function refreshTvs() {
   renderTvs();
 }
 $('tvBannerLink').onclick = () => busy($('tvBannerLink'), () => linkTv($('tvBanner').dataset.code));
-$('tvBannerX').onclick = () => { for (const c of nearbyTvs) tvDismissed.add(c); renderTvs(); };
+$('tvBannerX').onclick = () => { scannedTv = ''; for (const c of nearbyTvs) tvDismissed.add(c); renderTvs(); };
 $('pfTvLink').onclick = () => busy($('pfTvLink'), async () => {
   const code = $('pfTvCode').value.trim();
   if (!code) return toast('Enter the code shown on the TV', true);
@@ -1940,6 +1954,7 @@ $('pfTvLink').onclick = () => busy($('pfTvLink'), async () => {
   $('pfTvCode').value = '';
 });
 $('pfTvCode').onkeydown = (e) => { if (e.key === 'Enter') $('pfTvLink').click(); };
+if (scannedTv) renderTvs(); // show the prompt straight away, before the nearby-TV lookup
 document.querySelector('.tab[data-tab="profile"]').addEventListener('click', refreshTvs);
 addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshTvs(); });
 
