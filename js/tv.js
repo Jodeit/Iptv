@@ -333,7 +333,7 @@ function initTV() {
     if (liveAll().length) defs.push(['now', 'On now'], ['live', 'Channels']);
     if (T().hasKind('movie')) defs.push(['movie', 'Movies']);
     if (T().hasKind('series')) defs.push(['series', 'Shows']);
-    defs.push(['phone', 'Phone']);
+    defs.push(['phone', 'Settings']);
     if (tab === 'live' && !defs.some(([k]) => k === 'live')) tab = 'phone';
     const ver = el('button', 'tvh-version', '');
     ver.onclick = () => location.reload();
@@ -602,7 +602,7 @@ function initTV() {
     }
     const lists = bodyEl.querySelector('.tvh-lists');
     for (const l of p.doc.playlists) {
-      const b = el('button', 'btn ghost', esc(l.name));
+      const b = el('button', `btn ghost pl-row${src?.url === l.url ? ' cur' : ''}`, `<span>${esc(l.name)}</span>${src?.url === l.url ? '<small>Showing now</small>' : ''}`);
       b.onclick = () => { O().loadPlaylist(l.url, l.name, { fresh: true }); closeHome(); };
       lists.append(b);
     }
@@ -1636,7 +1636,7 @@ function initTV() {
     const o = O();
     // Nothing on screen yet: just start the new playlist. Otherwise leave the picture alone and say it's there.
     if (!o.state.current && !o.state.channels.length) o.loadPlaylist(added[0].url, added[0].name, { fresh: false });
-    else T().toast(`New from your phone: ${added[0].name}. Home → Phone to switch.`);
+    else T().toast(`New from your phone: ${added[0].name}. Home → Settings to switch.`);
   }
   setInterval(watchPlaylists, 4000);
 
