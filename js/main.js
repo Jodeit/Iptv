@@ -2208,6 +2208,11 @@ window.o3xr = {
       rating: (item) => ratings.get(item),
       peek: (item) => ratings.peek(item),
       open: (item) => gallery.openDirect(item),
+      // A title's page: details for a film, the episode list for a show
+      details: (item) => (kindOf(item) === 'series'
+        ? (state.xlib ? state.xlib.seriesEpisodes(item) : Promise.resolve([]))
+        : Promise.resolve(state.xlib ? state.xlib.movieInfo(item) : {})),
+      play: (item, startAt) => play(item, { startAt }),
       onClosed: (f) => vodClosedListeners.add(f),
     },
     // Rotten Tomatoes score and poster for a film title (undefined while it is being looked up)
