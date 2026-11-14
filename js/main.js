@@ -60,6 +60,7 @@ const PRESETS = [
 ];
 
 // ---------- State ----------
+const isTV = /TunerTV/.test(navigator.userAgent); // the Android TV app (see js/tv.js)
 const state = {
   channels: [],
   library: [], // channels after the content filter
@@ -1093,7 +1094,7 @@ function rebuildLibrary() {
   for (const b of $('kindSeg').children) b.classList.toggle('active', b.dataset.kind === state.kind);
   rebuildGroups();
   // First playlist of the visit: start on the guide (live TV) instead of an empty stage.
-  if (!guideShown && lib.length && !galleryKind() && guide.available() && !gallery.isOpen()) { guideShown = true; guideView.open(); }
+  if (!isTV && !guideShown && lib.length && !galleryKind() && guide.available() && !gallery.isOpen()) { guideShown = true; guideView.open(); }
 }
 let guideShown = false;
 
@@ -1781,7 +1782,6 @@ async function checkSyncAvailable() {
   return !why;
 }
 
-const isTV = /TunerTV/.test(navigator.userAgent);
 const busy = async (btn, fn) => {
   btn.disabled = true;
   try { await fn(); } catch (err) { toast(err.message, true); } finally { btn.disabled = false; }
@@ -2102,5 +2102,22 @@ else if (last?.local && store.get('localText', null)) setChannels(parseM3U(store
 else loadBuiltinDemo();
 
 // Debug handle for the console.
-window.o3xr = { theater, vrPanel, state, settings, profiles, gallery, ratings, similar, loadPlaylist: loadPlaylistUrl };
+window.o3xr = {
+  theater, vrPanel, state, settings, profiles, gallery, ratings, similar, loadPlaylist: loadPlaylistUrl,
+  // What js/tv.js needs to drive the app without its phone-style chrome.
+  tv: {
+    video,
+    play: (ch) => (kindOf(ch) === 'series' ? openSeries(ch) : play(ch)),
+    togglePlay,
+    toast,
+    guide,
+    isFav: (id) => state.favs.has(id),
+    toggleFav: (ch) => toggleFav(ch),
+    live: () => state.library.filter((c) => kindOf(c) === 'live'),
+    hasKind: (k) => !!state.xlib || state.library.some((c) => kindOf(c) === k),
+    openGallery(kind) { state.kind = kind; rebuildGroups(); guideView.close(); gallery.open(kind); },
+    galleryOpen: () => gallery.isOpen(),
+  },
+};
+if (isTV) video.controls = false; // no system player bar over the picture; js/tv.js draws a small overlay
 dispatchEvent(new Event('o3xr-ready'));

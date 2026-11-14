@@ -100,7 +100,7 @@ export async function handleProfileApi({ method, path, body, ip }, store) {
       const raw = await store.get(`tv:${e.code}`);
       if (raw && !JSON.parse(raw).blob) tvs.push({ code: e.code });
     }
-    return json(200, { tvs });
+    return json(200, { tvs: tvs.reverse() }); // newest first
   }
 
   const tv = path.match(/^\/api\/tv\/([0-9A-Za-z]{8})$/);
