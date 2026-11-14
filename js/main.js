@@ -6,6 +6,7 @@ import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, 
 import { XtreamLibrary } from './xtream.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
 import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
+import { annotate, localFilter } from './normalize.js';
 import { VERSION } from './version.js';
 import { Profiles, emptyDoc, canSync, capMeta, mergeProgress } from './profiles.js';
 import { Guide } from './epg.js';
@@ -744,6 +745,7 @@ video.addEventListener('playing', () => { clearTimeout(accountTimer); accountTim
 document.addEventListener('visibilitychange', () => { if (!document.hidden) showAccount(state.source, { quiet: true }); });
 
 function setChannels(channels, label, source = null) {
+  annotate(channels); // once per playlist; the result is saved with the cached copy
   state.source = source;
   guide.setSource({ xtream: source?.url ? parseXtream(source.url) : null, tvgUrl: source?.tvgUrl || channels.tvgUrl || null });
   guide.setChannels(channels);
@@ -1090,8 +1092,16 @@ function rebuildLibrary() {
       state.filterNote = ' · filter matched nothing, showing all';
     }
   }
+  // Local stations: with a home market set, other cities' ABC / CBS / NBC / FOX / PBS / CW… stations are hidden
+  if (cf.market?.trim() && cf.localOnly !== false) {
+    const kept = localFilter(lib, cf.market);
+    if (kept.length < lib.length) {
+      state.filterNote += ` · ${(lib.length - kept.length).toLocaleString()} other-city stations hidden`;
+      lib = kept;
+    }
+  }
   state.library = lib;
-  $('cfToggle').classList.toggle('on', cf.on);
+  $('cfToggle').classList.toggle('on', cf.on || !!cf.market?.trim());
 
   const xl = state.xlib;
   const hasVod = xl ? !!(xl.cats.movie.length || xl.cats.series.length) : lib.some((c) => kindOf(c) !== 'live');
@@ -1730,15 +1740,18 @@ function syncFilterForm() {
   $('cfLive').value = cf.live;
   $('cfVod').value = cf.vod;
   $('cfUntagged').checked = cf.vodUntagged;
+  $('cfMarket').value = cf.market || '';
+  $('cfLocalOnly').checked = cf.localOnly !== false;
 }
 const readFilterForm = () => {
   Object.assign(settings.contentFilter, {
     on: $('cfOn').checked, live: $('cfLive').value, vod: $('cfVod').value, vodUntagged: $('cfUntagged').checked,
+    market: $('cfMarket').value.trim(), localOnly: $('cfLocalOnly').checked,
   });
   saveFilter();
   rebuildLibrary();
 };
-for (const id of ['cfOn', 'cfLive', 'cfVod', 'cfUntagged']) $(id).onchange = readFilterForm;
+for (const id of ['cfOn', 'cfLive', 'cfVod', 'cfUntagged', 'cfMarket', 'cfLocalOnly']) $(id).onchange = readFilterForm;
 syncFilterForm();
 
 // ---------- Profile tab ----------

@@ -7,6 +7,9 @@ export const FILTER_DEFAULTS = {
   live: 'US, USA, United States',
   vod: 'EN, ENG, English, US, USA, UK',
   vodUntagged: true,
+  // Home market for local stations (ABC, CBS, NBC, FOX, PBS, CW…): "Austin" or call signs "KVUE, KXAN". Empty = show all.
+  market: '',
+  localOnly: true,
 };
 
 // Region/language tags that mark a movie or series group as not English. Untagged groups

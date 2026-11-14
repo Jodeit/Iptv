@@ -130,6 +130,12 @@
       <label class="check"><input id="cfUntagged" type="checkbox"> Keep movie &amp; series groups with no language tag</label>
       <p class="muted small">Comma-separated words matched against group names, like “US | News”, “USA: Sports” or “EN - Action”.</p>
 
+      <h3>Local stations</h3>
+      <label class="field">Your city or station call signs
+        <input id="cfMarket" type="text" placeholder="Austin, or KVUE, KXAN, KEYE" autocomplete="off" spellcheck="false"></label>
+      <label class="check"><input id="cfLocalOnly" type="checkbox" checked> Hide other cities’ ABC, CBS, NBC, FOX, PBS, CW and similar stations</label>
+      <p class="muted small">Providers list the local station of every city under one folder (hundreds under “ABC”). With your city here, only yours are kept. Stations that name no city are kept. Channels are tidied once when a playlist loads.</p>
+
           </section>
 
     <!-- Playback -->
