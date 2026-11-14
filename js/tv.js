@@ -233,6 +233,7 @@ function initTV() {
     hideOsd();
     home.classList.remove('hidden');
     document.documentElement.classList.add('home-open');
+    P().pull(); // anything new from the phone
     renderTabs();
     renderBody();
     requestAnimationFrame(() => {
@@ -478,6 +479,26 @@ function initTV() {
   };
 
   addEventListener('pagehide', () => { if (liveCode) P().tvCancel(liveCode); });
+
+  // ---------- Playlists arriving from the phone ----------
+  // Edits made on the phone land here within a minute (or when Home opens); say so and show them.
+  let seen = null;
+  const sig = () => JSON.stringify(P().doc.playlists.map((l) => l.key));
+  function watchPlaylists() {
+    const now = sig();
+    if (seen === null) { seen = now; return; }
+    if (now === seen) return;
+    const before = new Set(JSON.parse(seen));
+    seen = now;
+    const added = P().doc.playlists.filter((l) => !before.has(l.key));
+    if (isOpen.home() && tab === 'phone') renderPhone();
+    if (!added.length) return;
+    const o = O();
+    // Nothing on screen yet: just start the new playlist. Otherwise leave the picture alone and say it's there.
+    if (!o.state.current && !o.state.channels.length) o.loadPlaylist(added[0].url, added[0].name, { fresh: false });
+    else T().toast(`New from your phone: ${added[0].name}. Home → Phone to switch.`);
+  }
+  setInterval(watchPlaylists, 4000);
 
   // ---------- Boot ----------
   const boot = () => {
