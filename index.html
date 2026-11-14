@@ -6,6 +6,7 @@
   <title>Tuner</title>
   <script>
     /* The Android TV app gets its own UI. Decide before anything paints, or the phone UI flashes first. */
+    try { const v = JSON.parse(localStorage.getItem('tvWallVars') || 'null'); if (v) for (const k in v) document.documentElement.style.setProperty(k, v[k]); } catch (e) { /* defaults */ }
     if (/TunerTV/.test(navigator.userAgent)) { document.documentElement.classList.add('tv', 'tv-booting'); setTimeout(() => document.documentElement.classList.remove('tv-booting'), 12000); }
   </script>
   <meta name="description" content="WebXR IPTV player with XR3D simulated 3D">
@@ -203,6 +204,14 @@
         <button id="tmdbSave" class="btn ghost">Save</button>
       </div>
       <p id="tmdbStatus" class="muted small"></p>
+
+      <h3>TV background</h3>
+      <p class="muted small">Match the TV's backdrop to your wall. The screen shows colours cooler than they look to the eye, so pick warmer than the wall seems. It reaches the TV within a minute.</p>
+      <div class="row swatches" id="tvWallSwatches"></div>
+      <div class="row">
+        <input id="tvWall" type="color" value="#ebdfb8" aria-label="TV background colour">
+        <button id="tvWallReset" class="btn ghost">Default</button>
+      </div>
 
           </section>
 

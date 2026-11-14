@@ -348,6 +348,10 @@ pop-out player are hidden there; setup and settings happen on the phone and sync
   description (league names, "vs", movie / news / kids words), else from the channel's name (`js/genre.js`). The
   guide for the whole lineup is read once from the provider's `xmltv.php` where there is one, otherwise channel by
   channel in the background (the column shows progress). The choice is remembered.
+- **Background colour:** the plaster behind the glass is a creamy butter by default. Match it to your wall under
+  **Settings → Playback → TV background** on the phone (presets or any colour); it syncs with the profile and the TV
+  also uses it for the startup splash. Screens render colours cooler than they look to the eye, so pick warmer than
+  the wall seems.
 - **Setup:** a TV with no playlist shows a setup screen; link it from your phone (see Profiles above).
 - The remote's media keys (play/pause, next/previous, fast-forward/rewind) work everywhere.
 

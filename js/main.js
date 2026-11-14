@@ -228,6 +228,7 @@ function applyDoc(doc, reason) {
   saveSettings();
   syncFilterForm();
   renderSaved();
+  renderTvWall();
   const want = doc.last;
   const showing = state.source?.url ? playlistKey(state.source.url) : null;
   if (want?.url && playlistKey(want.url) !== showing && (reason === 'switch' || !state.channels.length)) {
@@ -1862,6 +1863,25 @@ $('pfDelete').onclick = () => busy($('pfDelete'), async () => {
   await profiles.destroy(p.id);
   toast(`Deleted “${p.name}”`);
 });
+
+// ---------- TV background colour ----------
+const WALLS = [['Butter', '#ebdfb8'], ['Cream', '#f1e8c8'], ['Khaki', '#dccf9f'], ['Warm white', '#f3ecd9'], ['Putty', '#d9d3c1']];
+const TV_WALL_DEFAULT = WALLS[0][1];
+function renderTvWall() {
+  const v = profiles.doc.tvWall || TV_WALL_DEFAULT;
+  $('tvWall').value = v;
+  for (const b of $('tvWallSwatches').children) b.classList.toggle('on', b.dataset.hex === v);
+}
+const setTvWall = (v) => { profiles.update((d) => { d.tvWall = v === TV_WALL_DEFAULT ? '' : v; }); renderTvWall(); };
+for (const [name, hex] of WALLS) {
+  const b = document.createElement('button');
+  b.className = 'swatch'; b.dataset.hex = hex; b.title = name; b.style.background = hex; b.setAttribute('aria-label', name);
+  b.onclick = () => setTvWall(hex);
+  $('tvWallSwatches').append(b);
+}
+$('tvWall').onchange = (e) => setTvWall(e.target.value);
+$('tvWallReset').onclick = () => setTvWall(TV_WALL_DEFAULT);
+renderTvWall();
 
 // ---------- Linking a TV from this device ----------
 // A TV that's open on the same network (same public IP) is listed here, so linking needs no typing.
