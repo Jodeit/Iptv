@@ -2215,6 +2215,32 @@ window.o3xr = {
       play: (item, startAt) => play(item, { startAt }),
       onClosed: (f) => vodClosedListeners.add(f),
     },
+    // Audio and caption choices for what is playing. Only what the stream really carries is listed.
+    tracks: () => {
+      const hls = player.hls, v = video, audio = [], text = [];
+      if (hls?.audioTracks?.length > 1) hls.audioTracks.forEach((t, i) => audio.push({ key: `h${i}`, label: t.name || t.lang || `Track ${i + 1}`, on: hls.audioTrack === i }));
+      else if (v.audioTracks?.length > 1) [...v.audioTracks].forEach((t, i) => audio.push({ key: `n${i}`, label: t.label || t.language || `Track ${i + 1}`, on: t.enabled }));
+      const hasHlsText = !!hls?.subtitleTracks?.length;
+      if (hasHlsText) hls.subtitleTracks.forEach((t, i) => text.push({ key: `h${i}`, label: t.name || t.lang || `Subtitles ${i + 1}`, on: hls.subtitleTrack === i }));
+      [...v.textTracks].forEach((t, i) => {
+        if (t.kind !== 'captions' && !(t.kind === 'subtitles' && !hasHlsText)) return; // hls.js's own subtitle tracks are listed above
+        text.push({ key: `n${i}`, label: t.label || t.language || (t.kind === 'captions' ? `Captions ${i + 1}` : `Subtitles ${i + 1}`), on: t.mode === 'showing' });
+      });
+      return { audio, text };
+    },
+    setAudio: (key) => {
+      const i = +key.slice(1);
+      if (key[0] === 'h' && player.hls) player.hls.audioTrack = i;
+      else if (video.audioTracks) [...video.audioTracks].forEach((t, k) => { t.enabled = k === i; });
+    },
+    setText: (key) => { // 'off', 'h<i>' (hls.js subtitle track) or 'n<i>' (a text track on the video, e.g. CEA-608 captions)
+      const hls = player.hls;
+      [...video.textTracks].forEach((t) => { if (t.kind === 'captions' || t.kind === 'subtitles') t.mode = 'disabled'; });
+      if (key === 'off') { if (hls?.subtitleTracks?.length) hls.subtitleTrack = -1; return; }
+      const i = +key.slice(1);
+      if (key[0] === 'h' && hls) { hls.subtitleDisplay = true; hls.subtitleTrack = i; }
+      else if (video.textTracks[i]) video.textTracks[i].mode = 'showing';
+    },
     // Rotten Tomatoes score and poster for a film title (undefined while it is being looked up)
     rating: (title) => ratings.get({ name: title, kind: 'movie' }),
     onRating: (f) => ratingListeners.add(f),
