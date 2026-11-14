@@ -29,7 +29,7 @@ const MAX_DATA = 2 * 1024 * 1024; // KV allows 25 MB; a heavy library (ratings, 
 const MAX_CLAIM_FAILURES = 20; // per IP per 10 minutes
 
 export async function handleProfileApi({ method, path, body, ip }, store, opts = {}) {
-  if (path === '/api/health') return json(200, { sync: true });
+  if (path === '/api/health') return json(200, { sync: true, store: opts.profileHandler ? 'durable' : 'kv' });
 
   const m = path.match(/^\/api\/profile\/([^/]+)$/);
   if (m) {
