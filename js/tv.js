@@ -53,7 +53,11 @@ function initTV() {
   let group = '';              // '' = all, FAV = favorites, else a group name
   const FAV = '\u0000fav';
   // 'channels' browses the provider's folders; 'now' groups by what is airing right now (Sports, Movies, News…)
-  let view = (() => { try { return localStorage.getItem('tvView') === 'now' ? 'now' : 'channels'; } catch { return 'channels'; } })();
+  // Remembered once you pick one (by choosing it, not by passing over its tab); until then On now is the default
+  // when the provider has a guide, and Channels when it has none.
+  let viewChosen = false;
+  let view = (() => { try { const v = localStorage.getItem('tvView'); if (v === 'now' || v === 'channels') { viewChosen = true; return v; } } catch { /* fine */ } return 'now'; })();
+  const autoView = () => { if (!viewChosen) view = T().guide.available() ? 'now' : 'channels'; };
   let genre = '';              // '' = everything on now
   let dismissed = false, running = false, abort = null, liveCode = null;
   const isOpen = { home: () => !home.classList.contains('hidden'), setup: () => !setup.classList.contains('hidden'), gallery: () => !!O()?.tv.galleryOpen() };
@@ -214,7 +218,7 @@ function initTV() {
   function renderTabs() {
     tabsEl.innerHTML = '';
     const defs = [];
-    if (liveAll().length) defs.push(['live', 'Channels'], ['now', 'On now']);
+    if (liveAll().length) defs.push(['now', 'On now'], ['live', 'Channels']);
     if (T().hasKind('movie')) defs.push(['movie', 'Movies']);
     if (T().hasKind('series')) defs.push(['series', 'Shows']);
     defs.push(['phone', 'Phone']);
@@ -227,7 +231,7 @@ function initTV() {
       const b = el('button', 'tvh-tab', esc(label));
       b.dataset.tab = k;
       b.onclick = () => {
-        if (k === 'movie' || k === 'series') { closeHome(); T().openGallery(k); } else { goTab(k); focusFirstInBody(); }
+        if (k === 'movie' || k === 'series') { closeHome(); T().openGallery(k); } else { goTab(k); commitView(); focusFirstInBody(); }
       };
       // Channels, On now and Phone switch as soon as they get focus, so ◀ ▶ browses without pressing OK.
       b.onfocus = () => { if (k !== 'movie' && k !== 'series') goTab(k); };
@@ -242,6 +246,12 @@ function initTV() {
       b.classList.toggle('on', k === 'phone' ? tab === 'phone' : k === 'live' ? tab === 'live' && view === 'channels' : k === 'now' ? tab === 'live' && view === 'now' : false);
     }
   };
+  // Remember the view when you actually use it (OK, or ▼ into the list), not merely by passing over its tab.
+  function commitView() {
+    if (tab !== 'live') return;
+    viewChosen = true;
+    try { localStorage.setItem('tvView', view); } catch { /* fine */ }
+  }
   // Switch what the body shows: 'live' (Channels), 'now' (On now) or 'phone'.
   function goTab(k) {
     const nextTab = k === 'phone' ? 'phone' : 'live';
@@ -250,7 +260,6 @@ function initTV() {
     tab = nextTab;
     if (tab === 'live') {
       view = nextView; genre = ''; group = '';
-      try { localStorage.setItem('tvView', view); } catch { /* fine */ }
       if (view === 'now') { ensureGuide(); computeNow(true); }
     }
     markTabs();
@@ -445,6 +454,7 @@ function initTV() {
     P().pull(); // anything new from the phone
     checkUpdate('timer');
     libSeen = libSig();
+    autoView();
     if (view === 'now') { ensureGuide(); computeNow(true); }
     renderTabs();
     renderBody();
@@ -465,6 +475,8 @@ function initTV() {
     if (sig === libSeen) return;
     libSeen = sig;
     group = ''; genre = '';
+    autoView();
+    if (view === 'now') { ensureGuide(); computeNow(true); }
     const hadFocus = home.contains(document.activeElement);
     renderTabs();
     renderBody();
@@ -477,6 +489,13 @@ function initTV() {
     if (!isOpen.home() || tab !== 'live' || view !== 'now') return;
     computeNow(true);
     const pr = T().guide.progress();
+    // The default view is On now; if the guide finished loading and holds nothing, Channels is the useful one.
+    const gd = T().guide;
+    if (!viewChosen && pr.state === 'ready' && !nowData.length && (gd.bulkState !== 'none' || gd.xmltvState !== 'none')) {
+      view = 'channels'; genre = ''; group = '';
+      renderTabs(); renderBody();
+      return;
+    }
     const sig = `${[...nowCounts()].join()}|${pr.state}|${pr.done}|${nowData.length}`;
     if (sig === nowSig) return;
     nowSig = sig;
@@ -626,7 +645,7 @@ function initTV() {
       const i = tabs.indexOf(t);
       if (key === 'ArrowLeft') tabs[Math.max(0, i - 1)].focus();
       else if (key === 'ArrowRight') tabs[Math.min(tabs.length - 1, i + 1)].focus();
-      else if (key === 'ArrowDown') focusFirstInBody();
+      else if (key === 'ArrowDown') { commitView(); focusFirstInBody(); }
       return true; // ▲ stays on the tab bar
     }
     if (t?.classList.contains('tvh-chip')) {

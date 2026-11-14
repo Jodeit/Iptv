@@ -78,3 +78,67 @@ export function localFilter(channels, home) {
   for (const c of channels) if (c.net && c.market && isLocal(c, home)) found.add(c.net);
   return channels.filter((c) => !c.net || (c.market ? isLocal(c, home) : !found.has(c.net)));
 }
+
+// ---------- Duplicates ----------
+// Providers list the same station several times: in more than one folder, and as separate HD / FHD / SD / RAW /
+// 60fps copies. dupeKey says which channels are the same station; qualityOf picks the copy to keep (the others
+// stay as fallbacks, so if the best copy will not play the next one is tried).
+
+const US_STATES = new Set('AL AK AZ AR CA CO CT DE FL GA HI ID IL IN IA KS KY LA ME MD MA MI MN MS MO MT NE NV NH NJ NM NY NC ND OH OK OR PA RI SC SD TN TX UT VT VA WA WV WI WY DC'.split(' '));
+const VARIANT = new Set(['BACKUP', 'ALT', 'ALTERNATE', 'MIRROR', 'SERVER', 'S1', 'S2', 'S3', 'LOCAL', 'LIVE']);
+const CALLSIGN = /^[KW][A-Z]{2,3}$/;
+const CALL_TO_CITY = Object.fromEntries(Object.entries(MARKET_ALIASES).flatMap(([city, calls]) => calls.map((c) => [c, city])));
+
+// Higher is better. 4K/UHD and RAW streams are the heaviest on a TV's decoder and network, so a plain HD or FHD copy wins.
+export function qualityOf(rawName) {
+  const t = new Set(tokens(rawName));
+  if (t.has('BACKUP')) return -1;
+  if (t.has('LQ')) return 0;
+  if (t.has('SD')) return 1;
+  if (t.has('FHD')) return 5;
+  if (t.has('HD')) return 4;
+  if (t.has('4K') || t.has('UHD') || t.has('RAW')) return 3;
+  return 2;
+}
+
+function stationKey(ch) {
+  const m = tokens(ch.market).filter((t) => !US_STATES.has(t) && !VARIANT.has(t));
+  const call = m.find((t) => CALLSIGN.test(t));
+  const city = m.filter((t) => !CALLSIGN.test(t));
+  // KVUE and "AUSTIN" are the same station when the home-market table knows the call sign
+  if (call && CALL_TO_CITY[call]) return CALL_TO_CITY[call];
+  const known = city.find((t) => MARKET_ALIASES[t]);
+  if (known) return known;
+  return call || city.join(' ');
+}
+
+export function dupeKey(ch) {
+  if (ch.net && ch.market) return `${ch.net}|${stationKey(ch)}`;
+  if (ch.net) return `${ch.net}|`;
+  return tokens(ch.clean || ch.name).filter((t) => !VARIANT.has(t)).join(''); // "ESPN 2" and "ESPN2" are one channel
+}
+
+// One entry per station, in the order the first copy appeared. `isFav(id)` makes a favourited copy win, so a star
+// never disappears. The copies that lose are kept on the survivor as `dupes` (best first).
+export function dedupe(channels, isFav = () => false) {
+  const groups = new Map();
+  const out = [];
+  for (const ch of channels) {
+    if (kindOf(ch) !== 'live') { out.push(ch); continue; }
+    const key = ch._k ??= dupeKey(ch);
+    if (!key) { out.push(ch); continue; }
+    const g = groups.get(key);
+    if (g) g.push(ch); else { const list = [ch]; groups.set(key, list); out.push(list); }
+  }
+  return out.map((x) => {
+    if (!Array.isArray(x)) return x;
+    if (x.length === 1) { delete x[0].dupes; return x[0]; }
+    const ranked = x.map((c, i) => ({ c, i, s: (isFav(c.id) ? 100 : 0) + (c._q ??= qualityOf(c.name)) + (c.tvgId ? 0.5 : 0) }))
+      .sort((a, b) => b.s - a.s || a.i - b.i);
+    const best = ranked[0].c;
+    // Not enumerable: it is recomputed on every load and must not be written into the cached playlist
+    Object.defineProperty(best, 'dupes', { value: ranked.slice(1).map((r) => r.c), writable: true, configurable: true, enumerable: false });
+    if (!best.tvgId) best.tvgId = best.dupes.find((d) => d.tvgId)?.tvgId || '';
+    return best;
+  });
+}
