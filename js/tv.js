@@ -365,7 +365,7 @@ function initTV() {
     const side = (t, lead) => `<div class="tm${t.won || lead ? ' lead' : ''}">${t.logo ? `<img class="tl" alt="" src="${esc(t.logo)}" referrerpolicy="no-referrer">` : '<i class="tl"></i>'}<span class="tn">${t.rank ? `<em>${t.rank}</em>` : ''}${esc(t.name)}</span><b class="ts">${esc(String(t.score))}</b></div>`;
     const a = +g.away.score, h = +g.home.score, live = g.live && !isNaN(a) && !isNaN(h);
     b.innerHTML = `<span class="g-teams">${side(g.away, live && a > h)}${side(g.home, live && h > a)}</span>
-      <span class="g-state ${g.live ? 'live' : ''}"><b>${esc(g.period)}</b><small>${ch.logo ? `<img alt="" src="${esc(ch.logo)}" referrerpolicy="no-referrer">` : ''}<span>${esc(ch.clean || cleanName(ch.name))}</span></small></span>
+      <span class="g-state ${g.live ? 'live' : ''}"><b>${esc(g.period)}</b><small>${ch.logo ? `<img alt="" src="${esc(ch.logo)}" referrerpolicy="no-referrer">` : ''}<span>${esc(ch.net || ch.clean || cleanName(ch.name))}</span></small></span>
       <span class="star">★</span>`;
     b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
   }
@@ -472,7 +472,7 @@ function initTV() {
   function renderBody(withChips = true) {
     if (withChips) renderChips();
     bodyEl.innerHTML = '';
-    bodyEl.className = `tvh-body ${tab}`;
+    bodyEl.className = `tvh-body ${tab}${tab === 'live' && scoreView() ? ' grid' : ''}`; // games are tiles, three across
     infoEl.classList.add('hidden');
     if (tab === 'phone') return renderPhone();
     listCache = visibleList();
@@ -758,8 +758,16 @@ function initTV() {
     }
     if (t?.classList.contains('tvh-row')) {
       const chip = tab === 'live' && !chipsEl.classList.contains('hidden') ? (chipsEl.querySelector('.tvh-chip.on') || chipsEl.querySelector('.tvh-chip')) : null;
-      if (key === 'ArrowLeft') { (chip || tabsEl.querySelector('.tvh-tab.on'))?.focus(); return true; }
-      if (key === 'ArrowUp' && bodyEl.querySelector('.tvh-row') === t) { toTabs(); return true; }
+      const grid = bodyEl.classList.contains('grid');
+      const first = bodyEl.querySelector('.tvh-row');
+      if (key === 'ArrowLeft') {
+        // In a grid, ◀ steps to the tile on the left; from the left-most column it opens the categories
+        const prev = t.previousElementSibling;
+        if (grid && prev?.classList.contains('tvh-row') && prev.offsetTop === t.offsetTop) { prev.focus(); return true; }
+        (chip || tabsEl.querySelector('.tvh-tab.on'))?.focus();
+        return true;
+      }
+      if (key === 'ArrowUp' && (grid ? first.offsetTop === t.offsetTop : first === t)) { toTabs(); return true; }
       return false;
     }
     // Phone tab: ▲ from the first control goes up to the tabs
