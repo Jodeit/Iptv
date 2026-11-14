@@ -214,57 +214,56 @@ function initTV() {
   function renderTabs() {
     tabsEl.innerHTML = '';
     const defs = [];
-    if (liveAll().length) defs.push(['live', 'Live']);
+    if (liveAll().length) defs.push(['live', 'Channels'], ['now', 'On now']);
     if (T().hasKind('movie')) defs.push(['movie', 'Movies']);
     if (T().hasKind('series')) defs.push(['series', 'Shows']);
     defs.push(['phone', 'Phone']);
-    if (!defs.some(([k]) => k === tab)) tab = defs[0][0];
+    if (tab === 'live' && !defs.some(([k]) => k === 'live')) tab = 'phone';
     const ver = el('button', 'tvh-version', '');
     ver.onclick = () => location.reload();
     verEl = ver;
     paintVersion();
     for (const [k, label] of defs) {
-      const b = el('button', `tvh-tab${k === tab ? ' on' : ''}`, esc(label));
+      const b = el('button', 'tvh-tab', esc(label));
       b.dataset.tab = k;
       b.onclick = () => {
-        if (k === 'movie' || k === 'series') { closeHome(); T().openGallery(k); } else selectTab(k, true);
+        if (k === 'movie' || k === 'series') { closeHome(); T().openGallery(k); } else { goTab(k); focusFirstInBody(); }
       };
-      // Live and Phone switch as soon as they get focus, so ◀ ▶ browses without pressing OK.
-      b.onfocus = () => { if ((k === 'live' || k === 'phone') && k !== tab) selectTab(k, false); };
+      // Channels, On now and Phone switch as soon as they get focus, so ◀ ▶ browses without pressing OK.
+      b.onfocus = () => { if (k !== 'movie' && k !== 'series') goTab(k); };
       tabsEl.append(b);
     }
     tabsEl.append(ver);
+    markTabs();
   }
-  function selectTab(k, focusBody) {
-    tab = k;
-    for (const b of tabsEl.children) b.classList.toggle('on', b.dataset.tab === k);
+  const markTabs = () => {
+    for (const b of tabsEl.querySelectorAll('.tvh-tab')) {
+      const k = b.dataset.tab;
+      b.classList.toggle('on', k === 'phone' ? tab === 'phone' : k === 'live' ? tab === 'live' && view === 'channels' : k === 'now' ? tab === 'live' && view === 'now' : false);
+    }
+  };
+  // Switch what the body shows: 'live' (Channels), 'now' (On now) or 'phone'.
+  function goTab(k) {
+    const nextTab = k === 'phone' ? 'phone' : 'live';
+    const nextView = k === 'now' ? 'now' : 'channels';
+    if (nextTab === tab && (nextTab === 'phone' || nextView === view)) { markTabs(); return; }
+    tab = nextTab;
+    if (tab === 'live') {
+      view = nextView; genre = ''; group = '';
+      try { localStorage.setItem('tvView', view); } catch { /* fine */ }
+      if (view === 'now') { ensureGuide(); computeNow(true); }
+    }
+    markTabs();
     renderBody();
-    if (focusBody) focusFirstInBody();
   }
   function focusFirstInBody() {
     (bodyEl.querySelector('.tvh-row.playing') || bodyEl.querySelector('button'))?.focus();
   }
 
-  function setView(v) {
-    view = v; genre = ''; group = '';
-    try { localStorage.setItem('tvView', v); } catch { /* fine */ }
-    if (v === 'now') { ensureGuide(); computeNow(true); }
-    renderChips(); renderBody(false);
-    chipsEl.querySelector(`.mode[data-mode="${v}"]`)?.focus();
-  }
   function renderChips() {
     chipsEl.innerHTML = '';
     chipsEl.classList.toggle('hidden', tab !== 'live');
     if (tab !== 'live') return;
-    // Channels | On now
-    const modes = el('div', 'tvh-modes');
-    for (const [k, label] of [['channels', 'Channels'], ['now', 'On now']]) {
-      const m = el('button', `tvh-chip mode${view === k ? ' on' : ''}`, esc(label));
-      m.dataset.mode = k;
-      m.onclick = () => setView(k);
-      modes.append(m);
-    }
-    chipsEl.append(modes);
     const add = (k, label, n, current, set) => {
       const b = el('button', `tvh-chip${k === current ? ' on' : ''}`, `<span class="nm">${esc(label)}</span><span class="n">${n}</span>`);
       b.dataset.key = k;
@@ -484,12 +483,9 @@ function initTV() {
     const a = document.activeElement;
     const inList = !!a?.closest?.('.tvh-body');
     const inChips = chipsEl.contains(a);
-    const key = a?.dataset?.key, mode = a?.dataset?.mode;
+    const key = a?.dataset?.key;
     renderChips();
-    if (inChips) {
-      if (mode) chipsEl.querySelector(`.mode[data-mode="${mode}"]`)?.focus();
-      else if (key !== undefined) chipsEl.querySelector(`.tvh-chip[data-key="${CSS.escape(key)}"]`)?.focus();
-    }
+    if (inChips && key !== undefined) chipsEl.querySelector(`.tvh-chip[data-key="${CSS.escape(key)}"]`)?.focus();
     if (!inList) renderBody(false);
   }, 1500);
   // Rows' what's-on lines fill in as guide data arrives.
@@ -614,6 +610,41 @@ function initTV() {
   }
 
   const DIR = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+
+  // Home is three sections: the tab bar on top, the group column on the left, the list on the right. Moving
+  // between sections follows a fixed map instead of "nearest thing in that direction", which from the middle
+  // of a long list never reached the tabs.
+  //   tabs:    ◀ ▶ across the tabs (and the version tag), ▼ into the list
+  //   groups:  ▶ to the list, ◀ or ▲ from the first group to the tabs
+  //   list:    ◀ to the groups, ▲ from the first row to the tabs
+  // Returns true when it handled the key; anything else (▲▼ inside a list) is left to the normal movement.
+  function homeNav(key) {
+    const t = document.activeElement;
+    const tabs = [...tabsEl.querySelectorAll('.tvh-tab'), ...(verEl ? [verEl] : [])];
+    const toTabs = () => (tabsEl.querySelector('.tvh-tab.on') || tabs[0])?.focus();
+    if (tabs.includes(t)) {
+      const i = tabs.indexOf(t);
+      if (key === 'ArrowLeft') tabs[Math.max(0, i - 1)].focus();
+      else if (key === 'ArrowRight') tabs[Math.min(tabs.length - 1, i + 1)].focus();
+      else if (key === 'ArrowDown') focusFirstInBody();
+      return true; // ▲ stays on the tab bar
+    }
+    if (t?.classList.contains('tvh-chip')) {
+      const chips = [...chipsEl.querySelectorAll('.tvh-chip')];
+      if (key === 'ArrowRight') { focusFirstInBody(); return true; }
+      if (key === 'ArrowLeft' || (key === 'ArrowUp' && chips[0] === t)) { toTabs(); return true; }
+      return false;
+    }
+    if (t?.classList.contains('tvh-row')) {
+      const chip = tab === 'live' && !chipsEl.classList.contains('hidden') ? (chipsEl.querySelector('.tvh-chip.on') || chipsEl.querySelector('.tvh-chip')) : null;
+      if (key === 'ArrowLeft') { (chip || tabsEl.querySelector('.tvh-tab.on'))?.focus(); return true; }
+      if (key === 'ArrowUp' && bodyEl.querySelector('.tvh-row') === t) { toTabs(); return true; }
+      return false;
+    }
+    // Phone tab: ▲ from the first control goes up to the tabs
+    if (bodyEl.contains(t) && key === 'ArrowUp' && bodyEl.querySelector('button') === t) { toTabs(); return true; }
+    return false;
+  }
   let synthetic = false;
   const backKey = (k) => k === 'Escape' || k === 'GoBack' || k === 'BrowserBack';
 
@@ -643,12 +674,7 @@ function initTV() {
     if (s !== 'player') {
       const root = s === 'setup' ? setup : s === 'gallery' ? $('gallery') : home;
       if (typing && (!DIR[e.key] || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return; // let the keyboard type
-      if (s === 'home' && tab === 'live') {
-        const t = document.activeElement;
-        // Groups are a column on the left: ◀ from the list goes to it, ▶ from it goes back.
-        if (e.key === 'ArrowLeft' && t?.classList.contains('tvh-row')) { e.preventDefault(); e.stopImmediatePropagation(); (chipsEl.querySelector('.tvh-chip.on:not(.mode)') || chipsEl.querySelector('.tvh-chip'))?.focus(); return; }
-        if (e.key === 'ArrowRight' && t?.classList.contains('tvh-chip') && !t.classList.contains('mode')) { e.preventDefault(); e.stopImmediatePropagation(); focusFirstInBody(); return; }
-      }
+      if (s === 'home' && DIR[e.key] && homeNav(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
       if (DIR[e.key]) { e.preventDefault(); e.stopImmediatePropagation(); move(root, ...DIR[e.key]); return; }
       if (e.key === 'Enter' && !typing) {
         const t = document.activeElement;
