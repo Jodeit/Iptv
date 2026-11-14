@@ -8,10 +8,13 @@ const TEXT_SUBS = /^S_TEXT\/(UTF8|ASS|SSA|WEBVTT)$/;
 
 export class Remuxer {
   // canPlay(kind, codec) → bool (MediaSource.isTypeSupported in the browser).
-  constructor(demux, { canPlay = () => true, transcode = true } = {}) {
+  constructor(demux, { canPlay = () => true, transcode = true, forceTranscode = false } = {}) {
     this.demux = demux;
     this.canPlay = canPlay;
     this.transcode = transcode; // convert audio the browser cannot decode (E-AC-3, DTS…) to AAC
+    // Some browsers claim to play E-AC-3 / AC-3 (isTypeSupported says yes) but decode nothing. When the player already
+    // knows the audio was silent, convert those codecs whatever the browser says.
+    this.forceTranscode = forceTranscode;
     this.seq = 1;
     this.reset();
   }
@@ -32,6 +35,7 @@ export class Remuxer {
 
     const playable = (t) => {
       if (t.unsupportedCompression) return { unsupported: 'compressed track' };
+      if (this.forceTranscode && t.type === 'audio' && CAN_TRANSCODE.has(t.codec)) return { unsupported: 'conversion forced' };
       const cfg = trackConfig(t, firstFrame.get(t));
       if (cfg.unsupported) return cfg;
       if (!this.canPlay(cfg.kind, cfg.codec)) return { unsupported: `${cfg.codec} (not supported by this browser)` };

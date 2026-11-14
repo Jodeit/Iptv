@@ -39,7 +39,7 @@ export class StreamPlayer {
   log(line) {
     const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     this.report.push(`${t} ${line}`);
-    if (/^[✗⚠]/.test(line)) this.onProblem(line);
+    if (/^[✗⚠]/.test(line) || /^MKV: (video|jumped)/.test(line)) this.onProblem(line);
     if (this.report.length > 300) this.report.splice(0, this.report.length - 300);
     this.onLog(this.report);
   }
@@ -132,6 +132,8 @@ export class StreamPlayer {
         console.warn(`[stream] ${engine} failed for ${hint || src}`, err);
         if (airPlay && engine === 'native') this.log('ℹ AirPlay is on: the Apple TV fetched this stream itself and couldn’t play it');
         this.log(`✗ ${engine}${label ? ` (${label})` : ''} ${hint || src}: ${err.message}`);
+        const v = this.video, rg = [...Array(v.buffered.length).keys()].map((i) => `${v.buffered.start(i).toFixed(1)}-${v.buffered.end(i).toFixed(1)}`).join(',');
+        this.log(`✗ video state: ready ${v.readyState}, network ${v.networkState}, error ${v.error ? `${v.error.code} ${v.error.message || ''}`.trim() : 'none'}, buffered [${rg}], ${v.videoWidth}×${v.videoHeight}`);
         this.destroy();
         // A refusal (bad login, connection limit) won't change with another variant, and
         // every extra try counts against the account.
@@ -288,11 +290,12 @@ export class StreamPlayer {
 
   // Reloads what is playing with one engine, from `at` seconds (e.g. the MKV remuxer, which can convert audio the
   // built-in player cannot decode). Resolves true if that engine took it.
-  async switchEngine(engine, at = 0) {
+  async switchEngine(engine, at = 0, { forceTranscode = false } = {}) {
     if (!this.sources) return false;
     this.forceEngine = engine;
+    this.forceTranscode = forceTranscode;
     this.log(`↻ switching to ${ENGINE_NAMES[engine] || engine} at ${Math.round(at)} s`);
-    try { return await this.load(this.sources, { startAt: at, keepReport: true }); } finally { this.forceEngine = null; }
+    try { return await this.load(this.sources, { startAt: at, keepReport: true }); } finally { this.forceEngine = null; this.forceTranscode = false; }
   }
 
   // Remuxes MKV to fragmented MP4 in the browser (js/mkv), for Safari and anything else
@@ -307,6 +310,7 @@ export class StreamPlayer {
       onLog: (m) => this.log(m),
       onFatal: (err) => this.recover(token, `MKV: ${err.message}`),
       startAt: this.resumeAt || 0,
+      forceTranscode: !!this.forceTranscode,
       ahead: bufferLevel.ahead,
       preroll: bufferLevel.preroll,
     });

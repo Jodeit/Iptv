@@ -16,12 +16,13 @@ const BEHIND = 30; // seconds kept behind the playhead
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 export class MkvPlayer {
-  constructor(video, url, { onWarn = () => {}, onNote = () => {}, onProgress = () => {}, onFatal = () => {}, onLog = () => {}, startAt = 0, ahead = 45, preroll = 0 } = {}) {
+  constructor(video, url, { forceTranscode = false, onWarn = () => {}, onNote = () => {}, onProgress = () => {}, onFatal = () => {}, onLog = () => {}, startAt = 0, ahead = 45, preroll = 0 } = {}) {
     this.maxAhead = ahead; // seconds buffered before pausing the download
     this.preroll = preroll; // seconds to build up before playback may start
     this.video = video;
     this.url = url;
     this.onWarn = onWarn;
+    this.forceTranscode = forceTranscode;
     this.onNote = onNote; // information, not a problem
     this.onProgress = onProgress; // what startup is waiting for (shown on the loading screen)
     this.onFatal = onFatal;
@@ -75,7 +76,7 @@ export class MkvPlayer {
       for (const b of c.blocks) want.delete(b.track);
     }
     const canPlay = (kind, codec) => MS.isTypeSupported(`${kind}/mp4; codecs="${codec}"`);
-    this.remux = new Remuxer(this.demux, { canPlay });
+    this.remux = new Remuxer(this.demux, { canPlay, forceTranscode: this.forceTranscode });
     const setup = this.remux.setup(first);
     for (const w of setup.warnings) this.onWarn(w);
     for (const n of setup.notes || []) this.onLog(`MKV: ${n}`);
