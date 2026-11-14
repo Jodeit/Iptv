@@ -135,7 +135,8 @@ across your devices: TV, phone, laptop, headset. To set it up:
 
 **Linking a TV:** the TV app has no setup forms. A TV with no playlist shows a setup screen; on your phone open the app,
 go to **Sync → Link a TV** and tap the TV (it appears there, or as a banner, when the phone and TV share a Wi-Fi network;
-otherwise type the code on the TV). The TV asks "Allow?" and then gets your profile, so playlists you add on the phone appear
+otherwise scan the styled QR on the TV with the phone's camera, which opens the app and offers to link that TV; the
+8-character code under the QR is the last resort). The TV asks "Allow?" and then gets your profile, so playlists you add on the phone appear
 on the TV. The profile's secret travels RSA-encrypted to a key that never leaves the TV; the server only matches the two by
 a hash of the shared public IP, kept for 10 minutes.
 

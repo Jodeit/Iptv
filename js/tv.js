@@ -555,15 +555,26 @@ function initTV() {
     ready();
     document.querySelector(focusSel || '#tvsSkip')?.focus();
   }
+  // Same Wi-Fi: the phone finds this TV by itself. Anywhere else: scan the code with the phone's camera.
   const steps = (code) => `
     <h1>Set up Tuner on your phone</h1>
-    <ol>
-      <li>On your phone, open <b>${esc(host)}</b></li>
-      <li>Go to <b>Sync → Link a TV</b> and tap this TV</li>
-      <li>Add your playlist there. It shows up here by itself.</li>
-    </ol>
-    <p class="muted">Phone not on this Wi-Fi? In Link a TV, type this code:</p>
-    <div class="tvs-code">${code ? esc(fmt(code)) : '…'}</div>`;
+    <div class="tvs-split">
+      <ol>
+        <li>On your phone, open <b>${esc(host)}</b></li>
+        <li>On the same Wi-Fi this TV appears there. Tap <b>Link</b>.</li>
+        <li>Add your playlist. It shows up here by itself.</li>
+      </ol>
+      <div class="tvs-scan">
+        <div class="tvs-qr" aria-hidden="true"></div>
+        <div class="muted">Not on this Wi-Fi? Scan to link.</div>
+        <div class="tvs-code">${code ? esc(fmt(code)) : '…'}</div>
+      </div>
+    </div>`;
+  // The QR is drawn after the screen (the generator loads on demand and is small)
+  const paintQr = (code) => import('./qr.js').then(({ styledQr }) => {
+    const box = setup.querySelector('.tvs-qr');
+    if (box && code) box.innerHTML = styledQr(`${location.origin}/?tv=${code}`);
+  }).catch(() => { /* the typed code is still there */ });
   function confirmLink(name) {
     return new Promise((done) => {
       renderSetup(`<h1>Link this TV to “${esc(name)}”?</h1><p class="muted">A phone is asking to share its profile with this TV. Only allow it if that was you.</p>
@@ -591,6 +602,7 @@ function initTV() {
           continue;
         }
         renderSetup(steps(req.code));
+        paintQr(req.code);
         abort = new AbortController();
         liveCode = req.code;
         const got = await p.tvWait(req, abort.signal).catch(() => null);
@@ -826,6 +838,7 @@ function initTV() {
 
   // ---------- Boot ----------
   const boot = () => {
+    import('./qr.js').catch(() => {}); // warm the cache so the setup screen draws its code at once
     T().video.controls = false;
     // Android WebView draws a large grey play icon on a <video> that has nothing to show; a transparent poster replaces it.
     T().video.poster = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
