@@ -21,11 +21,12 @@ let bufferLevel = BUFFER_LEVELS.normal;
 export const setBufferLevel = (k) => { bufferLevel = BUFFER_LEVELS[k] || BUFFER_LEVELS.normal; };
 
 export class StreamPlayer {
-  constructor(video, { onStatus = () => {}, onError = () => {}, onWarn = () => {}, onLog = () => {}, onSlow = () => {} } = {}) {
+  constructor(video, { onStatus = () => {}, onError = () => {}, onWarn = () => {}, onNote = () => {}, onLog = () => {}, onSlow = () => {} } = {}) {
     this.video = video;
     this.onStatus = onStatus;
     this.onError = onError;
     this.onWarn = onWarn;
+    this.onNote = onNote;
     this.onLog = onLog; // (report) after each new line, so the playback log stays live
     this.health = new Health(video, (line) => this.log(line), () => onSlow());
     this.hls = null;
@@ -57,7 +58,7 @@ export class StreamPlayer {
   // `sources` is a URL or a list of { src, hint } candidates tried in order. `hint` is the
   // original stream URL, used to pick engines when `src` is a proxied URL.
   // `startAt` (seconds) resumes a film part-way through.
-  async load(sources, { reconnect = false, startAt = 0 } = {}) {
+  async load(sources, { reconnect = false, startAt = 0, keepReport = false } = {}) {
     const token = ++this.token;
     this.destroy();
     let list = (Array.isArray(sources) ? sources : [sources]).map((s) => (typeof s === 'string' ? { src: s, hint: s } : s));
@@ -65,7 +66,7 @@ export class StreamPlayer {
       this.sources = list;
       this.reconnects = 0;
       this.resumeAt = startAt;
-      this.report = [];
+      if (!keepReport) this.report = [];
     } else if (this.winner) {
       // Go straight back to what worked.
       list = [this.winner.source, ...list.filter((x) => x !== this.winner.source)];
@@ -73,7 +74,8 @@ export class StreamPlayer {
       if (token !== this.token) return false;
     }
     this.winner = null;
-    const plans = list.flatMap((source) => orderEngines(source.hint || source.src).map((engine) => ({ source, engine })));
+    let plans = list.flatMap((source) => orderEngines(source.hint || source.src).map((engine) => ({ source, engine })));
+    if (this.forceEngine && plans.some((p) => p.engine === this.forceEngine)) plans = plans.filter((p) => p.engine === this.forceEngine);
     if (reconnect && this.lastEngine) {
       const i = plans.findIndex((p) => p.source === list[0] && p.engine === this.lastEngine);
       if (i > 0) plans.unshift(...plans.splice(i, 1));
@@ -280,6 +282,15 @@ export class StreamPlayer {
     });
   }
 
+  // Reloads what is playing with one engine, from `at` seconds (e.g. the MKV remuxer, which can convert audio the
+  // built-in player cannot decode). Resolves true if that engine took it.
+  async switchEngine(engine, at = 0) {
+    if (!this.sources) return false;
+    this.forceEngine = engine;
+    this.log(`↻ switching to ${ENGINE_NAMES[engine] || engine} at ${Math.round(at)} s`);
+    try { return await this.load(this.sources, { startAt: at, keepReport: true }); } finally { this.forceEngine = null; }
+  }
+
   // Remuxes MKV to fragmented MP4 in the browser (js/mkv), for Safari and anything else
   // that can't open Matroska itself.
   async mkv(url, token) {
@@ -287,6 +298,7 @@ export class StreamPlayer {
     if (token !== this.token) throw new Error('cancelled');
     const p = new MkvPlayer(this.video, url, {
       onWarn: (m) => { this.log(`⚠ ${m}`); this.onWarn(m); },
+      onNote: (m) => { this.log(`ℹ ${m}`); this.onNote(m); },
       onLog: (m) => this.log(m),
       onFatal: (err) => this.recover(token, `MKV: ${err.message}`),
       startAt: this.resumeAt || 0,

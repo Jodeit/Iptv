@@ -2,14 +2,16 @@
 // subtitle cues. No DOM here, so it can be tested outside the browser.
 
 import { trackConfig, initSegment, fragment, videoName, audioName } from './mp4.js';
+import { CAN_TRANSCODE, CODEC_LABEL } from '../audio-transcode.js';
 
 const TEXT_SUBS = /^S_TEXT\/(UTF8|ASS|SSA|WEBVTT)$/;
 
 export class Remuxer {
   // canPlay(kind, codec) → bool (MediaSource.isTypeSupported in the browser).
-  constructor(demux, { canPlay = () => true } = {}) {
+  constructor(demux, { canPlay = () => true, transcode = true } = {}) {
     this.demux = demux;
     this.canPlay = canPlay;
+    this.transcode = transcode; // convert audio the browser cannot decode (E-AC-3, DTS…) to AAC
     this.seq = 1;
     this.reset();
   }
@@ -25,6 +27,7 @@ export class Remuxer {
     const firstFrame = new Map();
     for (const c of firstClusters) for (const b of c.blocks) if (!firstFrame.has(b.track)) firstFrame.set(b.track, b.frames[0]);
     const warnings = [];
+    const notes = [];
     const tracks = this.demux.tracks.filter((t) => t.enabled);
 
     const playable = (t) => {
@@ -50,7 +53,15 @@ export class Remuxer {
     const ok = scored.filter((x) => !x.cfg.unsupported).sort((a, b) => b.score - a.score);
     let audio = ok.length ? { track: ok[0].t, cfg: ok[0].cfg } : null;
     if (!audio && audios.length) {
-      warnings.push(`The audio (${audioName(audios[0].codec)}) can’t play in a browser, so this plays without sound. Use VLC or Infuse for sound.`);
+      // Nothing plays as it is: convert the best track we know how to decode to AAC (see js/audio-transcode.js)
+      const conv = this.transcode ? scored.filter((x) => CAN_TRANSCODE.has(x.t.codec)).sort((a, b) => b.score - a.score)[0] : null;
+      if (conv) {
+        const cfg = trackConfig({ type: 'audio', codec: 'A_AAC', priv: null, sampleRate: 48000, channels: 2 }, null);
+        audio = { track: conv.t, cfg, transcode: conv.t.codec };
+        notes.push(`${CODEC_LABEL[conv.t.codec]} audio: converting to AAC in the browser`);
+      } else {
+        warnings.push(`The audio (${audioName(audios[0].codec)}) can’t play in a browser, so this plays without sound. Use VLC or Infuse for sound.`);
+      }
     } else if (audio && scored.some((x) => x.cfg.unsupported && x.t.isDefault && x.t !== audio.track)) {
       warnings.push(`Playing the ${audio.track.language || 'other'} audio track; the default one (${audioName(scored.find((x) => x.t.isDefault).t.codec)}) can’t play in a browser.`);
     }
@@ -74,7 +85,7 @@ export class Remuxer {
     this.shiftSec = video ? this.shift / video.cfg.timescale : 0;
     this.subSet = new Set(subs);
     return {
-      video, audio, subs, warnings,
+      video, audio, subs, warnings, notes,
       init: {
         video: video && initSegment(video.cfg, this.demux.duration),
         audio: audio && initSegment(audio.cfg, this.demux.duration),
@@ -98,7 +109,8 @@ export class Remuxer {
     }
     return {
       video: video && v.length ? this.videoFragment(v, video.cfg) : null,
-      audio: audio && a.length ? this.audioFragment(a, audio.cfg, audio.track) : null,
+      audio: audio && !audio.transcode && a.length ? this.audioFragment(a, audio.cfg, audio.track) : null,
+      audioBlocks: audio?.transcode && a.length ? a : null, // these go through the converter first (async), then aacFragment()
       cues,
     };
   }
@@ -118,6 +130,18 @@ export class Remuxer {
       key: b.key,
     }));
     this.last.video = dts[dts.length - 1];
+    return fragment(this.seq++, samples);
+  }
+
+  // AAC access units (1024 samples at 48 kHz each) that start at `start` seconds, from the audio converter
+  aacFragment(aus, start) {
+    const base = Math.round((start + this.shiftSec) * 48000);
+    const samples = aus.map((data, i) => ({ dts: base + i * 1024, cto: 0, duration: 1024, data, key: true }));
+    for (let i = 0; i < samples.length; i++) {
+      if (samples[i].dts <= this.last.audio) samples[i].dts = this.last.audio + 1;
+      this.last.audio = samples[i].dts;
+    }
+    for (let i = 0; i < samples.length; i++) samples[i].duration = i + 1 < samples.length ? Math.max(1, samples[i + 1].dts - samples[i].dts) : 1024;
     return fragment(this.seq++, samples);
   }
 

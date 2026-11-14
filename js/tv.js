@@ -185,13 +185,24 @@ function initTV() {
 
   // ---------- Player overlay ----------
   let osdTimer = 0, osdTick = 0;
+  // "EN - Stick - S02E03 - Chip Off the Old Butch" → { title: "Stick", sub: "S02E03 · Chip Off the Old Butch" }
+  const stripLang = (n) => String(n || '').replace(/^\s*[A-Za-z]{2,3}\s*[-:|]\s+/, '').trim();
+  function playLabels(c) {
+    if (kindOf(c) === 'live') return { title: c.clean || cleanName(c.name), sub: '' };
+    let name = stripLang(c.title || c.name), series = c.seriesName ? stripLang(c.seriesName) : '';
+    if (series && name.toLowerCase().startsWith(series.toLowerCase())) name = name.slice(series.length).replace(/^[\s\-–:|]+/, '');
+    else { const m = name.match(/^(.*?)\s*[-–]\s*(S\d+E\d+\b.*)$/i); if (m) { series = series || m[1]; name = m[2]; } }
+    name = name.replace(/^(S\d+E\d+)\s*[-–:]\s*/i, (x, id) => `${id.toUpperCase()} · `);
+    return series ? { title: series, sub: name } : { title: T().vod.title(c).title || stripLang(c.name), sub: '' };
+  }
   function paintOsd() {
     const o = O(), c = o.state.current;
     if (!c) return;
     const v = T().video, live = kindOf(c) === 'live';
     const logo = osd.querySelector('.osd-logo');
     if (c.logo) { logo.referrerPolicy = 'no-referrer'; if (logo.getAttribute('src') !== c.logo) logo.src = c.logo; } else logo.removeAttribute('src');
-    osd.querySelector('.osd-name').textContent = c.name;
+    const lab = playLabels(c);
+    osd.querySelector('.osd-name').textContent = lab.title;
     let sub = c.group || '', pct = null;
     if (live) {
       const nn = T().guide.nowNext(c);
@@ -200,14 +211,14 @@ function initTV() {
         pct = ((Date.now() - nn.now.start) / (nn.now.stop - nn.now.start)) * 100;
       }
     } else if (Number.isFinite(v.duration) && v.duration > 0) {
-      sub = `${v.paused ? '⏸ ' : ''}${fmtDur(v.currentTime)} / ${fmtDur(v.duration)}`;
+      sub = `${lab.sub ? `${lab.sub}  ·  ` : ''}${v.paused ? '⏸ ' : ''}${fmtDur(v.currentTime)} / ${fmtDur(v.duration)}`;
       pct = (v.currentTime / v.duration) * 100;
     }
     osd.querySelector('.osd-sub').textContent = sub;
     const bar = osd.querySelector('.osd-bar');
     bar.classList.toggle('on', pct != null);
     if (pct != null) bar.firstElementChild.style.width = `${Math.min(100, Math.max(0, pct))}%`;
-    osd.querySelector('.osd-hint').textContent = updateReady ? 'Update ready: installs when you pause or leave' : live ? '▲▼ channel     OK channels' : '◀ ▶ skip     OK pause';
+    osd.querySelector('.osd-hint').textContent = updateReady ? 'Update ready: installs when you pause or leave' : live ? '▲▼ browse     ◀ guide     OK controls' : '◀ ▶ skip     OK controls';
   }
   function showOsd(ms = 4500) {
     if (!O()?.state.current || screen() !== 'player') return;
@@ -991,6 +1002,9 @@ function initTV() {
   let silent = null, silentKey = '', playSince = 0;
   const notice = el('div', 'tv-notice hidden');
   document.body.append(notice);
+  let noticeTimer = 0;
+  const showNotice = (text, ms = 9000) => { notice.textContent = text; notice.classList.remove('hidden'); clearTimeout(noticeTimer); noticeTimer = setTimeout(() => notice.classList.add('hidden'), ms); };
+  const fixTried = new Set(); // channels we have already tried to repair the sound of
   setInterval(() => {
     const v = T()?.video, c = O()?.state.current;
     if (!v || !c) return;
@@ -998,12 +1012,17 @@ function initTV() {
     if (key !== silentKey) { silentKey = key; silent = null; playSince = 0; }
     if (v.paused || v.readyState < 3 || !(v.currentTime > 0)) { playSince = 0; return; }
     if (!playSince) playSince = Date.now();
+    // A Matroska file with sound the built-in player cannot decode: replay it through the MKV remuxer, which converts it
+    if (Date.now() - playSince >= 3500 && !fixTried.has(c.id) && v.webkitAudioDecodedByteCount === 0 && v.webkitVideoDecodedByteCount > 0 && !v.muted && v.volume > 0 && /\.mkv(\?|$)/i.test(c.url || '') && T().fixAudio) {
+      fixTried.add(c.id);
+      showNotice('No sound from this file’s audio format. Converting it so it plays…', 20000);
+      T().fixAudio().then((ok) => { if (ok) { notice.classList.add('hidden'); } else showNotice('Couldn’t convert this audio. Press OK, then Info, to see why.'); });
+      return;
+    }
     if (Date.now() - playSince < 6000 || silent !== null || v.webkitAudioDecodedByteCount === undefined) return;
     silent = !v.muted && v.volume > 0 && v.webkitAudioDecodedByteCount === 0 && v.webkitVideoDecodedByteCount > 0;
     if (silent) {
-      notice.textContent = 'No sound from this stream. Press OK, then Info, to see why.';
-      notice.classList.remove('hidden');
-      setTimeout(() => notice.classList.add('hidden'), 9000);
+      showNotice('No sound from this stream. Press OK, then Info, to see why.');
     }
   }, 1500);
 
@@ -1048,8 +1067,9 @@ function initTV() {
     if (!c) return;
     const live = kindOf(c) === 'live';
     const nn = live ? T().guide.peek(c) : null;
-    const title = live ? (nn?.now?.title || c.clean || cleanName(c.name)) : (c.seriesName ? `${c.seriesName}` : T().vod.title(c).title || c.name);
-    const sub = live ? `${c.clean || cleanName(c.name)}${nn?.now ? ` · until ${fmtClock(nn.now.stop)}` : ''}` : (c.seriesName ? c.title || c.name : '');
+    const lab = playLabels(c);
+    const title = live ? (nn?.now?.title || lab.title) : lab.title;
+    const sub = live ? `${lab.title}${nn?.now ? ` · until ${fmtClock(nn.now.stop)}` : ''}` : lab.sub;
     const tr = T().tracks?.() || { audio: [], text: [] };
     const on = (list) => list.find((x) => x.on)?.label;
     const btn = (k, icon, label, extra = '', disabled = false) => `<button class="tvc-btn" data-k="${k}"${disabled ? ' disabled' : ''}><i>${icon}</i><span>${esc(label)}</span>${extra ? `<small>${esc(extra)}</small>` : ''}</button>`;
@@ -1057,15 +1077,25 @@ function initTV() {
     let menu = '';
     if (controlsMenu === 'info') {
       const si = T().streamInfo?.() || {};
-      const yn = (n) => (n === undefined ? 'unknown' : n > 0 ? 'yes' : 'no');
-      const lines = [
-        `Engine: ${si.engine || 'native'}`,
-        `Picture: ${si.w ? `${si.w}×${si.h}` : 'none yet'}${si.videoBytes !== undefined ? ` · video decoded: ${yn(si.videoBytes)}` : ''}`,
-        `Audio decoded: ${yn(si.audioBytes)}${si.muted ? ' (muted)' : ''}`,
-        ...(si.warnings || []).map((w) => `⚠ ${w}`),
-      ];
-      menu = `<div class="tvc-menu tvc-info"><h3>Stream info</h3>${lines.map((l) => `<div class="tvc-line">${esc(l)}</div>`).join('')}<div class="tvc-line tvc-probe">Reading the stream…</div><button class="tvc-opt" data-k="o:close">Close</button></div>`;
-      T().probeStream?.().then((txt) => { const p = controls.querySelector('.tvc-probe'); if (p) p.textContent = txt; }).catch((e) => { const p = controls.querySelector('.tvc-probe'); if (p) p.textContent = `Couldn’t read the stream: ${e.message}`; });
+      const ENG = { native: 'Built-in player', mkv: 'MKV engine', hlsjs: 'HLS', mpegts: 'MPEG-TS' };
+      const converted = (si.log || []).some((l) => /converting to AAC/i.test(l));
+      const heard = si.audioBytes === undefined ? null : si.audioBytes > 0;
+      const row = (k, v, cls = '') => `<dt>${k}</dt><dd class="${cls}">${v}</dd>`;
+      menu = `<div class="tvc-menu tvc-info"><h3>Stream info</h3><dl class="tvi-grid">
+        ${row('Playing with', `${esc(ENG[si.engine] || si.engine || 'Built-in player')}${converted ? ' · audio converted for this TV' : ''}`)}
+        ${row('Picture', si.w ? `${si.w}×${si.h}${si.videoBytes > 0 ? ' · decoding' : ''}` : 'not started')}
+        ${row('Sound', heard === null ? 'unknown on this browser' : heard ? '✓ playing' : '⚠ no audio decoded', heard === false ? 'bad' : heard ? 'good' : '')}
+        ${row('File', 'reading…', 'tvi-file')}
+        ${row('Contains', 'reading…', 'tvi-contains')}
+        ${(si.warnings || []).length ? row('Notes', (si.warnings || []).map(esc).join('<br>'), 'bad') : ''}
+      </dl><button class="tvc-opt" data-k="o:close">Close</button></div>`;
+      T().probeStream?.().then((p) => {
+        const f = controls.querySelector('.tvi-file'), c = controls.querySelector('.tvi-contains');
+        if (!f || !c) return;
+        if (p.error) { f.textContent = 'couldn’t read'; c.textContent = p.error; return; }
+        f.textContent = p.container || 'unknown';
+        c.innerHTML = (p.streams.length ? p.streams.map(esc).join(' · ') : 'nothing recognised') + (p.problems.length ? `<br><span class="bad">⚠ ${p.problems.map(esc).join('<br>⚠ ')}</span>` : '');
+      }).catch((e) => { const f = controls.querySelector('.tvi-file'); if (f) f.textContent = `couldn’t read: ${e.message}`; });
     } else if (controlsMenu) {
       const list = controlsMenu === 'audio' ? tr.audio : [{ key: 'off', label: 'Off', on: !tr.text.some((x) => x.on) }, ...tr.text];
       menu = `<div class="tvc-menu"><h3>${controlsMenu === 'audio' ? 'Audio' : 'Captions'}</h3>${list.map((o) => `<button class="tvc-opt${o.on ? ' on' : ''}" data-k="o:${esc(o.key)}">${o.on ? '✓ ' : ''}${esc(o.label)}</button>`).join('')}</div>`;

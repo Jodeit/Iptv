@@ -457,6 +457,7 @@ const playWarnings = []; // what the player said about the stream being played (
 const player = new StreamPlayer(video, {
   onStatus: (s, { loading = false, frac = null } = {}) => (loading ? showLoading(s, frac) : (hideLoading(), setStatus(s))),
   onWarn: (m) => { playWarnings.push(m); toast(m, true); },
+  onNote: (m) => toast(m),
   onSlow: () => {
     const ch = state.current;
     if (ch && settings.vodPlayer === 'slow' && kindOf(ch) !== 'live') offerExternal(ch, 'This is downloading slower than it plays.');
@@ -2227,11 +2228,28 @@ window.o3xr = {
       audioBytes: video.webkitAudioDecodedByteCount, videoBytes: video.webkitVideoDecodedByteCount,
       muted: video.muted, volume: video.volume, warnings: [...playWarnings], log: player.report.slice(-8),
     }),
+    // A Matroska file the built-in player plays without sound (E-AC-3, DTS…): play it through the MKV remuxer, which
+    // converts that audio. Falls back to the built-in player if the remuxer cannot take it. → true if sound should work
+    fixAudio: async () => {
+      const ch = state.current;
+      if (!ch || !/\.mkv(\?|$)/i.test(ch.url) || player.lastEngine === 'mkv') return false;
+      const at = video.currentTime;
+      const ok = await player.switchEngine('mkv', at).catch(() => false);
+      if (!ok) await player.switchEngine('native', at).catch(() => {});
+      return !!ok;
+    },
     // Reads the first bytes of the stream and says what is in it (container, video and audio codecs)
     probeStream: async () => {
       const ch = state.current;
       const src = ch && streamCandidates(ch)[0]?.src;
-      return src ? describeProbe(await probe(src)) : 'No stream address';
+      if (!src) return { error: 'No stream address' };
+      const p = await probe(src);
+      const clean = (t) => String(t || '').replace(/\?[^\s·]*/g, '?…'); // no login tokens on screen
+      return {
+        text: clean(describeProbe(p)), status: p.status, error: p.error || '',
+        container: p.content?.kind || '', streams: p.content?.streams?.length ? p.content.streams : p.content?.codecs || [],
+        problems: p.content?.problems || [],
+      };
     },
     // Audio and caption choices for what is playing. Only what the stream really carries is listed.
     tracks: () => {
