@@ -766,3 +766,8 @@ html.tv-booting body::before {
 .tvh-info .i-bar u { display: block; height: 100%; border-radius: 2px; background: var(--accent); text-decoration: none; }
 /* The video is black until something plays, with no browser play icon on it */
 html.tv #video, html.tv #flatStage { background: #000; }
+
+/* ---------- TV: the picture is the whole screen ---------- */
+html.tv #flatStage { inset: 0; width: 100%; height: 100%; border-radius: 0; border: 0; box-shadow: none; }
+html.tv #flatStage video { width: 100%; height: 100%; object-fit: contain; }
+html.tv, html.tv body { background: #000; }
