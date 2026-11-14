@@ -2254,7 +2254,7 @@ window.o3xr = {
       if (!ch || !/\.mkv(\?|$)/i.test(ch.url) || player.lastEngine === 'mkv') return false;
       const at = video.currentTime;
       import('./audio-transcode.js').then((t) => t.warmUp((l) => player.log(l))).catch(() => {}); // start the decoder download now, in parallel
-      const ok = await player.switchEngine('mkv', at).catch(() => false);
+      const ok = await player.switchEngine('mkv', at, { forceTranscode: true }).catch(() => false); // the built-in player just proved it cannot decode this audio
       if (!ok) await player.switchEngine('native', at).catch(() => {});
       return !!ok;
     },
