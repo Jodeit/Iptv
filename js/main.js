@@ -2243,7 +2243,7 @@ window.o3xr = {
     streamInfo: () => ({
       engine: player.lastEngine || '', w: video.videoWidth, h: video.videoHeight,
       audioBytes: video.webkitAudioDecodedByteCount, videoBytes: video.webkitVideoDecodedByteCount,
-      muted: video.muted, volume: video.volume, warnings: [...playWarnings], log: player.report.slice(-8),
+      muted: video.muted, volume: video.volume, warnings: [...playWarnings], log: player.report.slice(-40),
     }),
     // A Matroska file the built-in player plays without sound (E-AC-3, DTS…): play it through the MKV remuxer, which
     // converts that audio. Falls back to the built-in player if the remuxer cannot take it. → true if sound should work
@@ -2251,6 +2251,7 @@ window.o3xr = {
       const ch = state.current;
       if (!ch || !/\.mkv(\?|$)/i.test(ch.url) || player.lastEngine === 'mkv') return false;
       const at = video.currentTime;
+      import('./audio-transcode.js').then((t) => t.warmUp((l) => player.log(l))).catch(() => {}); // start the decoder download now, in parallel
       const ok = await player.switchEngine('mkv', at).catch(() => false);
       if (!ok) await player.switchEngine('native', at).catch(() => {});
       return !!ok;

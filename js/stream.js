@@ -95,7 +95,9 @@ export class StreamPlayer {
       try {
         // A source that never answers (or streams endlessly where a playlist was expected)
         // shouldn't hold up the remaining tries.
-        await withTimeout(this[engine](src, token), 15000, 'no response within 15s');
+        // The MKV engine may have to download the audio decoder first (about 32 MB), so it gets much longer when asked for
+        const startLimit = engine === 'mkv' && this.forceEngine === 'mkv' ? 150000 : 15000;
+        await withTimeout(this[engine](src, token), startLimit, `no response within ${startLimit / 1000}s`);
         if (token !== this.token) return false;
         this.progress(token, 'Starting video');
         await withTimeout(this.video.play().catch(async (e) => {
@@ -299,6 +301,7 @@ export class StreamPlayer {
     const p = new MkvPlayer(this.video, url, {
       onWarn: (m) => { this.log(`⚠ ${m}`); this.onWarn(m); },
       onNote: (m) => { this.log(`ℹ ${m}`); this.onNote(m); },
+      onProgress: (m) => this.progress(token, m),
       onLog: (m) => this.log(m),
       onFatal: (err) => this.recover(token, `MKV: ${err.message}`),
       startAt: this.resumeAt || 0,

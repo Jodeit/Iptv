@@ -1021,7 +1021,7 @@ function initTV() {
     // A Matroska file with sound the built-in player cannot decode: replay it through the MKV remuxer, which converts it
     if (Date.now() - playSince >= 3500 && !fixTried.has(c.id) && v.webkitAudioDecodedByteCount === 0 && v.webkitVideoDecodedByteCount > 0 && !v.muted && v.volume > 0 && /\.mkv(\?|$)/i.test(c.url || '') && T().fixAudio) {
       fixTried.add(c.id);
-      showNotice('No sound from this file’s audio format. Converting it so it plays…', 20000);
+      showNotice('This file’s audio format isn’t supported here. Converting it so it plays (the first time this downloads the decoder, which can take a minute)…', 150000);
       T().fixAudio().then((ok) => { if (ok) { notice.classList.add('hidden'); } else showNotice('Couldn’t convert this audio. Press OK, then Info, to see why.'); });
       return;
     }
@@ -1093,6 +1093,8 @@ function initTV() {
       const si = T().streamInfo?.() || {};
       const ENG = { native: 'Built-in player', mkv: 'MKV engine', hlsjs: 'HLS', mpegts: 'MPEG-TS' };
       const converted = (si.log || []).some((l) => /converting to AAC/i.test(l));
+      // What the last attempt to fix the sound ran into (e.g. the MKV engine refusing the file)
+      const problems = (si.log || []).filter((l) => /✗|switching|couldn.t convert|can.t play/i.test(l)).slice(-3).map((l) => l.replace(/^\S+ [AP]M /, '').replace(/https?:\/\/\S+/g, 'the file'));
       const heard = si.audioBytes === undefined ? null : si.audioBytes > 0;
       const row = (k, v, cls = '') => `<dt>${k}</dt><dd class="${cls}">${v}</dd>`;
       menu = `<div class="tvc-menu tvc-info"><h3>Stream info</h3><dl class="tvi-grid">
@@ -1102,6 +1104,7 @@ function initTV() {
         ${row('File', 'reading…', 'tvi-file')}
         ${row('Contains', 'reading…', 'tvi-contains')}
         ${(si.warnings || []).length ? row('Notes', (si.warnings || []).map(esc).join('<br>'), 'bad') : ''}
+        ${problems.length ? row('Last problem', problems.map(esc).join('<br>'), 'bad') : ''}
       </dl><button class="tvc-opt" data-k="o:close">Close</button></div>`;
       T().probeStream?.().then((p) => {
         const f = controls.querySelector('.tvi-file'), c = controls.querySelector('.tvi-contains');
