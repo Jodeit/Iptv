@@ -1,124 +1,264 @@
-// Remote-control mode. Only active inside the Android TV app, whose WebView adds "TunerTV" to
-// the user agent. Everywhere else this file does nothing.
+// The TV interface. Only active inside the Android TV app, whose WebView adds "TunerTV" to the
+// user agent; everywhere else this file does nothing. The phone UI's chrome (top bar, drawer,
+// guide, pop-out player) is hidden there and replaced by three things:
 //
-// Setup and settings live on the phone. A TV with no playlist shows a setup screen: a phone on the
-// same Wi-Fi finds it (Profile → Link a TV) and sends its profile, end-to-end encrypted, after the TV
-// asks "Allow?". The drawer is cut down to the channel list and a Phone tab; everything else syncs in.
+//   Player   the video, full screen, nothing on top. A small overlay appears on any key.
+//   Home     one screen on the left, video still playing on the right: tabs Live | Movies | Shows |
+//            Phone; Live is a group row over a channel list with what's on now. No submenus.
+//   Setup    shown when no profile/playlist: a phone on the same Wi-Fi sends its profile (js/profiles.js).
 //
-// Playing, nothing open:  ▲/▼ channel up/down, OK or ◀ open the channel panel, ▶ open the guide.
-// Panel / guide / gallery open: arrows move focus to the nearest control in that direction,
-// OK clicks it, Back closes the overlay. The app's letter shortcuts never fire here.
+// Remote:  Player: ▲▼ channel, OK or ◀ Home, ▶ info.  (Movies/shows: OK pause, ◀▶ skip, ▲▼ info.)
+//          Home: arrows move, OK plays, hold OK = favorite, Back returns to the picture.
+//          Back on the picture leaves the app.
 
-if (/TunerTV/.test(navigator.userAgent)) {
+import { kindOf } from './filter.js';
+
+if (/TunerTV/.test(navigator.userAgent)) initTV();
+
+function initTV() {
   const $ = (id) => document.getElementById(id);
-  const FOCUSABLE = 'button, a[href], input, select, textarea, summary, [tabindex], .channel-list li, .gcard';
   const sleep = (ms) => new Promise((ok) => setTimeout(ok, ms));
-  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+  const O = () => window.o3xr;
+  const P = () => O().profiles;
+  const T = () => O().tv;
+  const host = location.host;
+  const fmtClock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  const fmtDur = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return `${h ? h + ':' : ''}${String(m).padStart(h ? 2 : 1, '0')}:${String(s % 60).padStart(2, '0')}`; };
   document.documentElement.classList.add('tv');
 
-  const style = document.createElement('style');
-  style.textContent = `
-    html.tv *:focus { outline: 3px solid var(--accent, #4da3ff) !important; outline-offset: 2px; }
-    html.tv .channel-list li:focus, html.tv .gcard:focus { background: rgba(255,255,255,.12); }
-    html.tv { cursor: none; }`;
-  document.head.append(style);
+  // ---------- DOM ----------
+  const osd = el('div', 'tv-osd hidden');
+  osd.id = 'tvOsd';
+  osd.innerHTML = '<img class="osd-logo" alt=""><div class="osd-main"><div class="osd-name"></div><div class="osd-sub"></div><div class="osd-bar"><u></u></div></div><div class="osd-hint"></div>';
+  const home = el('div', 'tv-home hidden');
+  home.id = 'tvHome';
+  home.innerHTML = '<div class="tvh-panel"><div class="tvh-tabs"></div><div class="tvh-main"><div class="tvh-chips"></div><div class="tvh-body"></div></div></div>';
+  const setup = el('div', 'tv-setup hidden');
+  setup.id = 'tvSetup';
+  setup.innerHTML = '<div class="tvs-card"><div id="tvsBody"></div><div class="tvs-actions"><button id="tvsSkip" class="btn ghost">Skip for now</button></div></div>';
+  document.body.append(osd, home, setup);
+  const tabsEl = home.querySelector('.tvh-tabs'), chipsEl = home.querySelector('.tvh-chips'), bodyEl = home.querySelector('.tvh-body');
 
-  const open = {
-    setup: () => !$('tvSetup').classList.contains('hidden'),
-    panel: () => !$('panel').classList.contains('collapsed'),
-    guide: () => !$('guideView').classList.contains('hidden'),
-    gallery: () => !$('gallery').classList.contains('hidden'),
-  };
-  const overlay = () => (open.setup() && $('tvSetup')) || (open.gallery() && $('gallery')) || (open.guide() && $('guideView')) || (open.panel() && $('panel')) || null;
-  // The gallery and guide close themselves on Escape (the gallery also steps back from a preview).
-  let synthetic = false;
-  const closeOverlay = () => {
-    if (open.setup()) $('tvsSkip').click();
-    else if (open.gallery() || open.guide()) {
-      synthetic = true;
-      (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
-      synthetic = false;
-    } else if (open.panel()) $('panelToggle').click();
-  };
+  // ---------- State ----------
+  let tab = 'live';            // 'live' | 'phone' (Movies and Shows open the poster gallery)
+  let group = '';              // '' = all, FAV = favorites, else a group name
+  const FAV = '\u0000fav';
+  let dismissed = false, running = false, abort = null, liveCode = null;
+  const isOpen = { home: () => !home.classList.contains('hidden'), setup: () => !setup.classList.contains('hidden'), gallery: () => !!O()?.tv.galleryOpen() };
+  const screen = () => (isOpen.setup() ? 'setup' : isOpen.gallery() ? 'gallery' : isOpen.home() ? 'home' : 'player');
+  const isVod = () => { const c = O()?.state.current; return !!c && kindOf(c) !== 'live'; };
 
-  const visible = (el) => {
-    const r = el.getBoundingClientRect();
-    return r.width > 0 && r.height > 0 && !el.disabled && getComputedStyle(el).visibility !== 'hidden';
+  // ---------- Channel list helpers ----------
+  const liveAll = () => T().live();
+  const groups = () => [...new Set(liveAll().map((c) => c.group).filter(Boolean))];
+  const visibleList = () => {
+    const all = liveAll();
+    if (group === FAV) return all.filter((c) => T().isFav(c.id));
+    return group ? all.filter((c) => c.group === group) : all;
   };
-  // Nearest focusable in a direction; distance counts the off-axis gap double so a row
-  // doesn't jump to a far-away control that happens to line up.
-  function move(root, dx, dy) {
-    const cur = document.activeElement && root.contains(document.activeElement) ? document.activeElement : null;
-    const items = [...root.querySelectorAll(FOCUSABLE)].filter(visible);
-    if (!items.length) return;
-    if (!cur) { items[0].focus(); return; }
-    const a = cur.getBoundingClientRect();
-    const ax = a.left + a.width / 2, ay = a.top + a.height / 2;
-    let best = null, bestScore = Infinity;
-    for (const el of items) {
-      if (el === cur) continue;
-      const r = el.getBoundingClientRect();
-      const ex = r.left + r.width / 2 - ax, ey = r.top + r.height / 2 - ay;
-      const along = dx ? ex * dx : ey * dy, across = Math.abs(dx ? ey : ex);
-      if (along <= 1) continue;
-      const score = along + across * 2;
-      if (score < bestScore) { bestScore = score; best = el; }
-    }
-    if (best) { best.focus(); best.scrollIntoView({ block: 'nearest', inline: 'nearest' }); }
+  function surf(dir) {
+    const list = visibleList();
+    if (!list.length) return;
+    const i = list.indexOf(O().state.current);
+    T().play(list[(i + dir + list.length) % list.length]);
   }
 
-  const DIR = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
-  addEventListener('keydown', (e) => {
-    if (synthetic) return;
-    const typing = e.target.matches?.('input, textarea, select');
-    const root = overlay();
-    if (e.key === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack') {
-      if (root) { e.preventDefault(); e.stopImmediatePropagation(); closeOverlay(); }
-      return;
-    }
-    if (root) {
-      if (typing && !DIR[e.key]) return; // let the keyboard type
-      if (typing && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return; // move the caret
-      if (DIR[e.key]) {
-        e.preventDefault(); e.stopImmediatePropagation();
-        move(root, ...DIR[e.key]);
-      } else if (e.key === 'Enter' && !typing && document.activeElement && document.activeElement !== document.body) {
-        e.preventDefault(); e.stopImmediatePropagation();
-        document.activeElement.click();
-      } else if (!typing && e.key.length === 1) {
-        e.stopImmediatePropagation(); // no letter shortcuts while browsing
+  // ---------- Player overlay ----------
+  let osdTimer = 0, osdTick = 0;
+  function paintOsd() {
+    const o = O(), c = o.state.current;
+    if (!c) return;
+    const v = T().video, live = kindOf(c) === 'live';
+    const logo = osd.querySelector('.osd-logo');
+    if (c.logo) { logo.referrerPolicy = 'no-referrer'; if (logo.getAttribute('src') !== c.logo) logo.src = c.logo; } else logo.removeAttribute('src');
+    osd.querySelector('.osd-name').textContent = c.name;
+    let sub = c.group || '', pct = null;
+    if (live) {
+      const nn = T().guide.nowNext(c);
+      if (nn?.now) {
+        sub = `${nn.now.title}  ·  until ${fmtClock(nn.now.stop)}${nn.next ? `  ·  next ${nn.next.title}` : ''}`;
+        pct = ((Date.now() - nn.now.start) / (nn.now.stop - nn.now.start)) * 100;
       }
+    } else if (Number.isFinite(v.duration) && v.duration > 0) {
+      sub = `${v.paused ? '⏸ ' : ''}${fmtDur(v.currentTime)} / ${fmtDur(v.duration)}`;
+      pct = (v.currentTime / v.duration) * 100;
+    }
+    osd.querySelector('.osd-sub').textContent = sub;
+    const bar = osd.querySelector('.osd-bar');
+    bar.classList.toggle('on', pct != null);
+    if (pct != null) bar.firstElementChild.style.width = `${Math.min(100, Math.max(0, pct))}%`;
+    osd.querySelector('.osd-hint').textContent = live ? '▲▼ channel     OK channels' : '◀ ▶ skip     OK pause';
+  }
+  function showOsd(ms = 4500) {
+    if (!O()?.state.current || screen() !== 'player') return;
+    paintOsd();
+    osd.classList.remove('hidden');
+    clearTimeout(osdTimer);
+    clearInterval(osdTick);
+    osdTick = setInterval(paintOsd, 1000);
+    osdTimer = setTimeout(hideOsd, ms);
+  }
+  function hideOsd() { osd.classList.add('hidden'); clearInterval(osdTick); }
+  // A different channel started: say what it is.
+  let lastShown = null;
+  setInterval(() => {
+    const c = O()?.state.current;
+    if (c && c !== lastShown) { lastShown = c; showOsd(); }
+  }, 400);
+
+  // ---------- Home ----------
+  function renderTabs() {
+    tabsEl.innerHTML = '';
+    const defs = [];
+    if (liveAll().length) defs.push(['live', 'Live']);
+    if (T().hasKind('movie')) defs.push(['movie', 'Movies']);
+    if (T().hasKind('series')) defs.push(['series', 'Shows']);
+    defs.push(['phone', 'Phone']);
+    if (!defs.some(([k]) => k === tab)) tab = defs[0][0];
+    for (const [k, label] of defs) {
+      const b = el('button', `tvh-tab${k === tab ? ' on' : ''}`, esc(label));
+      b.dataset.tab = k;
+      b.onclick = () => {
+        if (k === 'movie' || k === 'series') { closeHome(); T().openGallery(k); } else selectTab(k, true);
+      };
+      // Live and Phone switch as soon as they get focus, so ◀ ▶ browses without pressing OK.
+      b.onfocus = () => { if ((k === 'live' || k === 'phone') && k !== tab) selectTab(k, false); };
+      tabsEl.append(b);
+    }
+  }
+  function selectTab(k, focusBody) {
+    tab = k;
+    for (const b of tabsEl.children) b.classList.toggle('on', b.dataset.tab === k);
+    renderBody();
+    if (focusBody) focusFirstInBody();
+  }
+  function focusFirstInBody() {
+    (bodyEl.querySelector('.tvh-row.playing') || bodyEl.querySelector('button'))?.focus();
+  }
+
+  function renderChips() {
+    chipsEl.innerHTML = '';
+    chipsEl.classList.toggle('hidden', tab !== 'live');
+    if (tab !== 'live') return;
+    const defs = [['', 'All']];
+    if (liveAll().some((c) => T().isFav(c.id))) defs.push([FAV, '★ Favorites']);
+    for (const g of groups().slice(0, 80)) defs.push([g, g]);
+    for (const [k, label] of defs) {
+      const b = el('button', `tvh-chip${k === group ? ' on' : ''}`, esc(label));
+      b.onclick = () => { group = k; renderChips(); renderBody(); [...chipsEl.children].find((x) => x.classList.contains('on'))?.focus(); };
+      // Browsing groups previews them: the list follows focus, so ▲▼ then ▶ is enough.
+      b.onfocus = () => { if (group !== k) { group = k; for (const x of chipsEl.children) x.classList.toggle('on', x === b); renderBody(false); } };
+      chipsEl.append(b);
+    }
+  }
+
+  const ROW_PAGE = 100;
+  let shown = 0, listCache = [];
+  function rowFor(ch, i) {
+    const b = el('button', 'tvh-row');
+    b.dataset.i = i; // position in listCache; ids can repeat when a provider lists a stream twice
+    b.classList.toggle('playing', ch === O().state.current);
+    b.innerHTML = `<img alt="" referrerpolicy="no-referrer"><span class="meta"><b></b><small></small><i class="prog"><u></u></i></span><span class="star">★</span>`;
+    b.querySelector('b').textContent = ch.name;
+    if (ch.logo) b.querySelector('img').src = ch.logo; else b.querySelector('img').style.display = 'none';
+    b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
+    paintRow(b, ch);
+    return b;
+  }
+  function paintRow(b, ch) {
+    const nn = T().guide.nowNext(ch);
+    const small = b.querySelector('small'), prog = b.querySelector('.prog');
+    if (nn?.now) {
+      small.textContent = `${nn.now.title}${nn.next ? `  ·  next ${nn.next.title}` : ''}`;
+      prog.classList.add('on');
+      prog.firstElementChild.style.width = `${Math.round(((Date.now() - nn.now.start) / (nn.now.stop - nn.now.start)) * 100)}%`;
+    } else {
+      small.textContent = ch.group || '';
+      prog.classList.remove('on');
+      T().guide.request?.(ch);
+    }
+  }
+  function addRows() {
+    const next = listCache.slice(shown, shown + ROW_PAGE);
+    next.forEach((ch, k) => bodyEl.append(rowFor(ch, shown + k)));
+    shown += next.length;
+  }
+  let holdFired = false, rowPressed = false;
+
+  function renderBody(withChips = true) {
+    if (withChips) renderChips();
+    bodyEl.innerHTML = '';
+    bodyEl.className = `tvh-body ${tab}`;
+    if (tab === 'phone') return renderPhone();
+    listCache = visibleList();
+    shown = 0;
+    if (!listCache.length) {
+      bodyEl.innerHTML = `<p class="tvh-empty">${group === FAV ? 'No favorites yet. Hold OK on a channel to add one.' : 'No channels here.'}</p>`;
       return;
     }
-    // Plain playback.
-    if (e.key === 'Enter' || e.key === 'ArrowLeft') {
-      e.preventDefault(); e.stopImmediatePropagation();
-      $('panelOpen').click();
-      requestAnimationFrame(() => (document.querySelector('#panel .channel-list li, #panel button') || {}).focus?.());
-    } else if (e.key === 'ArrowRight') {
-      e.preventDefault(); e.stopImmediatePropagation();
-      if (!$('guideOpen').classList.contains('hidden')) $('guideOpen').click();
-      else $('panelOpen').click();
-    } else if (e.key === 'ChannelUp') { e.preventDefault(); $('nextCh').click(); }
-    else if (e.key === 'ChannelDown') { e.preventDefault(); $('prevCh').click(); }
-  }, true);
+    addRows();
+  }
 
-  // ---------- Setup screen ----------
-  const setup = document.createElement('div');
-  setup.id = 'tvSetup';
-  setup.className = 'tv-setup hidden';
-  setup.innerHTML = '<div class="tvs-card"><div id="tvsBody"></div><div class="tvs-actions"><button id="tvsSkip" class="btn ghost">Skip for now</button></div></div>';
-  document.body.append(setup);
+  function renderPhone() {
+    const p = P(), a = p.active(), st = p.status;
+    const when = st.state === 'synced' ? `Synced ${Math.max(0, Math.round((Date.now() - st.at) / 60000))} min ago` : st.message || 'Synced';
+    bodyEl.innerHTML = `
+      <div class="tvh-profile"><span class="avatar big">${a ? esc(a.name.trim().charAt(0).toUpperCase()) : '·'}</span>
+        <div><div class="np-name">${a ? esc(a.name) : 'Not linked to a phone'}</div><div class="muted small">${a ? esc(when) : 'Link one to get your playlists'}</div></div></div>
+      <p class="muted">Playlists, filters, keys and other settings are changed on your phone: open <b>${esc(host)}</b> and they sync to this TV.</p>
+      <div class="tvh-actions"></div>
+      <h3>Playlists</h3><div class="tvh-lists"></div>`;
+    const actions = bodyEl.querySelector('.tvh-actions');
+    const mk = (label, fn, cls = 'btn') => { const b = el('button', cls, esc(label)); b.onclick = fn; actions.append(b); return b; };
+    if (a) {
+      mk('Sync now', () => P().sync().then(renderPhoneSoon));
+      mk('Unlink this TV', () => { P().signOut(a.id); dismissed = false; closeHome(); runSetup(); }, 'btn ghost');
+    } else {
+      mk('Link a phone', () => { dismissed = false; closeHome(); runSetup(); });
+    }
+    const lists = bodyEl.querySelector('.tvh-lists');
+    for (const l of p.doc.playlists) {
+      const b = el('button', 'btn ghost', esc(l.name));
+      b.onclick = () => { O().loadPlaylist(l.url, l.name, { fresh: false }); closeHome(); };
+      lists.append(b);
+    }
+    if (!p.doc.playlists.length) lists.innerHTML = '<p class="muted small">None yet. Add one on your phone.</p>';
+  }
+  const renderPhoneSoon = () => setTimeout(() => { if (isOpen.home() && tab === 'phone') renderPhone(); }, 600);
+
+  function openHome() {
+    if (screen() === 'setup') return;
+    hideOsd();
+    home.classList.remove('hidden');
+    document.documentElement.classList.add('home-open');
+    renderTabs();
+    renderBody();
+    requestAnimationFrame(() => {
+      const row = bodyEl.querySelector('.tvh-row.playing') || bodyEl.querySelector('.tvh-row');
+      (row || bodyEl.querySelector('button') || tabsEl.firstElementChild)?.focus();
+      row?.scrollIntoView({ block: 'center' });
+    });
+  }
+  function closeHome() { home.classList.add('hidden'); document.documentElement.classList.remove('home-open'); document.activeElement?.blur?.(); }
+  // Rows' what's-on lines fill in as guide data arrives.
+  setInterval(() => {
+    if (!isOpen.home() || tab !== 'live') return;
+    for (const row of bodyEl.querySelectorAll('.tvh-row')) {
+      const ch = listCache[+row.dataset.i];
+      if (ch) paintRow(row, ch);
+    }
+  }, 5000);
+
+  // ---------- Setup: link a phone ----------
   const body = $('tvsBody');
-  const host = location.host;
   const fmt = (c) => `${c.slice(0, 4)} ${c.slice(4)}`;
-  let dismissed = false, running = false, abort = null;
-
-  const P = () => window.o3xr.profiles;
   const needsSetup = () => !dismissed && (!P().active() || !P().doc.playlists.length);
-
-  function render(html, focusSel) {
+  function renderSetup(html, focusSel) {
     body.innerHTML = html;
+    hideOsd();
+    closeHome();
     setup.classList.remove('hidden');
     document.querySelector(focusSel || '#tvsSkip')?.focus();
   }
@@ -131,16 +271,14 @@ if (/TunerTV/.test(navigator.userAgent)) {
     </ol>
     <p class="muted">Phone not on this Wi-Fi? In Link a TV, type this code:</p>
     <div class="tvs-code">${code ? esc(fmt(code)) : '…'}</div>`;
-
   function confirmLink(name) {
     return new Promise((done) => {
-      render(`<h1>Link this TV to “${esc(name)}”?</h1><p class="muted">A phone is asking to share its profile with this TV. Only allow it if that was you.</p>
+      renderSetup(`<h1>Link this TV to “${esc(name)}”?</h1><p class="muted">A phone is asking to share its profile with this TV. Only allow it if that was you.</p>
         <div class="tvs-actions"><button id="tvsAllow" class="btn">Allow</button><button id="tvsDeny" class="btn ghost">Deny</button></div>`, '#tvsAllow');
       $('tvsAllow').onclick = () => done(true);
       $('tvsDeny').onclick = () => done(false);
     });
   }
-
   async function runSetup() {
     if (running) return;
     running = true;
@@ -148,24 +286,26 @@ if (/TunerTV/.test(navigator.userAgent)) {
       while (needsSetup()) {
         const p = P();
         if (p.active()) {
-          render(`<h1>Linked to “${esc(p.active().name)}”</h1><p>Now add a playlist on your phone: <b>Sources</b>. It will appear here automatically.</p>`);
+          renderSetup(`<h1>Linked to “${esc(p.active().name)}”</h1><p>Now add a playlist on your phone: <b>Sources</b>. It will appear here automatically.</p>`);
           await sleep(4000);
           await p.pull();
           continue;
         }
         let req;
         try { req = await p.tvRequest(); } catch (e) {
-          render(`<h1>Can’t set up linking</h1><p class="muted">${esc(e.message)}</p>`);
+          renderSetup(`<h1>Can’t set up linking</h1><p class="muted">${esc(e.message)}</p>`);
           await sleep(8000);
           continue;
         }
-        render(steps(req.code));
+        renderSetup(steps(req.code));
         abort = new AbortController();
+        liveCode = req.code;
         const got = await p.tvWait(req, abort.signal).catch(() => null);
-        if (!got) continue; // code expired (new one next round) or Skip pressed
+        if (!got) { p.tvCancel(req.code); liveCode = null; continue; } // expired (new code next round) or Skip pressed
+        liveCode = null;
         if (await confirmLink(got.name)) {
           try { await p.join(got.token, got.name); } catch (e) {
-            render(`<h1>Couldn’t link</h1><p class="muted">${esc(e.message)}</p>`);
+            renderSetup(`<h1>Couldn’t link</h1><p class="muted">${esc(e.message)}</p>`);
             await sleep(5000);
           }
         }
@@ -173,112 +313,178 @@ if (/TunerTV/.test(navigator.userAgent)) {
     } finally {
       setup.classList.add('hidden');
       running = false;
-      // Playlists arrived but nothing is playing yet (phone hadn't set a "last playlist").
-      const o = window.o3xr, first = o.profiles.doc.playlists[0];
+      // Playlists arrived but nothing is loaded yet (the phone hadn't set a "last playlist").
+      const o = O(), first = o.profiles.doc.playlists[0];
       if (!dismissed && first && !o.state.channels.length) o.loadPlaylist(first.url, first.name, { fresh: false });
+      settleOnHome();
     }
   }
-  $('tvsSkip').onclick = () => { dismissed = true; abort?.abort(); setup.classList.add('hidden'); };
+  $('tvsSkip').onclick = () => { dismissed = true; abort?.abort(); setup.classList.add('hidden'); settleOnHome(); };
 
-  // ---------- Slimmed-down drawer: channels, plus a Phone tab ----------
-  const tabs = document.querySelector('#panel .tabs');
-  const phoneTab = document.createElement('button');
-  phoneTab.className = 'tab';
-  phoneTab.dataset.tab = 'phone';
-  phoneTab.textContent = 'Phone';
-  tabs.append(phoneTab);
-  const phoneBody = document.createElement('section');
-  phoneBody.className = 'tab-body';
-  phoneBody.dataset.tab = 'phone';
-  phoneBody.innerHTML = `
-    <div class="profile-card"><span class="avatar big" id="tvpAvatar">·</span>
-      <div class="profile-meta"><div id="tvpName" class="np-name"></div><div id="tvpStatus" class="muted small"></div></div></div>
-    <p class="muted">Playlists, filters, keys and 3D options are set up on your phone, and sync to this TV.
-      Open <b>${esc(host)}</b> there.</p>
-    <div class="row"><button id="tvpSync" class="btn">Sync now</button><button id="tvpUnlink" class="btn ghost">Unlink this TV</button></div>
-    <h3>Playlists</h3><div id="tvpLists" class="stack"></div>`;
-  $('panel').append(phoneBody);
-  $('panel').querySelector('.drawer-title').textContent = 'Tuner';
-
-  const setTabTV = (name) => {
-    for (const t of document.querySelectorAll('.tab')) t.classList.toggle('active', t.dataset.tab === name);
-    for (const b of document.querySelectorAll('.tab-body')) b.classList.toggle('active', b.dataset.tab === name);
-  };
-  phoneTab.onclick = () => setTabTV('phone');
-  // The app also switches tabs itself (e.g. to Sources after a profile switch). Only Channels and
-  // Phone exist here, and Channels is hidden when the guide takes over, so fall back to Phone.
-  const ensureTab = () => {
-    const now = document.querySelector('.tab.active')?.dataset.tab;
-    const channelsOk = now === 'channels' && !$('channelsTab').classList.contains('hidden');
-    if (!channelsOk && now !== 'phone') setTabTV($('channelsTab').classList.contains('hidden') ? 'phone' : 'channels');
-    refreshPhoneTab();
-  };
-  new MutationObserver(() => { if (open.panel()) ensureTab(); }).observe($('panel'), { attributes: true, attributeFilter: ['class'] });
-
-  function refreshPhoneTab() {
-    const p = P(), a = p.active();
-    $('tvpName').textContent = a ? a.name : 'Not linked';
-    $('tvpAvatar').textContent = a ? a.name.trim().charAt(0).toUpperCase() : '·';
-    const st = p.status;
-    $('tvpStatus').textContent = !a ? 'Link a phone to get your playlists'
-      : st.state === 'synced' ? `Synced ${Math.max(0, Math.round((Date.now() - st.at) / 60000))} min ago` : st.message || 'Synced';
-    $('tvpUnlink').textContent = a ? 'Unlink this TV' : 'Link a phone';
-    const box = $('tvpLists');
-    const lists = p.doc.playlists;
-    const sig = JSON.stringify(lists.map((x) => x.key));
-    if (box.dataset.sig === sig) return;
-    box.dataset.sig = sig;
-    box.innerHTML = '';
-    for (const l of lists) {
-      const b = document.createElement('button');
-      b.className = 'btn ghost';
-      b.textContent = l.name;
-      b.onclick = () => { window.o3xr.loadPlaylist(l.url, l.name, { fresh: false }); $('panelToggle').click(); };
-      box.append(b);
-    }
-    if (!lists.length) box.innerHTML = '<p class="muted small">None yet. Add one on your phone.</p>';
+  // With nothing playing, the useful screen is the channel list, not a black picture.
+  async function settleOnHome() {
+    for (let i = 0; i < 40 && !T().live().length && !O().state.channels.length; i++) await sleep(250);
+    if (screen() === 'player' && !O().state.current) openHome();
   }
-  $('tvpSync').onclick = () => P().sync();
-  $('tvpUnlink').onclick = () => {
-    const a = P().active();
-    if (a) P().signOut(a.id);
-    dismissed = false;
-    $('panelToggle').click();
-    runSetup();
-  };
-  // The Profile chip in the top bar opens this tab instead of the (hidden) phone-side profile form.
-  $('profileChip').addEventListener('click', (e) => {
-    e.stopImmediatePropagation();
-    if ($('panel').classList.contains('collapsed')) $('panelOpen').click();
-    setTabTV('phone');
-    refreshPhoneTab();
+
+  // ---------- Keys ----------
+  const FOCUSABLE = 'button, a[href], input, select, textarea, summary, [tabindex], .channel-list li, .gcard';
+  const visible = (e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !e.disabled && getComputedStyle(e).visibility !== 'hidden'; };
+  // Nearest focusable in a direction; the off-axis gap counts double so rows don't jump to far-away controls.
+  function move(root, dx, dy) {
+    const cur = document.activeElement && root.contains(document.activeElement) ? document.activeElement : null;
+    const items = [...root.querySelectorAll(FOCUSABLE)].filter(visible);
+    if (!items.length) return;
+    if (!cur) { items[0].focus(); return; }
+    const a = cur.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2;
+    let best = null, bestScore = Infinity;
+    for (const e of items) {
+      if (e === cur) continue;
+      const r = e.getBoundingClientRect();
+      const ex = r.left + r.width / 2 - ax, ey = r.top + r.height / 2 - ay;
+      const along = dx ? ex * dx : ey * dy, across = Math.abs(dx ? ey : ex);
+      if (along <= 1) continue;
+      const score = along + across * 2;
+      if (score < bestScore) { bestScore = score; best = e; }
+    }
+    if (best) {
+      best.focus();
+      best.scrollIntoView({ block: dy ? 'center' : 'nearest', inline: 'nearest' });
+      if (best.classList.contains('tvh-row') && !best.nextElementSibling && shown < listCache.length) addRows();
+      else if (best.classList.contains('tvh-row') && shown < listCache.length && !best.nextElementSibling?.nextElementSibling) addRows();
+    }
+  }
+
+  const DIR = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
+  let synthetic = false;
+  const backKey = (k) => k === 'Escape' || k === 'GoBack' || k === 'BrowserBack';
+
+  function goBack() {
+    const s = screen();
+    if (s === 'setup') { $('tvsSkip').click(); return true; }
+    if (s === 'gallery') {
+      synthetic = true;
+      (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+      synthetic = false;
+      return true;
+    }
+    if (s === 'home') { closeHome(); showOsd(2500); return true; }
+    return false;
+  }
+
+  addEventListener('keydown', (e) => {
+    if (synthetic) return;
+    const s = screen();
+    const typing = e.target.matches?.('input, textarea, select');
+    if (backKey(e.key)) {
+      if (s === 'gallery') return; // the gallery steps back out of a preview itself
+      if (goBack()) { e.preventDefault(); e.stopImmediatePropagation(); }
+      return;
+    }
+    if (s !== 'player') {
+      const root = s === 'setup' ? setup : s === 'gallery' ? $('gallery') : home;
+      if (typing && (!DIR[e.key] || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return; // let the keyboard type
+      if (s === 'home' && tab === 'live') {
+        const t = document.activeElement;
+        // Groups are a column on the left: ◀ from the list goes to it, ▶ from it goes back.
+        if (e.key === 'ArrowLeft' && t?.classList.contains('tvh-row')) { e.preventDefault(); e.stopImmediatePropagation(); (chipsEl.querySelector('.on') || chipsEl.firstElementChild)?.focus(); return; }
+        if (e.key === 'ArrowRight' && t?.classList.contains('tvh-chip')) { e.preventDefault(); e.stopImmediatePropagation(); focusFirstInBody(); return; }
+      }
+      if (DIR[e.key]) { e.preventDefault(); e.stopImmediatePropagation(); move(root, ...DIR[e.key]); return; }
+      if (e.key === 'Enter' && !typing) {
+        const t = document.activeElement;
+        if (s === 'home' && t?.classList.contains('tvh-row')) {
+          // Press plays, hold favorites.
+          e.preventDefault(); e.stopImmediatePropagation();
+          if (e.repeat) { if (!holdFired && rowPressed) { holdFired = true; toggleFavRow(t); } return; }
+          holdFired = false;
+          rowPressed = true; // the release that follows this press plays the row
+          return;
+        }
+        if (t && t !== document.body) { e.preventDefault(); e.stopImmediatePropagation(); t.click(); }
+        return;
+      }
+      if (!typing && e.key.length === 1 && e.key !== ' ') e.stopImmediatePropagation(); // no letter shortcuts while browsing
+      return;
+    }
+    // The picture.
+    const vod = isVod();
+    const v = T()?.video;
+    switch (e.key) {
+      case 'ArrowUp': case 'ChannelUp':
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (vod) showOsd(); else surf(1);
+        break;
+      case 'ArrowDown': case 'ChannelDown':
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (vod) showOsd(); else surf(-1);
+        break;
+      case 'ArrowLeft':
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (vod) { v.currentTime = Math.max(0, v.currentTime - 10); showOsd(); } else openHome();
+        break;
+      case 'ArrowRight':
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (vod) { v.currentTime += 30; showOsd(); } else showOsd();
+        break;
+      case 'Enter':
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (e.repeat) break;
+        if (vod) { T().togglePlay(); showOsd(); } else openHome();
+        break;
+      default:
+        if (e.key.length === 1 && e.key !== ' ') e.stopImmediatePropagation(); // the phone UI's letter shortcuts open hidden panels
+    }
   }, true);
-  setInterval(() => { if (open.panel()) refreshPhoneTab(); }, 2000);
 
-  // Phone edits should reach the TV quickly: check for them every 45 s (the app's own check is every 5 min).
-  const boot = () => {
-    setInterval(() => { if (document.visibilityState === 'visible' && !running) P().pull(); }, 45000);
-    if (needsSetup()) runSetup();
-  };
-  if (window.o3xr) boot(); else addEventListener('o3xr-ready', boot, { once: true });
+  addEventListener('keyup', (e) => {
+    if (e.key !== 'Enter') return;
+    const pressed = rowPressed;
+    rowPressed = false;
+    // Ignore the release of the press that opened Home: it didn't start on a row.
+    if (!pressed || screen() !== 'home') { holdFired = false; return; }
+    const t = document.activeElement;
+    if (t?.classList.contains('tvh-row') && !holdFired) {
+      const ch = listCache[+t.dataset.i];
+      if (ch) { closeHome(); T().play(ch); }
+    }
+    holdFired = false;
+  }, true);
 
-  // Media keys, forwarded by the Android activity (WebView doesn't always deliver them).
+  function toggleFavRow(row) {
+    const ch = listCache[+row.dataset.i];
+    if (!ch) return;
+    T().toggleFav(ch);
+    row.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
+    T().toast(T().isFav(ch.id) ? 'Added to favorites' : 'Removed from favorites');
+    if (group === FAV) renderBody();
+    else renderChips();
+  }
+
+  // ---------- Hooks for the Android activity ----------
   window.tunerTV = {
     key(action) {
-      const v = $('video');
-      if (action === 'playpause') $('playPause').click();
-      else if (action === 'play') { if (v.paused) $('playPause').click(); }
-      else if (action === 'pause') { if (!v.paused) $('playPause').click(); }
-      else if (action === 'next') $('nextCh').click();
-      else if (action === 'prev') $('prevCh').click();
-      else if (action === 'ff') v.currentTime += 30;
-      else if (action === 'rw') v.currentTime -= 10;
+      const v = T().video, c = O().state.current;
+      if (action === 'playpause') { T().togglePlay(); showOsd(); }
+      else if (action === 'play') { if (v.paused) T().togglePlay(); showOsd(); }
+      else if (action === 'pause') { if (!v.paused) T().togglePlay(); showOsd(); }
+      else if (action === 'next') { if (c && kindOf(c) === 'live') surf(1); else showOsd(); }
+      else if (action === 'prev') { if (c && kindOf(c) === 'live') surf(-1); else showOsd(); }
+      else if (action === 'ff') { v.currentTime += 30; showOsd(); }
+      else if (action === 'rw') { v.currentTime -= 10; showOsd(); }
     },
-    // Called by the activity on Back. Returns true if the page used it.
-    back() {
-      if (!overlay()) return false;
-      closeOverlay();
-      return true;
-    },
+    // Called by the activity on Back. True if the page used it; false means leave the app.
+    back: () => goBack(),
   };
+
+  addEventListener('pagehide', () => { if (liveCode) P().tvCancel(liveCode); });
+
+  // ---------- Boot ----------
+  const boot = () => {
+    T().video.controls = false;
+    // Phone edits should reach the TV quickly: look every 45 s (the app's own check is every 5 min).
+    setInterval(() => { if (document.visibilityState === 'visible' && !running) P().pull(); }, 45000);
+    if (needsSetup()) runSetup(); else settleOnHome();
+  };
+  if (window.o3xr) boot(); else addEventListener('o3xr-ready', boot, { once: true });
 }

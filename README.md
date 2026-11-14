@@ -303,10 +303,19 @@ js/vr-panel.js    In-headset channel browser and controller rays
 
 ## Google TV / Android TV app
 
-`android-tv/` is a thin full-screen WebView around the hosted app (default `https://iptv.jodeit.workers.dev`),
-so the remote works properly: ▲/▼ change channel, OK or ◀ opens the channel panel, ▶ the guide, arrows move
-between controls, Back closes panels, and the media keys play/pause/skip. The page switches on this mode
-(`js/tv.js`) when it sees the `TunerTV` user agent token the app adds.
+`android-tv/` is a thin full-screen WebView around the hosted app (default `https://iptv.jodeit.workers.dev`).
+Everything on the TV is drawn by `js/tv.js` (switched on by the `TunerTV` user agent token the app adds), so
+web changes reach the TV the next time the app opens, with no reinstall. The phone's menus, drawer, guide and
+pop-out player are hidden there; setup and settings happen on the phone and sync in.
+
+- **Picture:** always full screen. ▲▼ change channel; OK or ◀ opens Home; ▶ shows what's on. Movies and shows: OK
+  pauses, ◀▶ skip, ▲▼ show the progress bar.
+- **Home:** one screen over the playing video, with tabs Live · Movies · Shows · Phone. Live is a group column
+  (All, Favorites, each group) beside the channel list with what's on now; ◀ from the list reaches the groups, OK
+  plays, **hold OK** adds or removes a favorite. Movies and Shows open the poster gallery. Phone shows sync status,
+  your playlists and Unlink. Back returns to the picture; Back on the picture leaves the app.
+- **Setup:** a TV with no playlist shows a setup screen; link it from your phone (see Profiles above).
+- The remote's media keys (play/pause, next/previous, fast-forward/rewind) work everywhere.
 
 1. GitHub → **Actions → Android TV APK → Run workflow** (it also runs on pushes that touch `android-tv/`).
    Optionally set `app_url` to point it at a different deployment.

@@ -364,6 +364,11 @@ export class Profiles {
     return null;
   }
 
+  // The TV stopped waiting (skipped, closed, or took a new code): take its code off the list.
+  tvCancel(code) {
+    try { fetch(new URL(`tv/${code}`, this.apiBase()), { method: 'DELETE', keepalive: true }).catch(() => {}); } catch { /* leaving anyway */ }
+  }
+
   // Phone side: codes of TVs on the same network (same public IP) waiting to be linked.
   async tvNearby() {
     const r = await this.api('tv');
