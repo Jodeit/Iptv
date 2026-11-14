@@ -4,8 +4,9 @@
 // one it's talking to; the 3D-only calls do nothing here.
 
 export class FlatStage {
-  constructor(video) {
+  constructor(video, { nativeControls = false } = {}) {
     this.video = video;
+    this.nativeControls = nativeControls;
     this.root = document.createElement('div');
     this.root.id = 'flatStage';
     this.overlay = document.createElement('div');
@@ -37,14 +38,14 @@ export class FlatStage {
         <button type="button" data-action="forward" aria-label="Forward 30 seconds">+30</button>
         <button type="button" data-action="close" aria-label="Hide controls">✕</button>
       </div>`;
-    this.root.append(video, this.overlay, this.controls, this.pip);
+    this.root.append(video, this.overlay, ...(nativeControls ? [] : [this.controls]), this.pip);
     document.body.append(this.root);
     this.controlsTimer = 0;
     this.controlsTick = 0;
     this.seekInput = this.controls.querySelector('input[type="range"]');
     this.controls.addEventListener('click', (e) => e.stopPropagation());
     this.root.addEventListener('click', (e) => {
-      if (e.target === video) this.toggleControls();
+      if (!this.nativeControls && e.target === video) this.toggleControls();
     });
     this.controls.querySelector('[data-action="play"]').onclick = () => {
       if (video.paused) video.play().catch((err) => console.warn('Could not resume video:', err));

@@ -466,7 +466,7 @@ new ResizeObserver(([e]) => {
   document.documentElement.style.setProperty('--bar-h', `${Math.round(e.borderBoxSize?.[0]?.blockSize ?? e.target.offsetHeight)}px`);
 }).observe($('bar'));
 const TheaterModule = flat ? null : await import('./theater.js');
-const theater = flat ? new FlatStage(video) : new TheaterModule.Theater($('stage'), video);
+const theater = flat ? new FlatStage(video, { nativeControls: device.ios }) : new TheaterModule.Theater($('stage'), video);
 const LAYOUT = { mono: 0, sbs: 1, tab: 2 }; // must match xr3d.js
 const playWarnings = []; // what the player said about the stream being played (e.g. "the audio can't play in a browser")
 const player = new StreamPlayer(video, {
@@ -2217,6 +2217,7 @@ window.o3xr = {
   // What js/tv.js needs to drive the app without its phone-style chrome.
   tv: {
     video,
+    nativeVideoControls: flat && device.ios,
     play: (ch) => (kindOf(ch) === 'series' ? openSeries(ch) : play(ch)),
     togglePlay,
     toast,
@@ -2329,7 +2330,7 @@ window.o3xr = {
     forgetCopies: () => Promise.all(profiles.doc.playlists.map((p) => cacheDelete(playlistKey(p.url)))),
   },
 };
-if (tunerUI) video.controls = false; // no system player bar over the picture; js/tv.js draws a small overlay
+if (tunerUI && !(flat && device.ios)) video.controls = false; // elsewhere the TV interface draws a small overlay
 dispatchEvent(new Event('o3xr-ready'));
 
 // Classic page → Tuner view

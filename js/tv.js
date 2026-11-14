@@ -32,6 +32,7 @@ function initTV() {
   const fmtDur = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return `${h ? h + ':' : ''}${String(m).padStart(h ? 2 : 1, '0')}:${String(s % 60).padStart(2, '0')}`; };
   const html = document.documentElement;
   const WEB = !!window.__tunerWeb; // Tuner view in a browser (iPhone, iPad): touch instead of a remote
+  let nativeAppleControls = false;
   html.classList.add('tv');
   // index.html already set tv + tv-booting before first paint (a splash, so the phone UI never flashes). Lift
   // it once there is something to show: the setup screen, Home, or a picture.
@@ -1590,7 +1591,7 @@ function initTV() {
       case 'Enter':
         e.preventDefault(); e.stopImmediatePropagation();
         if (e.repeat) break;
-        openControls(); // pause, and offer rewind / audio / captions
+        if (!nativeAppleControls) openControls(); // Apple’s native media controls handle playback on iOS
         break;
       default:
         if (e.key.length === 1 && e.key !== ' ') e.stopImmediatePropagation(); // the phone UI's letter shortcuts open hidden panels
@@ -1692,17 +1693,18 @@ function initTV() {
     const x = el('button', 'tvh-x', '✕ Picture'); x.onclick = () => goBack(); tabsEl.append(x);
     new MutationObserver(() => { if (!tabsEl.contains(x)) tabsEl.append(x); }).observe(tabsEl, { childList: true });
     // Tap the picture for the controls (pause, seek, audio, captions, episodes, guide)
-    $('flatStage')?.addEventListener('click', () => { if (screen() === 'player' && O().state.current) openControls(); });
+    if (!nativeAppleControls) $('flatStage')?.addEventListener('click', () => { if (screen() === 'player' && O().state.current) openControls(); });
     controls.addEventListener('click', (e) => { if (e.target === controls) goBack(); }); // tap outside the bar
     detail.addEventListener('click', (e) => { if (e.target === detail) goBack(); });
   }
 
   // ---------- Boot ----------
   const boot = () => {
+    nativeAppleControls = WEB && !!T().nativeVideoControls;
     T().onRating?.(onRatingArrived);
     T().vod?.onClosed((viaBack) => { if (viaBack && vodReturn) { vodReturn = false; openHome({ keepTab: true }); } });
     import('./qr.js').catch(() => {}); // warm the cache so the setup screen draws its code at once
-    T().video.controls = false;
+    T().video.controls = nativeAppleControls;
     // Android WebView draws a large grey play icon on a <video> that has nothing to show; a transparent poster replaces it.
     T().video.poster = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
     checkUpdate('timer'); // sets the baseline
