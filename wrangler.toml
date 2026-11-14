@@ -12,6 +12,16 @@ directory = "."
 [[kv_namespaces]]
 binding = "PROFILES"
 
+# Each profile is one Durable Object, so uploads from different devices are applied one at a time
+# (KV alone is eventually consistent and could let one device's upload replace another's).
+[[durable_objects.bindings]]
+name = "PROFILE_DO"
+class_name = "ProfileDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["ProfileDO"]
+
 # PR branches build with `wrangler preview`, which needs this block. Previews get no bindings
 # unless they're listed here, so profile sync is off in them (the worker answers 503) and
 # they can't touch the real profiles.

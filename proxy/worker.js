@@ -11,7 +11,7 @@
 // and remember what worked per host (for the life of this isolate).
 import { xtreamDemo } from './xtream-demo.js';
 import { socketFetch } from './http-socket.js';
-import { handleProfileApi, kvStore } from './profiles-api.js';
+import { handleProfileApi, kvStore, profileOp } from './profiles-api.js';
 
 const UAS = [
   'VLC/3.0.20 LibVLC/3.0.20',
@@ -61,6 +61,43 @@ const CORS = {
   'x-proxy-kind': 'cloudflare',
 };
 
+// Profiles live in a Durable Object (one per profile), because KV is only eventually consistent: two devices
+// could both be told "you're up to date" and one upload would silently replace the other. Without the binding
+// (a preview, or a deployment that hasn't added it) profiles fall back to plain KV.
+const profileHandler = (env) => (env.PROFILE_DO ? async (id, method, body) => {
+  const stub = env.PROFILE_DO.get(env.PROFILE_DO.idFromName(id));
+  const r = await stub.fetch('https://profile/op', { method: 'POST', body: JSON.stringify({ id, method, body }) });
+  return r.json();
+} : null);
+
+export class ProfileDO {
+  constructor(state, env) { this.state = state; this.env = env; }
+
+  async fetch(request) {
+    const { id, method, body } = await request.json();
+    const { storage } = this.state;
+    const cell = {
+      get: async () => {
+        const mine = await storage.get('v');
+        if (mine !== undefined) return mine;
+        if (await storage.get('gone')) return null;
+        // First time this profile is opened here: pick up what plain KV held, so nobody has to re-link.
+        const old = await this.env.PROFILES.get(`profile:${id}`);
+        if (old) await storage.put('v', old);
+        return old;
+      },
+      put: async (value) => { await storage.put('v', value); await storage.delete('gone'); },
+      delete: async () => {
+        await storage.delete('v');
+        await storage.put('gone', true); // KV may still serve its copy for a while
+        await this.env.PROFILES.delete(`profile:${id}`);
+      },
+    };
+    // blockConcurrencyWhile keeps another request from slipping in between the read and the write.
+    return Response.json(await this.state.blockConcurrencyWhile(() => profileOp(method, body, cell)));
+  }
+}
+
 export default {
   async fetch(request, env) {
     const { pathname, searchParams, origin } = new URL(request.url);
@@ -78,6 +115,7 @@ export default {
       const res = await handleProfileApi(
         { method: request.method, path: pathname, body, ip: request.headers.get('cf-connecting-ip') },
         kvStore(env.PROFILES),
+        { profileHandler: profileHandler(env) },
       );
       return res.status === 204
         ? new Response(null, { status: 204, headers: CORS })

@@ -28,33 +28,22 @@ const PAIR_TTL = 600;
 const MAX_DATA = 2 * 1024 * 1024; // KV allows 25 MB; a heavy library (ratings, resume points) can pass 512 KB
 const MAX_CLAIM_FAILURES = 20; // per IP per 10 minutes
 
-export async function handleProfileApi({ method, path, body, ip }, store) {
+export async function handleProfileApi({ method, path, body, ip }, store, opts = {}) {
   if (path === '/api/health') return json(200, { sync: true });
 
   const m = path.match(/^\/api\/profile\/([^/]+)$/);
   if (m) {
     const id = m[1];
     if (!ID_RE.test(id)) return json(400, { error: 'bad profile id' });
-    const key = `profile:${id}`;
-    if (method === 'GET') {
-      const raw = await store.get(key);
-      return raw ? json(200, JSON.parse(raw)) : json(404, { error: 'not found' });
+    // On Cloudflare the whole operation runs inside that profile's Durable Object (see proxy/worker.js),
+    // so the version check and the write cannot interleave with another device's. Elsewhere it runs
+    // against `store`.
+    if (opts.profileHandler) {
+      // If the Durable Object can't be reached, serve from KV rather than fail: sync keeps working, just
+      // without the one-at-a-time guarantee.
+      try { return await opts.profileHandler(id, method, body); } catch (err) { console.error('profile Durable Object failed, using KV:', err?.message); }
     }
-    if (method === 'PUT') {
-      if (typeof body?.data !== 'string' || body.data.length > MAX_DATA) return json(400, { error: 'bad data' });
-      const raw = await store.get(key);
-      const current = raw ? JSON.parse(raw) : { version: 0 };
-      // Optimistic concurrency: the writer must have seen the latest version.
-      if ((body.version ?? 0) !== current.version) return json(409, current);
-      const version = current.version + 1;
-      await store.put(key, JSON.stringify({ version, data: body.data }));
-      return json(200, { version });
-    }
-    if (method === 'DELETE') {
-      await store.delete(key);
-      return json(204, null);
-    }
-    return json(405, { error: 'method not allowed' });
+    return profileOp(method, body, cellFor(store, `profile:${id}`));
   }
 
   if (path === '/api/pair' && method === 'POST') {
@@ -131,6 +120,37 @@ export async function handleProfileApi({ method, path, body, ip }, store) {
   }
 
   return json(404, { error: 'not found' });
+}
+
+// One profile's record: { get() → string|null, put(value), delete() }.
+export const cellFor = (store, key) => ({
+  get: () => store.get(key),
+  put: (value) => store.put(key, value),
+  delete: () => store.delete(key),
+});
+
+// GET / PUT / DELETE for one profile. PUT is an optimistic-concurrency write: the caller must have seen the
+// latest version. This is only safe when nothing else can touch the record between the read and the write,
+// which is why it runs inside a Durable Object on Cloudflare.
+export async function profileOp(method, body, cell) {
+  if (method === 'GET') {
+    const raw = await cell.get();
+    return raw ? json(200, JSON.parse(raw)) : json(404, { error: 'not found' });
+  }
+  if (method === 'PUT') {
+    if (typeof body?.data !== 'string' || body.data.length > MAX_DATA) return json(400, { error: 'bad data' });
+    const raw = await cell.get();
+    const current = raw ? JSON.parse(raw) : { version: 0 };
+    if ((body.version ?? 0) !== current.version) return json(409, current);
+    const version = current.version + 1;
+    await cell.put(JSON.stringify({ version, data: body.data }));
+    return json(200, { version });
+  }
+  if (method === 'DELETE') {
+    await cell.delete();
+    return json(204, null);
+  }
+  return json(405, { error: 'method not allowed' });
 }
 
 async function nearKey(ip) {
