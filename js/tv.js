@@ -90,7 +90,7 @@ function initTV() {
     const bar = osd.querySelector('.osd-bar');
     bar.classList.toggle('on', pct != null);
     if (pct != null) bar.firstElementChild.style.width = `${Math.min(100, Math.max(0, pct))}%`;
-    osd.querySelector('.osd-hint').textContent = live ? '▲▼ channel     OK channels' : '◀ ▶ skip     OK pause';
+    osd.querySelector('.osd-hint').textContent = updateReady ? 'Update ready: installs when you pause or leave' : live ? '▲▼ channel     OK channels' : '◀ ▶ skip     OK pause';
   }
   function showOsd(ms = 4500) {
     if (!O()?.state.current || screen() !== 'player') return;
@@ -109,24 +109,57 @@ function initTV() {
     if (c && c !== lastShown) { lastShown = c; showOsd(); }
   }, 400);
 
-  // ---------- Version / update ----------
-  // The tag at the top of Home shows the running version; when a newer one is deployed it says so, and OK
-  // reloads the page (the app stays open in the background, so closing it was the only way before).
-  let verEl = null, latest = null;
+  // ---------- Updates ----------
+  // The app stays open in the background, so a deploy would otherwise wait until someone closed it. Once a
+  // minute (and whenever the app comes back to the screen) the deployed files are compared with the ones this
+  // page started with. A change installs by reloading the page, but never under a playing picture: right
+  // away on coming back to the app or on the setup screen, otherwise once the TV has sat idle on Home or a
+  // paused picture. While watching, a small "Update ready" note is all you get.
+  const WATCH = ['index.html', 'css/style.css', 'js/main.js', 'js/tv.js', 'js/profiles.js', 'js/version.js', 'js/filter.js'];
+  const TUNE = window.__TV_TEST || {}; // tests shorten these
+  const POLL_MS = TUNE.pollMs || 60 * 1000, IDLE_MS = TUNE.idleMs || 60 * 1000;
+  let verEl = null, latest = null, baseline = null, updateReady = false, lastKey = Date.now();
+  const stamp = async (f) => {
+    try {
+      const r = await fetch(f, { method: 'HEAD', cache: 'no-store' });
+      return r.headers.get('etag') || r.headers.get('last-modified') || r.headers.get('content-length') || '?';
+    } catch { return null; }
+  };
+  const stamps = async () => Object.fromEntries(await Promise.all(WATCH.map(async (f) => [f, await stamp(f)])));
   function paintVersion() {
-    if (!verEl) return;
-    const newer = latest && latest !== VERSION;
-    verEl.classList.toggle('new', !!newer);
-    verEl.textContent = newer ? `Update to ${latest}: press OK` : `Tuner ${VERSION} ↻`;
+    if (verEl) {
+      verEl.classList.toggle('new', updateReady);
+      verEl.textContent = updateReady ? `Update ${latest && latest !== VERSION ? `to ${latest} ` : ''}ready: press OK` : `Tuner ${VERSION} ↻`;
+    }
+    osd.classList.toggle('update', updateReady);
   }
-  async function checkUpdate() {
+  const playing = () => { const v = T()?.video, c = O()?.state.current; return !!c && !v.paused && !v.ended; };
+  function reloadForUpdate() {
+    // Never more than once in 10 minutes, in case the files look "changed" every time.
+    try {
+      const last = +sessionStorage.getItem('tvReloadAt') || 0;
+      if (Date.now() - last < 10 * 60 * 1000) return;
+      sessionStorage.setItem('tvReloadAt', String(Date.now()));
+    } catch { /* no sessionStorage: reload anyway */ }
+    location.reload();
+  }
+  async function checkUpdate(reason = 'timer') {
+    const now = await stamps();
+    if (Object.values(now).every((v) => v === null)) return; // offline
+    if (!baseline) baseline = now;
     try {
       const t = await (await fetch(`js/version.js?${Date.now()}`, { cache: 'no-store' })).text();
       latest = /VERSION = '([^']+)'/.exec(t)?.[1] || null;
-    } catch { /* offline: keep what we know */ }
+    } catch { /* keep what we know */ }
+    updateReady = (latest && latest !== VERSION) || WATCH.some((f) => now[f] && baseline[f] && now[f] !== baseline[f]);
     paintVersion();
+    if (!updateReady) return;
+    const idle = Date.now() - lastKey > IDLE_MS;
+    if (reason === 'resume' || screen() === 'setup' || (!playing() && idle)) reloadForUpdate();
   }
-  setInterval(checkUpdate, 10 * 60 * 1000);
+  setInterval(() => checkUpdate('timer'), POLL_MS);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') checkUpdate('resume'); });
+  addEventListener('online', () => checkUpdate('timer'));
 
   // ---------- Home ----------
   function renderTabs() {
@@ -283,7 +316,7 @@ function initTV() {
     home.classList.remove('hidden');
     document.documentElement.classList.add('home-open');
     P().pull(); // anything new from the phone
-    checkUpdate();
+    checkUpdate('timer');
     renderTabs();
     renderBody();
     requestAnimationFrame(() => {
@@ -424,6 +457,7 @@ function initTV() {
   }
 
   addEventListener('keydown', (e) => {
+    lastKey = Date.now();
     if (synthetic) return;
     const s = screen();
     const typing = e.target.matches?.('input, textarea, select');
@@ -553,6 +587,7 @@ function initTV() {
   // ---------- Boot ----------
   const boot = () => {
     T().video.controls = false;
+    checkUpdate('timer'); // sets the baseline
     // Phone edits should reach the TV quickly: look every 45 s (the app's own check is every 5 min).
     setInterval(() => { if (document.visibilityState === 'visible' && !running) P().pull(); }, 45000);
     if (needsSetup()) runSetup(); else settleOnHome();
