@@ -1133,3 +1133,41 @@ html.tv .toast { z-index: 120; }
 .tvi-grid dd.good { color: #2d6a3a; font-weight: 700; }
 .tvi-grid dd .bad, .tvi-grid dd.bad { color: #a2402a; font-weight: 700; }
 .tvc-menu.tvc-info { top: 38%; padding: 18px 24px 14px; gap: 10px; } .tvi-grid { gap: 8px 20px; } .tvi-grid dd { font-size: 18px; }
+
+/* ===== Buttons: slim, oak and cream (controls bar, menus, title page) ===== */
+.tv-controls, .tv-detail { --oak: #9a6431; --oak-dk: #7a4d22; --espresso: #3a2817; }
+.tvc-panel { padding: 12px 20px 14px; border-radius: 20px; }
+.tvc-head { margin-bottom: 6px; }
+.tvc-head b { font-size: 22px; }
+.tvc-times { margin: 2px 0 8px; }
+.tvc-row { gap: 8px; }
+.tvc-btn { flex: 1 1 0; min-width: 0; display: flex; align-items: center; justify-content: center; gap: 8px; height: 42px; padding: 0 14px; border-radius: 999px;
+  border: 1px solid rgba(110,84,40,.22); background: rgba(255,250,240,.55); color: var(--espresso); box-shadow: inset 0 1px 0 rgba(255,255,255,.75);
+  transition: background .12s ease, color .12s ease, box-shadow .12s ease; }
+.tvc-btn svg { width: 20px; height: 20px; flex: none; fill: currentColor; }
+.tvc-btn span { font-size: 16px; font-weight: 600; white-space: nowrap; }
+.tvc-btn small { font-size: 13px; font-weight: 500; opacity: .62; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; max-width: 92px; }
+.tvc-btn[data-k="primary"] { background: linear-gradient(180deg, #a87238, var(--oak)); color: #fffaf0; border-color: rgba(58,40,23,.35); box-shadow: 0 2px 6px rgba(90,60,25,.28), inset 0 1px 0 rgba(255,255,255,.25); }
+.tvc-btn:disabled { opacity: .4; }
+.tvc-btn:focus, .tvc-opt:focus { outline: none; border-color: var(--espresso); background: var(--espresso); color: #fffaf0; box-shadow: 0 6px 16px rgba(58,40,23,.32), 0 0 0 2px rgba(255,250,240,.85); }
+.tvc-btn[data-k="primary"]:focus { background: var(--oak-dk); border-color: var(--espresso); }
+.tvc-menu { padding: 10px; gap: 4px; border-radius: 16px; }
+.tvc-menu h3 { margin: 2px 8px 4px; }
+.tvc-opt { padding: 7px 14px; border-radius: 999px; border: 1px solid transparent; background: transparent; font-size: 16px; font-weight: 500; color: var(--espresso); }
+.tvc-opt.on { background: rgba(154,100,49,.14); font-weight: 700; }
+.tvc-info .tvc-opt { margin-top: 4px; justify-self: end; padding: 7px 26px; border-color: rgba(110,84,40,.22); background: rgba(255,250,240,.55); }
+/* the title page */
+.tv-detail .btn { height: 42px; padding: 0 22px; font-size: 17px; font-weight: 600; border-radius: 999px; border: 1px solid rgba(58,40,23,.3); background: linear-gradient(180deg, #a87238, var(--oak)); color: #fffaf0; box-shadow: 0 2px 6px rgba(90,60,25,.25), inset 0 1px 0 rgba(255,255,255,.25); }
+.tv-detail .btn.ghost { background: rgba(255,250,240,.6); color: var(--espresso); border-color: rgba(110,84,40,.25); box-shadow: inset 0 1px 0 rgba(255,255,255,.75); }
+.tv-detail .btn:focus { border-color: var(--espresso); background: var(--espresso); color: #fffaf0; box-shadow: 0 6px 16px rgba(58,40,23,.32), 0 0 0 2px rgba(255,250,240,.85); }
+.tvd-card.series .btn { height: 36px; padding: 0 18px; font-size: 15px; }
+.tvd-season { padding: 5px 16px; border: 1px solid rgba(110,84,40,.2); background: rgba(255,250,240,.5); color: var(--espresso); font-weight: 600; }
+.tvd-season.on { background: rgba(154,100,49,.18); border-color: rgba(154,100,49,.5); color: var(--oak-dk); }
+.tvd-season:focus { border-color: var(--espresso); background: var(--espresso); color: #fffaf0; box-shadow: 0 0 0 2px rgba(255,250,240,.85); }
+.tvd-ep:focus { border-color: var(--espresso); box-shadow: 0 6px 14px rgba(58,40,23,.25), 0 0 0 2px rgba(255,250,240,.85); }
+.tvd-ep { border-width: 1px; border-color: rgba(110,84,40,.12); }
+.tvd-ep .p { color: var(--oak); }
+.tvc-btn:focus, .tvc-opt:focus, .tvc-opt.on:focus, .tv-detail .btn:focus, .tvd-season:focus, .tvd-ep:focus { outline: none !important; }
+.tvc-opt.on:focus, .tvc-opt:focus { background: var(--espresso); color: #fffaf0; border-color: var(--espresso); box-shadow: 0 6px 16px rgba(58,40,23,.32), 0 0 0 2px rgba(255,250,240,.85); }
+.tvc-bar { height: 5px; background: rgba(90,60,25,.16); }
+.tvc-bar u { background: var(--oak, #9a6431); }
