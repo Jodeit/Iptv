@@ -10,6 +10,8 @@ export const FILTER_DEFAULTS = {
   // Home market for local stations (ABC, CBS, NBC, FOX, PBS, CW…): "Austin" or call signs "KVUE, KXAN". Empty = show all.
   market: '',
   localOnly: true,
+  // The same station listed twice (two folders, HD / FHD / SD / RAW copies): show it once, keep the rest as fallbacks.
+  dedupe: true,
 };
 
 // Region/language tags that mark a movie or series group as not English. Untagged groups

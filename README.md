@@ -114,6 +114,16 @@ The names are tidied and each channel's network and city worked out **once**, as
 (`js/normalize.js`), and saved with the cached playlist, so browsing does no extra work. "Austin" also finds stations
 listed only by call sign; add more cities to `MARKET_ALIASES` in `js/normalize.js`.
 
+## Duplicate channels
+
+A provider often lists the same station more than once: in several folders, and as separate HD, FHD, SD, RAW,
+60fps or 4K copies ("ESPN HD" in three folders, "ABC KVUE" five times). **Settings → Playlists → Content filter →
+Show each channel once** (on by default) merges them as the playlist loads (`js/normalize.js`): channels with the
+same tidied name, or the same network and city for local stations, count as one. The copy that is kept is the best
+by quality (FHD, then HD, then 4K / UHD / RAW, then unmarked, then SD; "backup" copies last), a starred copy always
+wins, and the others stay attached as fallbacks, so if the kept copy will not play the next one is tried. The
+count of merged duplicates shows in the list note.
+
 ## Profiles and syncing across devices
 
 **Profile** (top of the panel) keeps playlists, favorites, the content filter and the last playlist in step
@@ -330,7 +340,8 @@ pop-out player are hidden there; setup and settings happen on the phone and sync
 - **Moving between sections** (a fixed map, so it works from anywhere in a long list): on the tab bar ◀ ▶ walk across
   the tabs and ▼ drops into the list; from the list ◀ goes to the groups and ◀ again goes to the tab bar; ▲ from the
   first row or first group also goes to the tab bar; ▶ from the groups goes back to the list.
-- **On now:** the second tab. Browse like a cable guide, by what is airing
+- **On now:** the first tab, and the one the TV opens on when the provider has a guide (it falls back to Channels when
+  there is none, or the guide turns out to be empty; whichever you choose is remembered). Browse like a cable guide, by what is airing
   right now instead of by the provider's folders: Sports, Movies, News, Kids, Documentary, Music, Shows, each with a
   live count. Rows lead with the programme, then the channel and when it ends; the bar at the bottom adds the
   description. Programmes are classified from the guide's own category when it has one, else from the title and

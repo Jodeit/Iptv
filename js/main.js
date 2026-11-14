@@ -6,7 +6,7 @@ import { parseM3U, fetchPlaylist, xtreamUrl, parseXtream, maskUrl, playlistKey, 
 import { XtreamLibrary } from './xtream.js';
 import { cacheGet, cachePut, cacheDelete } from './cache.js';
 import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
-import { annotate, localFilter } from './normalize.js';
+import { annotate, localFilter, dedupe } from './normalize.js';
 import { VERSION } from './version.js';
 import { Profiles, emptyDoc, canSync, capMeta, mergeProgress } from './profiles.js';
 import { Guide } from './epg.js';
@@ -683,9 +683,11 @@ function streamCandidates(ch) {
   const xt = state.source?.url && parseXtream(state.source.url);
   const kind = kindOf(ch);
   // Movies/episodes: some panels also serve an HLS version, which every browser can play.
-  const alts = ch.alts || (xt && kind === 'live' ? xtreamAlternates(ch.url, xt)
+  const own = ch.alts || (xt && kind === 'live' ? xtreamAlternates(ch.url, xt)
     : xt && (kind === 'movie' || kind === 'episode') && !canRemux(ch.url) ? [ch.url.replace(/\.\w+$/, '.m3u8')].filter((u) => u !== ch.url) : []);
-  const urls = [ch.url, ...alts].sort((a, b) => isHls(b) - isHls(a));
+  // Copies of the same station that were merged into this one (other folders, other qualities): last resorts.
+  const dupeUrls = (ch.dupes || []).map((d) => d.url).filter((u) => u !== ch.url);
+  const urls = [...[ch.url, ...own].sort((a, b) => isHls(b) - isHls(a)), ...dupeUrls];
   const direct = urls.filter((u) => !isMixed(u)).map((u) => ({ src: u, hint: u }));
   const via = urls.map((u) => ({ src: proxied(u), hint: u, label: 'proxy' }));
   switch (proxyPlan(ch.url)) {
@@ -1098,6 +1100,13 @@ function rebuildLibrary() {
     if (kept.length < lib.length) {
       state.filterNote += ` · ${(lib.length - kept.length).toLocaleString()} other-city stations hidden`;
       lib = kept;
+    }
+  }
+  if (cf.dedupe !== false) {
+    const merged = dedupe(lib, (id) => state.favs.has(id));
+    if (merged.length < lib.length) {
+      state.filterNote += ` · ${(lib.length - merged.length).toLocaleString()} duplicates merged`;
+      lib = merged;
     }
   }
   state.library = lib;
@@ -1742,16 +1751,17 @@ function syncFilterForm() {
   $('cfUntagged').checked = cf.vodUntagged;
   $('cfMarket').value = cf.market || '';
   $('cfLocalOnly').checked = cf.localOnly !== false;
+  $('cfDedupe').checked = cf.dedupe !== false;
 }
 const readFilterForm = () => {
   Object.assign(settings.contentFilter, {
     on: $('cfOn').checked, live: $('cfLive').value, vod: $('cfVod').value, vodUntagged: $('cfUntagged').checked,
-    market: $('cfMarket').value.trim(), localOnly: $('cfLocalOnly').checked,
+    market: $('cfMarket').value.trim(), localOnly: $('cfLocalOnly').checked, dedupe: $('cfDedupe').checked,
   });
   saveFilter();
   rebuildLibrary();
 };
-for (const id of ['cfOn', 'cfLive', 'cfVod', 'cfUntagged', 'cfMarket', 'cfLocalOnly']) $(id).onchange = readFilterForm;
+for (const id of ['cfOn', 'cfLive', 'cfVod', 'cfUntagged', 'cfMarket', 'cfLocalOnly', 'cfDedupe']) $(id).onchange = readFilterForm;
 syncFilterForm();
 
 // ---------- Profile tab ----------

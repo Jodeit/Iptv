@@ -149,7 +149,7 @@ export class Guide {
 
   // { state, done, total } for a progress line.
   progress() {
-    if (this.bulkState === 'loading') return { state: 'loading', done: 0, total: 0 };
+    if (this.bulkState === 'loading' || this.xmltvState === 'loading') return { state: 'loading', done: 0, total: 0 };
     if (this.bgTotal && this.bgDone < this.bgTotal) return { state: 'crawling', done: this.bgDone, total: this.bgTotal };
     return { state: 'ready', done: 0, total: 0 };
   }
