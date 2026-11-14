@@ -19,7 +19,14 @@ const PUSH_DELAY = 1200;
 const PULL_EVERY = 5 * 60 * 1000;
 
 const b64u = {
-  enc: (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, ''),
+  // In slices: spreading a few hundred KB into one call overflows the stack ("Maximum call stack size
+  // exceeded"), which silently stopped any profile with a big library from uploading.
+  enc: (bytes) => {
+    const u = new Uint8Array(bytes);
+    let s = '';
+    for (let i = 0; i < u.length; i += 0x4000) s += String.fromCharCode.apply(null, u.subarray(i, i + 0x4000));
+    return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  },
   dec: (s) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0)),
 };
 
