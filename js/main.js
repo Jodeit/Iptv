@@ -61,6 +61,7 @@ const PRESETS = [
 
 // ---------- State ----------
 const isTV = /TunerTV/.test(navigator.userAgent); // the Android TV app (see js/tv.js)
+const TV_MAX_COPY_AGE = 6 * 3600 * 1000; // the TV has no ↻ button, so it doesn't trust an older saved copy
 const state = {
   channels: [],
   library: [], // channels after the content filter
@@ -792,7 +793,9 @@ async function loadPlaylistInner(url, name, { fresh = true } = {}) {
   state.xlib = null;
   if (!fresh) {
     const cached = await cacheGet(key);
-    if (cached?.channels?.length) {
+    // The TV has no ↻ button, so a saved copy there only counts while it's fresh.
+    const stale = isTV && cached && Date.now() - cached.savedAt > TV_MAX_COPY_AGE;
+    if (cached?.channels?.length && !stale) {
       setChannels(cached.channels, name, { url, name, savedAt: cached.savedAt, tvgUrl: cached.tvgUrl });
       setLast({ url, name });
       rememberPlaylist(name, url);
@@ -848,7 +851,7 @@ async function loadXtream(url, name, xt, key, fresh) {
   const lib = new XtreamLibrary(xt, fetchJsonSmart);
   if (!fresh) {
     const cached = await cacheGet(key);
-    if (cached?.xtream && cached.channels) {
+    if (cached?.xtream && cached.channels && !(isTV && Date.now() - cached.savedAt > TV_MAX_COPY_AGE)) {
       Object.assign(lib, {
         cats: cached.xtream.cats,
         streamBase: cached.xtream.streamBase,
@@ -2117,6 +2120,8 @@ window.o3xr = {
     hasKind: (k) => !!state.xlib || state.library.some((c) => kindOf(c) === k),
     openGallery(kind) { state.kind = kind; rebuildGroups(); guideView.close(); gallery.open(kind); },
     galleryOpen: () => gallery.isOpen(),
+    source: () => state.source,
+    forgetCopies: () => Promise.all(profiles.doc.playlists.map((p) => cacheDelete(playlistKey(p.url)))),
   },
 };
 if (isTV) video.controls = false; // no system player bar over the picture; js/tv.js draws a small overlay

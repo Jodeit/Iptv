@@ -202,30 +202,36 @@ function initTV() {
   }
 
   function renderPhone() {
-    const p = P(), a = p.active(), st = p.status;
+    const p = P(), a = p.active(), st = p.status, src = T().source();
     const when = st.state === 'synced' ? `Synced ${Math.max(0, Math.round((Date.now() - st.at) / 60000))} min ago` : st.message || 'Synced';
     bodyEl.innerHTML = `
       <div class="tvh-profile"><span class="avatar big">${a ? esc(a.name.trim().charAt(0).toUpperCase()) : '·'}</span>
         <div><div class="np-name">${a ? esc(a.name) : 'Not linked to a phone'}</div><div class="muted small">${a ? esc(when) : 'Link one to get your playlists'}</div></div></div>
       <p class="muted">Playlists, filters, keys and other settings are changed on your phone: open <b>${esc(host)}</b> and they sync to this TV.</p>
+      <p class="muted small">${src ? `Showing “${esc(src.name)}”${src.savedAt ? `, downloaded ${esc(ageText(src.savedAt))}` : ''}.` : 'No channel list loaded.'}</p>
       <div class="tvh-actions"></div>
       <h3>Playlists</h3><div class="tvh-lists"></div>`;
     const actions = bodyEl.querySelector('.tvh-actions');
     const mk = (label, fn, cls = 'btn') => { const b = el('button', cls, esc(label)); b.onclick = fn; actions.append(b); return b; };
     if (a) {
       mk('Sync now', () => P().sync().then(renderPhoneSoon));
-      mk('Unlink this TV', () => { P().signOut(a.id); dismissed = false; closeHome(); runSetup(); }, 'btn ghost');
+      if (src?.url) mk('Reload channels', () => { O().loadPlaylist(src.url, src.name, { fresh: true }); closeHome(); });
+      mk('Unlink this TV', async () => { await T().forgetCopies(); P().signOut(a.id); dismissed = false; closeHome(); runSetup(); }, 'btn ghost');
     } else {
       mk('Link a phone', () => { dismissed = false; closeHome(); runSetup(); });
     }
     const lists = bodyEl.querySelector('.tvh-lists');
     for (const l of p.doc.playlists) {
       const b = el('button', 'btn ghost', esc(l.name));
-      b.onclick = () => { O().loadPlaylist(l.url, l.name, { fresh: false }); closeHome(); };
+      b.onclick = () => { O().loadPlaylist(l.url, l.name, { fresh: true }); closeHome(); };
       lists.append(b);
     }
     if (!p.doc.playlists.length) lists.innerHTML = '<p class="muted small">None yet. Add one on your phone.</p>';
   }
+  const ageText = (t) => {
+    const m = Math.round((Date.now() - t) / 60000);
+    return m < 2 ? 'just now' : m < 120 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
+  };
   const renderPhoneSoon = () => setTimeout(() => { if (isOpen.home() && tab === 'phone') renderPhone(); }, 600);
 
   function openHome() {
