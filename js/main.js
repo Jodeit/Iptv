@@ -1781,6 +1781,7 @@ async function checkSyncAvailable() {
   return !why;
 }
 
+const isTV = /TunerTV/.test(navigator.userAgent);
 const busy = async (btn, fn) => {
   btn.disabled = true;
   try { await fn(); } catch (err) { toast(err.message, true); } finally { btn.disabled = false; }
@@ -1829,6 +1830,66 @@ $('pfDelete').onclick = () => busy($('pfDelete'), async () => {
   await profiles.destroy(p.id);
   toast(`Deleted “${p.name}”`);
 });
+
+// ---------- Linking a TV from this device ----------
+// A TV that's open on the same network (same public IP) is listed here, so linking needs no typing.
+let nearbyTvs = [];
+let syncOk = false;
+const tvDismissed = new Set();
+const fmtCode = (c) => `${c.slice(0, 4)} ${c.slice(4)}`;
+
+async function linkTv(code) {
+  if (!profiles.active()) {
+    const name = prompt('The TV will share a profile with this phone, so playlists you add here show up there. Name the profile:', 'Home')?.trim();
+    if (!name) return;
+    await profiles.create(name, { copyCurrent: true });
+  }
+  const name = await profiles.tvOffer(code);
+  toast(`Sent “${name}” to the TV. Approve it on the TV screen.`);
+  tvDismissed.add(code.toUpperCase().replace(/[^0-9A-Z]/g, ''));
+  setTimeout(refreshTvs, 4000);
+}
+
+function renderTvs() {
+  const ul = $('pfTvList');
+  ul.innerHTML = '';
+  for (const code of nearbyTvs) {
+    const li = document.createElement('li');
+    const av = document.createElement('span');
+    av.className = 'avatar';
+    av.textContent = '📺';
+    const label = document.createElement('span');
+    label.className = 'grow';
+    label.textContent = `TV · ${fmtCode(code)}`;
+    const btn = document.createElement('button');
+    btn.className = 'btn';
+    btn.textContent = 'Link';
+    btn.onclick = () => busy(btn, () => linkTv(code));
+    li.append(av, label, btn);
+    ul.append(li);
+  }
+  $('pfTvNone').classList.toggle('hidden', !!nearbyTvs.length);
+  const fresh = nearbyTvs.filter((c) => !tvDismissed.has(c));
+  $('tvBanner').classList.toggle('hidden', !fresh.length);
+  $('tvBanner').dataset.code = fresh[0] || '';
+}
+
+async function refreshTvs() {
+  if (isTV || !syncOk) return;
+  try { nearbyTvs = await profiles.tvNearby(); } catch { nearbyTvs = []; }
+  renderTvs();
+}
+$('tvBannerLink').onclick = () => busy($('tvBannerLink'), () => linkTv($('tvBanner').dataset.code));
+$('tvBannerX').onclick = () => { for (const c of nearbyTvs) tvDismissed.add(c); renderTvs(); };
+$('pfTvLink').onclick = () => busy($('pfTvLink'), async () => {
+  const code = $('pfTvCode').value.trim();
+  if (!code) return toast('Enter the code shown on the TV', true);
+  await linkTv(code);
+  $('pfTvCode').value = '';
+});
+$('pfTvCode').onkeydown = (e) => { if (e.key === 'Enter') $('pfTvLink').click(); };
+document.querySelector('.tab[data-tab="profile"]').addEventListener('click', refreshTvs);
+addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshTvs(); });
 
 $('guideBtn').onclick = () => guideView.open();
 
@@ -2017,7 +2078,7 @@ applyAll();
 renderSaved();
 await detectProxy();
 renderProfiles();
-checkSyncAvailable().then((ok) => { if (ok) profiles.pull(); });
+checkSyncAvailable().then((ok) => { syncOk = ok; if (ok) { profiles.pull(); refreshTvs(); } });
 // server.js and the Cloudflare deployment include a demo Xtream panel (proxy/xtream-demo.js).
 if (proxy.available && !settings.proxyUrl) {
   const b = document.createElement('button');
@@ -2041,4 +2102,5 @@ else if (last?.local && store.get('localText', null)) setChannels(parseM3U(store
 else loadBuiltinDemo();
 
 // Debug handle for the console.
-window.o3xr = { theater, vrPanel, state, settings, profiles, gallery, ratings, similar };
+window.o3xr = { theater, vrPanel, state, settings, profiles, gallery, ratings, similar, loadPlaylist: loadPlaylistUrl };
+dispatchEvent(new Event('o3xr-ready'));

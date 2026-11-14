@@ -34,6 +34,12 @@
     <button id="panelOpen" class="icon-btn" title="Settings (H)">⚙</button>
   </header>
 
+  <div id="tvBanner" class="tv-banner hidden">
+    <span>📺 A TV on your Wi-Fi is ready to link</span>
+    <button id="tvBannerLink" class="btn">Link</button>
+    <button id="tvBannerX" class="icon-btn" title="Not now">✕</button>
+  </div>
+
   <!-- Settings drawer -->
   <aside id="panel" class="panel collapsed">
     <header class="panel-head">
@@ -268,6 +274,15 @@
       <div class="row">
         <input id="pfClaimCode" type="text" placeholder="8-character code" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false">
         <button id="pfClaim" class="btn">Link</button>
+      </div>
+
+      <h3>Link a TV</h3>
+      <ul id="pfTvList" class="profile-list"></ul>
+      <p id="pfTvNone" class="muted small">No TV found on this Wi-Fi yet. Open Tuner on the TV and it will show up here.
+        If it doesn’t (guest network, mobile data), enter the code on the TV’s screen:</p>
+      <div class="row">
+        <input id="pfTvCode" type="text" placeholder="Code on the TV" maxlength="10" autocomplete="off" autocapitalize="characters" spellcheck="false">
+        <button id="pfTvLink" class="btn">Link TV</button>
       </div>
 
       <h3>New profile</h3>
