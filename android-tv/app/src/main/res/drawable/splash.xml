@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shown by Android the instant the app starts, before the page exists: plaster with the oak fish -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/plaster" />
+    <item android:drawable="@drawable/splash_fish" android:gravity="center" />
+</layer-list>

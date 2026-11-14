@@ -1,0 +1,40 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" width="400" height="300">
+  <!-- The Tuner fish cut from natural oak, like the TV's frame: grain, a lit upper edge, and a soft shadow-box drop. -->
+  <defs>
+    <linearGradient id="wood" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#cf9a5f"/><stop offset=".5" stop-color="#b87c42"/><stop offset="1" stop-color="#94602f"/>
+    </linearGradient>
+    <linearGradient id="lit" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fff3d6" stop-opacity=".7"/><stop offset=".45" stop-color="#fff3d6" stop-opacity="0"/>
+    </linearGradient>
+    <!-- two layers of grain: broad figure and fine pores, both stretched along the length of the board -->
+    <filter id="grain" x="-4%" y="-4%" width="108%" height="108%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.01 0.22" numOctaves="2" seed="11" result="n1"/>
+      <feColorMatrix in="n1" type="matrix" values="0 0 0 0 0.34  0 0 0 0 0.19  0 0 0 0 0.07  0 0 0 -2.6 1.5" result="broad"/>
+      <feTurbulence type="fractalNoise" baseFrequency="0.02 1.6" numOctaves="2" seed="4" result="n2"/>
+      <feColorMatrix in="n2" type="matrix" values="0 0 0 0 0.28  0 0 0 0 0.15  0 0 0 0 0.05  0 0 0 -3.4 1.7" result="fine"/>
+      <feMerge result="both"><feMergeNode in="broad"/><feMergeNode in="fine"/></feMerge>
+      <feComposite in="both" in2="SourceAlpha" operator="in" result="grainIn"/>
+      <feMerge><feMergeNode in="SourceGraphic"/><feMergeNode in="grainIn"/></feMerge>
+    </filter>
+    <filter id="drop" x="-30%" y="-30%" width="160%" height="180%">
+      <feDropShadow dx="0" dy="9" stdDeviation="8" flood-color="#4a3216" flood-opacity=".34"/>
+    </filter>
+    <clipPath id="fish">
+      <path id="shape" d="M5 16C9 9 19 8 24 14L29 9 27.5 16 29 23 24 18C19 24 9 23 5 16ZM13 10.6 16 6 18.4 10ZM14 21.4 16 25.5 18.4 22Z"/>
+    </clipPath>
+  </defs>
+  <g filter="url(#drop)">
+   <g transform="translate(72 4) scale(8)">
+      <g filter="url(#grain)">
+        <path fill="url(#wood)" d="M5 16C9 9 19 8 24 14L29 9 27.5 16 29 23 24 18C19 24 9 23 5 16ZM13 10.6 16 6 18.4 10ZM14 21.4 16 25.5 18.4 22Z"/>
+      </g>
+   </g>
+  </g>
+  <g transform="translate(72 4) scale(8)">
+    <path fill="url(#lit)" d="M5 16C9 9 19 8 24 14L29 9 27.5 16 29 23 24 18C19 24 9 23 5 16ZM13 10.6 16 6 18.4 10ZM14 21.4 16 25.5 18.4 22Z"/>
+    <circle cx="9.5" cy="15" r="1.25" fill="#f3e7c6"/>
+    <circle cx="9.5" cy="15" r="1.25" fill="none" stroke="#6b4420" stroke-opacity=".35" stroke-width=".18"/>
+  </g>
+  <text x="200" y="272" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="30" font-weight="600" letter-spacing="9" fill="#8a6a43">TUNER</text>
+</svg>

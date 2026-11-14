@@ -26,6 +26,8 @@ import android.widget.FrameLayout
  *  - forward media keys and Back to the page.
  */
 class MainActivity : Activity() {
+    private companion object { val PLASTER = Color.parseColor("#EBDFB8") }
+
     private lateinit var web: WebView
     private lateinit var root: FrameLayout
     private var customView: View? = null
@@ -37,9 +39,9 @@ class MainActivity : Activity() {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
 
-        root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        root = FrameLayout(this).apply { setBackgroundColor(PLASTER) }
         web = WebView(this).apply {
-            setBackgroundColor(Color.BLACK)
+            setBackgroundColor(PLASTER) // until the page paints (the page itself is black behind a playing picture)
             isFocusable = true
             isFocusableInTouchMode = true
         }
@@ -86,6 +88,7 @@ class MainActivity : Activity() {
                 customViewCallback = callback
                 root.addView(view, ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
                 web.visibility = View.GONE
+                root.setBackgroundColor(Color.BLACK) // letterbox bars around a fullscreen video are black
             }
 
             override fun onHideCustomView() {
@@ -94,6 +97,7 @@ class MainActivity : Activity() {
                 customViewCallback?.onCustomViewHidden()
                 customViewCallback = null
                 web.visibility = View.VISIBLE
+                root.setBackgroundColor(PLASTER)
                 web.requestFocus()
             }
 
