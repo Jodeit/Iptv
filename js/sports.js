@@ -69,6 +69,7 @@ function normalize(ev) {
     nets,
     detail: live ? period : st.state === 'post' ? 'Final' : '',
     away: side(away), home: side(home),
+    odds: (() => { const o = c.odds?.[0]; return o && (o.details || o.overUnder) ? { line: o.details || '', total: o.overUnder || '' } : null; })(),
     score,
   };
 }
@@ -101,23 +102,25 @@ function games() {
   index = new Map();
   const now = Date.now();
   for (const b of boards.values()) for (const e of b.events || []) {
-    if (e.state === 'post' || (e.state === 'pre' && e.start > now + 4 * 3600e3)) continue;
+    if (e.state === 'post' || (e.state === 'pre' && e.start > now + 36 * 3600e3)) continue; // live now, or up to a day and a half ahead
     for (const n of e.nets) { if (!index.has(n)) index.set(n, []); index.get(n).push(e); }
   }
   for (const list of index.values()) list.sort((a, b) => (a.state === 'in' ? 0 : 1) - (b.state === 'in' ? 0 : 1) || a.start - b.start);
   return index;
 }
-// What this channel is carrying on the scoreboard: live games first, then the next one up. null if none.
-export function gameFor(ch) {
-  const list = games().get(ch.net ? net(ch.net) : net(ch.clean || ch.name));
-  if (!list?.length) return null;
-  const e = list[0], more = list.filter((x) => x.state === 'in').length;
-  return {
-    title: more > 1 ? `${e.title} +${more - 1}` : e.title,
-    status: e.state === 'in' ? [e.detail, e.score].filter(Boolean).join(' · ') : `starts ${clock(e.start)}`,
-    live: e.state === 'in', start: e.start, away: e.away, home: e.home,
-    period: e.state === 'in' ? e.detail : `Starts ${clock(e.start)}`,
-  };
+const sameDay = (t) => new Date(t).toDateString() === new Date().toDateString();
+const dayClock = (t) => (sameDay(t) ? clock(t) : `${new Date(t).toLocaleDateString([], { weekday: 'short' })} ${clock(t)}`);
+// Every game this channel is carrying that is live or still to come, live ones first. [] if none.
+export function gamesFor(ch) {
+  const list = games().get(ch.net ? net(ch.net) : net(ch.clean || ch.name)) || [];
+  const seen = new Set();
+  return list.filter((e) => { const k = `${e.title}|${e.start}`; if (seen.has(k)) return false; seen.add(k); return true; }).map((e) => ({
+    key: `${e.title}|${e.start}`,
+    title: e.title,
+    live: e.state === 'in', start: e.start, away: e.away, home: e.home, odds: e.odds,
+    period: e.state === 'in' ? e.detail : `Starts ${dayClock(e.start)}`,
+    status: e.state === 'in' ? [e.detail, e.score].filter(Boolean).join(' · ') : `starts ${dayClock(e.start)}`,
+  }));
 }
 export const onChange = (f) => { listeners.add(f); };
 
