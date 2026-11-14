@@ -38,7 +38,11 @@ export async function handleProfileApi({ method, path, body, ip }, store, opts =
     // On Cloudflare the whole operation runs inside that profile's Durable Object (see proxy/worker.js),
     // so the version check and the write cannot interleave with another device's. Elsewhere it runs
     // against `store`.
-    if (opts.profileHandler) return opts.profileHandler(id, method, body);
+    if (opts.profileHandler) {
+      // If the Durable Object can't be reached, serve from KV rather than fail: sync keeps working, just
+      // without the one-at-a-time guarantee.
+      try { return await opts.profileHandler(id, method, body); } catch (err) { console.error('profile Durable Object failed, using KV:', err?.message); }
+    }
     return profileOp(method, body, cellFor(store, `profile:${id}`));
   }
 
