@@ -675,14 +675,75 @@ function initTV() {
   }, 1500);
 
   // ---------- Movies and Shows ----------
-  // Filters and categories in the left column, posters in the grid, like the films in On now. OK opens the title's
-  // page (details, resume, episodes); Back from there returns to the same spot in the grid.
-  let vodTabTimer = 0, vodKind = 'movie', vodItems = [], vodSeq = 0, vodFocusI = 0, vodRestore = null, vodReturn = false;
-  const vodCats = { movie: '', series: '' };
-  const vodF = { sort: 'added', rating: 0, year: '', genre: '', fav: false, unwatched: false };
+  // One flat list of titles instead of the provider's folder tree: every folder that matches the "primary" patterns
+  // (Settings → Content filter on the phone, default "VOD | EN*, VOD | IMDB TOP 500") is loaded and merged, and the
+  // part of each folder's name after the pattern ("VOD | EN Action" → "Action") becomes a filter chip. Same layout
+  // as the films in On now; OK opens the title's page; Back returns to the same tile.
+  let vodTabTimer = 0, vodKind = 'movie', vodSeq = 0, vodFocusI = 0, vodRestore = null, vodReturn = false;
+  let vodItems = [], vodTags = new Map(); // what the grid is showing from, and each title's folder labels
+  const vodIndex = {}; // kind → { sig, items, tags: Map(id → Set(label)), done, total, state }
+  const vodTag = { movie: '', series: '' }; // selected genre / collection ('' = everything)
+  const vodF = { sort: 'added', rating: 0, year: '', fav: false, unwatched: false };
   const CONTINUE = '__continue';
   const SORTS = [['added', 'Recently added'], ['rt', 'Rotten Tomatoes'], ['rating', 'Top rated'], ['year', 'Newest'], ['title', 'A–Z']];
   const YEARS = [['', 'Any'], ['2020', '2020s'], ['2010', '2010s'], ['2000', '2000s'], ['1990', '1990s'], ['old', 'Before 1990']];
+  const normName = (s) => String(s).toUpperCase().replace(/[\s|:\-–_]+/g, ' ').trim();
+  const pretty = (s) => (s === s.toUpperCase() ? s.toLowerCase().replace(/\b\w/g, (c) => c.toUpperCase()).replace(/\bImdb\b/, 'IMDB').replace(/\bTv\b/, 'TV') : s);
+  const isCollection = (label) => /\b(top|imdb|best|collection|oscar|award|classics?)\b/i.test(label);
+  // The pattern a folder name matches (normalised), or '' if none. A trailing * allows more characters after it.
+  function primaryMatch(name, pats) {
+    const n = normName(name);
+    for (const p of pats) {
+      const pn = normName(p.replace(/\*+$/, ''));
+      if (!pn) continue;
+      if (n === pn || n.startsWith(`${pn} `) || (p.endsWith('*') && n.startsWith(pn))) return pn;
+    }
+    return '';
+  }
+  // "VOD | EN Action" matched by "VOD | EN*" → "Action"
+  function folderLabel(name, matched) {
+    const words = String(name).split(/[\s|:\-–_]+/).filter(Boolean);
+    const skip = matched ? matched.split(' ').length : 0;
+    const head = words.slice(0, skip).map((w) => w.toUpperCase()).join(' ');
+    const rest = (head === matched ? words.slice(skip) : words).join(' ');
+    if (!rest && isCollection(name)) return pretty(words.filter((w) => w.toUpperCase() !== 'VOD').join(' ') || String(name)); // "VOD | IMDB TOP 500" → "IMDB Top 500"
+    return pretty(rest || 'General');
+  }
+  async function loadVodIndex(kind) {
+    const pats = String(T().vod.primary?.() || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const sig = `${libSig()}|${pats.join(',')}`;
+    let idx = vodIndex[kind];
+    if (idx && idx.sig === sig) return idx;
+    idx = vodIndex[kind] = { sig, items: [], tags: new Map(), done: 0, total: 0, state: 'loading' };
+    const all = T().vod.categories(kind) || [];
+    let chosen = pats.length ? all.map((c) => ({ c, m: primaryMatch(c.name, pats) })).filter((x) => x.m) : [];
+    if (!chosen.length) chosen = all.slice(0, 60).map((c) => ({ c, m: '' })); // nothing matched: use the folders there are
+    idx.total = chosen.length;
+    const queue = [...chosen];
+    const worker = async () => {
+      while (queue.length) {
+        const { c, m } = queue.shift();
+        try {
+          const items = await T().vod.loadQuiet(kind, c.id);
+          const label = folderLabel(c.name, m);
+          for (const it of items) {
+            let tags = idx.tags.get(it.id);
+            if (!tags) { tags = new Set(); idx.tags.set(it.id, tags); idx.items.push(it); }
+            tags.add(label);
+          }
+        } catch { /* one folder failing should not lose the rest */ }
+        idx.done++;
+        if (vodKind === kind && tab === 'vod') paintVodProgress(idx);
+      }
+    };
+    await Promise.all([worker(), worker(), worker()]);
+    idx.state = 'done';
+    return idx;
+  }
+  const paintVodProgress = (idx) => {
+    const p = bodyEl.querySelector('.vod-loading');
+    if (p) p.textContent = `Loading ${vodKind === 'movie' ? 'movies' : 'shows'} · ${idx.done} of ${idx.total} folders · ${idx.items.length.toLocaleString()} titles`;
+  };
   const vodIO = new IntersectionObserver((es) => {
     // Scores cost a lookup each, so only posters that stay on screen for a moment ask
     for (const e of es) {
@@ -694,13 +755,12 @@ function initTV() {
     const r = T().vod.peek(i), imdb = parseFloat(r?.imdb);
     return imdb > 0 ? imdb : r?.rt != null ? r.rt / 10 : +i.rating || 0;
   };
-  const vodGenres = () => [...new Set(vodItems.flatMap((i) => String(i.genre || '').split(/[,/]/).map((g) => g.trim()).filter(Boolean)))].sort((a, b) => a.localeCompare(b));
   function vodList() {
-    const f = vodF;
+    const f = vodF, tag = vodTag[vodKind];
     const out = vodItems.filter((i) => {
+      if (tag && tag !== CONTINUE && !vodTags.get(i.id)?.has(tag)) return false;
       if (f.rating && vodScore(i) < f.rating) return false;
       if (f.year) { if (!i.year) return false; if (f.year === 'old' ? i.year >= 1990 : i.year < +f.year || i.year >= +f.year + 10) return false; }
-      if (f.genre && !String(i.genre || '').split(/[,/]/).some((g) => g.trim() === f.genre)) return false;
       if (f.fav && !T().isFav(i.id)) return false;
       if (f.unwatched) { const p = T().vod.progress(i); if (p?.d && p.t / p.d > 0.9) return false; }
       return true;
@@ -729,48 +789,59 @@ function initTV() {
     mode('rating', 'Rating', vodF.rating ? `${vodF.rating}+` : 'Any', () => { vodF.rating = cycle([0, 6, 7, 8], vodF.rating); });
     const yi = YEARS.findIndex(([k]) => k === vodF.year);
     mode('year', 'Year', YEARS[yi][1], () => { vodF.year = YEARS[(yi + 1) % YEARS.length][0]; });
-    const genres = vodGenres();
-    if (genres.length) mode('genre', 'Genre', vodF.genre || 'Any', () => { vodF.genre = cycle(['', ...genres], vodF.genre); });
     mode('fav', '★ Favorites', vodF.fav ? 'On' : 'Off', () => { vodF.fav = !vodF.fav; });
     mode('unwatched', 'Hide watched', vodF.unwatched ? 'On' : 'Off', () => { vodF.unwatched = !vodF.unwatched; });
-    chipsEl.append(el('div', 'tvh-gstatus', 'Categories'));
-    const cur = vodCats[vodKind];
-    const cats = [...(T().vod.continueList(vodKind).length ? [{ id: CONTINUE, name: 'Continue watching' }] : []), ...(T().vod.categories(vodKind) || [])];
-    for (const c of cats.slice(0, 200)) {
-      const b = el('button', `tvh-chip${c.id === cur ? ' on' : ''}`, `<span class="nm">${esc(c.name)}</span>`);
-      b.dataset.key = `c:${c.id}`;
-      b.onclick = () => { vodCats[vodKind] = c.id; renderVodChips(); renderVod(); chipsEl.querySelector('.tvh-chip.on:not(.mode)')?.focus(); };
+    // Genres and collections come from the folders the titles were found in
+    const counts = new Map();
+    for (const tags of vodTags.values()) for (const g of tags) counts.set(g, (counts.get(g) || 0) + 1);
+    const chip = (key, label, n) => {
+      const b = el('button', `tvh-chip${key === vodTag[vodKind] ? ' on' : ''}`, `<span class="nm">${esc(label)}</span><span class="n">${n}</span>`);
+      b.dataset.key = `t:${key}`;
+      b.onclick = () => { vodTag[vodKind] = key; renderVodChips(); renderVodList(); chipsEl.querySelector('.tvh-chip.on:not(.mode)')?.focus(); };
       chipsEl.append(b);
-    }
+    };
+    const nCont = T().vod.continueList(vodKind).length;
+    chipsEl.append(el('div', 'tvh-gstatus', 'Show'));
+    if (nCont) chip(CONTINUE, 'Continue watching', nCont);
+    chip('', 'Everything', vodTags.size || vodItems.length);
+    const labels = [...counts.keys()];
+    for (const g of labels.filter(isCollection).sort()) chip(g, g, counts.get(g));
+    const genres = labels.filter((g) => !isCollection(g)).sort((a, b) => a.localeCompare(b));
+    if (genres.length) chipsEl.append(el('div', 'tvh-gstatus', 'Genres'));
+    for (const g of genres) chip(g, g, counts.get(g));
     if (keep) chipsEl.querySelector(`.tvh-chip[data-key="${CSS.escape(keep)}"]`)?.focus();
   }
   async function renderVod() {
     const seq = ++vodSeq;
     bodyEl.className = 'tvh-body vod grid posters';
-    bodyEl.innerHTML = '';
+    bodyEl.innerHTML = '<p class="tvh-empty vod-loading">Loading…</p>';
     infoEl.classList.add('hidden');
-    const cats = [...(T().vod.continueList(vodKind).length ? [{ id: CONTINUE }] : []), ...(T().vod.categories(vodKind) || [])];
-    if (!cats.some((c) => c.id === vodCats[vodKind])) vodCats[vodKind] = cats[0]?.id || '';
-    const cat = vodCats[vodKind];
-    if (!cat) { bodyEl.innerHTML = '<p class="tvh-empty">Nothing here yet.</p>'; listCache = []; return; }
-    bodyEl.innerHTML = '<p class="tvh-empty">Loading…</p>';
+    listCache = [];
+    let idx;
     try {
-      vodItems = cat === CONTINUE ? T().vod.continueList(vodKind) : await T().vod.load(vodKind, cat);
+      const p = loadVodIndex(vodKind);
+      idx = vodIndex[vodKind];
+      if (idx.state === 'loading') paintVodProgress(idx);
+      idx = await p;
     } catch (e) {
-      if (seq === vodSeq) bodyEl.innerHTML = `<p class="tvh-empty">Couldn’t load this category: ${esc(e.message)}</p>`;
+      if (seq === vodSeq) bodyEl.innerHTML = `<p class="tvh-empty">Couldn’t load the list: ${esc(e.message)}</p>`;
       return;
     }
     if (seq !== vodSeq) return;
-    if (!chipsEl.contains(document.activeElement)) renderVodChips(); // genres are known now
+    vodItems = vodTag[vodKind] === CONTINUE ? T().vod.continueList(vodKind) : idx.items;
+    vodTags = idx.tags;
+    if (!chipsEl.contains(document.activeElement)) renderVodChips();
     renderVodList();
   }
   function renderVodList() {
     vodIO.disconnect();
     bodyEl.className = 'tvh-body vod grid posters';
     bodyEl.innerHTML = '';
+    if (vodTag[vodKind] === CONTINUE) vodItems = T().vod.continueList(vodKind);
+    else if (vodIndex[vodKind]) vodItems = vodIndex[vodKind].items;
     listCache = vodList();
     shown = 0;
-    if (!listCache.length) { bodyEl.innerHTML = `<p class="tvh-empty">${vodItems.length ? 'Nothing matches these filters.' : 'Nothing in this category.'}</p>`; return; }
+    if (!listCache.length) { bodyEl.innerHTML = `<p class="tvh-empty">${vodItems.length ? 'Nothing matches these filters.' : 'Nothing here yet.'}</p>`; return; }
     addRows();
     if (vodRestore != null) {
       const i = vodRestore; vodRestore = null;
