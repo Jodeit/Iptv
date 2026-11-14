@@ -130,7 +130,7 @@ export default {
         ? new Response(null, { status: 204, headers: CORS })
         : Response.json(res.body, { status: res.status, headers: { ...CORS, 'cache-control': 'no-store' } });
     }
-    const demo = xtreamDemo(new URL(request.url));
+    const demo = await xtreamDemo(new URL(request.url));
     if (demo) return new Response(demo.body || null, { status: demo.status, headers: demo.headers });
     if (pathname !== '/proxy') return text('Not found', 404);
 

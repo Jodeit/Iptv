@@ -225,6 +225,30 @@ https://<your-app>/get.php?username=demo&password=demo&type=m3u_plus
 
 If the demo plays but your provider's link doesn't, the app works and the provider is refusing the connection.
 
+#### Failure modes
+
+The demo panel can also break on purpose, to test how the app copes with real providers. It answers `player_api.php`
+as well as `get.php`. Under **Xtream Codes**, use this app's address as the server and the password `demo`; the
+username sets how the whole panel behaves:
+
+| Username  | Behaviour                                                            |
+|-----------|----------------------------------------------------------------------|
+| `demo`    | Healthy                                                              |
+| `expired` | Account expired: lists still load, every stream is refused (403)     |
+| `banned`  | Account banned: same, with status "Banned"                           |
+| `maxed`   | At its connection limit (2 of 2): every stream is refused (403)      |
+| `slow`    | Every response takes 6 s                                             |
+| `down`    | Panel offline: 503 for everything                                    |
+| `captcha` | A bot-check web page instead of the playlist or API JSON             |
+| `noapi`   | No `player_api.php` (404), so the app falls back to `get.php`        |
+| any other | Wrong login (`auth: 0` from the API, 401 from `get.php`)             |
+
+Every account also has a **Demo | Faults** category whose channels each fail one way: 404, 403, 502, 503 half the
+time, no answer for 60 s, an 8 s wait before playing, a web page instead of a stream, a redirect loop, an empty
+playlist, a live stream that stops updating after 30 s, one whose segments go missing after 20 s, and one that's
+cut off with a 403 after 60 s. The last three are live HLS made from Big Buck Bunny's segments, so they need the
+server to reach `test-streams.mux.dev`.
+
 Proxy modes (Sources tab):
 
 - **Auto** (default): goes direct when the server allows it and switches to the proxy once a host blocks the browser.
@@ -300,7 +324,7 @@ server.js         Static server + CORS/HLS-rewriting proxy (zero dependencies)
 proxy/worker.js   Same proxy as a Cloudflare Worker (used by wrangler.toml)
 proxy/http-socket.js  HTTP over TCP sockets for hosts the Worker's fetch() refuses (bare IPs, odd ports)
 wrangler.toml     Cloudflare deploy config: static app + /proxy Worker
-proxy/xtream-demo.js  Built-in demo Xtream panel (demo / demo) for testing
+proxy/xtream-demo.js  Built-in demo Xtream panel (demo / demo) with failure modes for testing
 index.html        UI shell + CDN import map
 css/style.css     Panel / bar styling (phone layout included)
 js/main.js        App state, playlists, settings, UI + keyboard wiring

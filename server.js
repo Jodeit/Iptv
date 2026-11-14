@@ -192,9 +192,12 @@ function handler(req, res) {
   }
   if (pathname === '/proxy') return proxy(req, res, searchParams.get('url'));
   if (pathname.startsWith('/api/')) return api(req, res, pathname).catch(() => send(res, 500, 'API error'));
-  const demo = xtreamDemo(new URL(req.url, `${tls ? 'https' : 'http'}://${req.headers.host}`));
-  if (demo) { res.writeHead(demo.status, demo.headers); return res.end(demo.body); }
-  serveStatic(req, res, pathname);
+  xtreamDemo(new URL(req.url, `${tls ? 'https' : 'http'}://${req.headers.host}`)).then((demo) => {
+    if (!demo) return serveStatic(req, res, pathname);
+    if (res.destroyed) return; // the player gave up on a deliberately slow answer
+    res.writeHead(demo.status, demo.headers);
+    res.end(demo.body);
+  }, () => send(res, 500, 'Demo panel error'));
 }
 
 const tls = process.env.CERT && process.env.KEY
