@@ -87,6 +87,7 @@ export class StreamPlayer {
       if (i > 0) plans.unshift(...plans.splice(i, 1));
     }
     let refused = false;
+    let refusal = null;
     let directRefused = false;
     const refusedFormats = new Set();
     if (!plans.length) this.report.push(`✗ unsupported format: this browser can’t play ${list[0]?.hint?.split('?')[0].split('.').pop().toUpperCase() || 'this'} files`);
@@ -127,6 +128,7 @@ export class StreamPlayer {
         }
         this.winner = { source };
         this.lastEngine = engine;
+        this.lastPlayedAt = Date.now(); // lets a later refusal say whether other streams were working
         this.onStatus(`Playing · ${engine}${label ? ` · ${label}` : ''}`);
         this.log(`▶ playing with ${ENGINE_NAMES[engine]}${label ? ' via proxy' : ''}: ${hint || src}`);
         this.health.start(engine, this);
@@ -157,17 +159,33 @@ export class StreamPlayer {
       }
     }
     if (token !== this.token) return false;
+    if (!refused && directRefused) refused = true; // the direct request was refused and the proxy tries found nothing better
     // Look at what each address actually returns (one probe per distinct source).
-    const seen = new Set();
-    const max = refused ? 0 : 4; // a refusal already tells us the status; don't spend more requests
+    const seen = new Set(), probed = [];
+    const max = refused ? 1 : 4; // a refusal already tells us the status; one look at what the provider says (its own message, who answered)
     const probes = Math.min(max, new Set(list.map((x) => x.src)).size);
     for (const { src, hint } of list) {
       if (seen.has(src) || seen.size >= max || token !== this.token) continue;
       seen.add(src);
       this.onStatus(`Didn’t play. Checking why (${seen.size} of ${probes})…`, { loading: true, frac: (seen.size - 1) / probes });
-      this.log(`? ${hint || src} → ${describeProbe(await probe(src))}`);
+      const pr = await probe(src);
+      this.log(`? ${hint || src} → ${describeProbe(pr)}`);
+      probed.push(pr);
     }
-    if (token === this.token) this.onError(summarise(this.report), this.report, { refused });
+    // What the provider itself answered counts too: a player often reports only "format not supported" when the answer was a refusal
+    const isRefusal = (x) => /^(401|403|406|451|456|458)$/.test(String(x.upstream || x.status));
+    const bad = probed.find(isRefusal);
+    if (bad && !probed.some((x) => !x.error && x.status < 400 && !isRefusal(x))) refused = true;
+    if (refused) {
+      const m = this.report.join('\n').match(/(?:provider answered|HTTP) (401|403|406|451|456|458)\b/);
+      refusal = {
+        status: bad ? String(bad.upstream || bad.status) : m?.[1] || '',
+        message: bad?.content?.message || '',
+        proxyKind: bad?.proxyKind || '',
+        othersWorked: !!this.lastPlayedAt && Date.now() - this.lastPlayedAt < 30 * 60000,
+      };
+    }
+    if (token === this.token) this.onError(summarise(this.report), this.report, { refused, refusal });
     return false;
   }
 
@@ -398,10 +416,8 @@ function summarise(report) {
   if (/proxy error “port-unsupported”/.test(text)) {
     return 'The stream server uses a port Cloudflare can’t connect to. Use server.js at home as the proxy for this provider.';
   }
-  if (/provider answered (401|403|406|451|456|458)|HTTP (401|403|406|451|456|458)\b/.test(text)) {
-    return 'The provider refused the stream. That usually means the account’s connection limit is reached: close other players '
-      + 'using it, or wait a minute for the previous stream to be released, then retry.';
-  }
+  const refusedAs = text.match(/(?:provider answered|HTTP) (401|403|406|451|456|458)\b/);
+  if (refusedAs) return `The provider answered HTTP ${refusedAs[1]} for this stream.`; // main.js follows up with what it can establish
   const page = text.match(/(?:HTML page|JSON|text) \(not video\) · “([^”]+)”/);
   if (page) return `The provider sent a message instead of video: “${page[1].slice(0, 100)}”`;
   const healthy = text.match(/· (MPEG-TS \[[^\]]+\]|HLS (?:master )?playlist)/);

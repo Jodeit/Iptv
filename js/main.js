@@ -483,14 +483,14 @@ const player = new StreamPlayer(video, {
     clearTimeout(logTimer);
     logTimer = setTimeout(() => renderPlaybackLog(report), 300);
   },
-  onError: (e, report, { refused = false } = {}) => {
+  onError: (e, report, { refused = false, refusal = null } = {}) => {
     hideLoading();
     setStatus(e);
     toast(e, true);
     theater.setVideoActive(false);
     theater.setPlaceholder('Stream unavailable', state.current?.name || '');
     if (report) renderPlaybackLog(report);
-    if (refused) explainRefusal(report);
+    if (refused) explainRefusal(report, refusal);
     else if (state.current) offerExternal(state.current, e);
   },
 });
@@ -624,32 +624,39 @@ function renderPlaybackLog(report) {
   $('playbackLogBox').classList.remove('hidden');
 }
 
-// After a refused stream, ask the Xtream panel why: expired account, or connections in use.
-async function explainRefusal(report) {
-  const xt = state.source?.url && parseXtream(state.source.url);
-  if (!xt) return;
+// After a refused stream: say only what the evidence supports. The provider's own words if it sent any, the
+// account's state if it is an Xtream panel, and whether other streams were working (a status code alone does not
+// tell a connection limit from a stream that is simply not in the plan).
+async function explainRefusal(report, info) {
   const channel = state.current;
-  try {
-    const acct = await xtreamAccount(xt, proxyPlan(xt.server) === 'direct' ? undefined : proxied);
-    if (state.current !== channel) return;
-    const exp = acct.expires ? acct.expires.toLocaleDateString() : 'unknown';
-    report.push(`ℹ account: status ${acct.status}, connections ${acct.active ?? '?'} of ${acct.max ?? '?'}, expires ${exp}`);
-    renderPlaybackLog(report);
-    let msg;
-    if (!/^active$/i.test(acct.status)) msg = `The provider says this account is “${acct.status}” (expires ${exp}).`;
-    else if (acct.max != null && acct.active >= acct.max) {
-      msg = `Your account is using ${acct.active} of ${acct.max} allowed connection${acct.max === 1 ? '' : 's'}. `
-        + 'Close other players or wait a minute for the last stream to be released, then retry.';
-    } else {
-      msg = `The provider refused the stream although the account is active (${acct.active ?? '?'} of ${acct.max ?? '?'} connections in use). `
-        + 'It may be temporarily blocking this connection; wait a minute and retry.';
+  const code = info?.status ? `HTTP ${info.status}` : 'a refusal';
+  const said = info?.message ? ` It said: “${info.message.slice(0, 140)}”.` : '';
+  const others = info?.othersWorked
+    ? 'Other streams were playing a moment ago, so it is most likely this stream in particular: not in your plan, taken offline, or needing a different format.'
+    : 'Nothing has played yet in this session, so the login, an IP lock, or a block on the proxy’s network are all possible.';
+  let msg = `The provider refused this stream (${code}).${said} ${others}`;
+  const xt = state.source?.url && parseXtream(state.source.url);
+  if (xt) {
+    try {
+      const acct = await xtreamAccount(xt, proxyPlan(xt.server) === 'direct' ? undefined : proxied);
+      if (state.current !== channel) return;
+      const exp = acct.expires ? acct.expires.toLocaleDateString() : 'unknown';
+      report.push(`ℹ account: status ${acct.status}, connections ${acct.active ?? '?'} of ${acct.max ?? '?'}, expires ${exp}`);
+      if (!/^active$/i.test(acct.status)) msg = `The provider says this account is “${acct.status}” (expires ${exp}), which is why streams are refused.`;
+      else if (acct.max != null && acct.active >= acct.max) {
+        msg = `Your account is using ${acct.active} of ${acct.max} allowed connection${acct.max === 1 ? '' : 's'}, so the provider refused this stream (${code}).${said} `
+          + 'Close other players or wait a minute for the last stream to be released, then retry.';
+      } else {
+        msg = `The provider refused this stream (${code}) although the account is active (${acct.active ?? '?'} of ${acct.max ?? '?'} connections in use).${said} ${others}`;
+      }
+    } catch (err) {
+      report.push(`ℹ account check failed: ${err.message}`);
     }
-    setStatus(msg);
-    toast(msg, true);
-  } catch (err) {
-    report.push(`ℹ account check failed: ${err.message}`);
-    renderPlaybackLog(report);
   }
+  if (state.current !== channel) return;
+  renderPlaybackLog(report);
+  setStatus(msg);
+  toast(msg, true);
 }
 
 // ---------- CORS proxy ----------
