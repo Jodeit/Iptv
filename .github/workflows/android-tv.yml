@@ -37,3 +37,13 @@ jobs:
           gh release delete tv-latest --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
           gh release create tv-latest tuner-tv.apk --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
             --prerelease --title "Tuner TV (latest build)" --notes "Debug-signed APK for sideloading on Google TV. Built from $GITHUB_SHA."
+      # The Cloudflare Worker serves the repo root, so this makes the APK downloadable at /tuner-tv.apk
+      # on the app's own (public) URL even while the repo is private. The token's push doesn't re-trigger CI.
+      - name: Commit APK for the Worker to serve
+        run: |
+          cp android-tv/app/build/outputs/apk/release/app-release.apk tuner-tv.apk
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tuner-tv.apk
+          git commit -m "Update tuner-tv.apk [skip ci]" || exit 0
+          git push origin "HEAD:${GITHUB_REF_NAME}"

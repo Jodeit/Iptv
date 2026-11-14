@@ -304,7 +304,7 @@ between controls, Back closes panels, and the media keys play/pause/skip. The pa
 
 1. GitHub → **Actions → Android TV APK → Run workflow** (it also runs on pushes that touch `android-tv/`).
    Optionally set `app_url` to point it at a different deployment.
-2. Download the **tuner-tv-apk** artifact and unzip it to get `app-release.apk` (debug-signed, for sideloading).
+2. The build also commits the APK to the repo root, so once deployed it is at `https://iptv.jodeit.workers.dev/tuner-tv.apk` (type that into the **Downloader** app on the TV). It is also on the `tv-latest` release and as the **tuner-tv-apk** artifact.
 3. On the TV enable *Settings → System → About → Android TV OS build* (tap 7 times), then *Developer options → USB/Network debugging*, and either:
    - `adb connect <tv-ip>:5555 && adb install app-release.apk`, or
    - put the APK on a USB stick / host it and install with the **Downloader** app (allow "Install unknown apps" for it).
