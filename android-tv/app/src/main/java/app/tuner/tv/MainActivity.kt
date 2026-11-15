@@ -13,6 +13,7 @@ import android.webkit.ConsoleMessage
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
+import android.webkit.WebResourceResponse
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -64,6 +65,20 @@ class MainActivity : Activity() {
             override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                 // Stay on the app's own origin; there is no browser to hand other links to.
                 return request.url.host != appHost && request.isForMainFrame
+            }
+
+            // The audio decoder is bundled in the APK: answer requests for it from there instead of the network
+            override fun shouldInterceptRequest(view: WebView, request: WebResourceRequest): WebResourceResponse? {
+                val u = request.url
+                val path = u.path ?: ""
+                if (request.method == "GET" && u.host == Uri.parse(BuildConfig.APP_URL).host && path.startsWith("/decoder/")) {
+                    try {
+                        val mime = if (path.endsWith(".js")) "text/javascript" else "application/octet-stream"
+                        val headers = mapOf("Access-Control-Allow-Origin" to "*", "Cache-Control" to "public, max-age=31536000")
+                        return WebResourceResponse(mime, null, 200, "OK", headers, assets.open(path.removePrefix("/")))
+                    } catch (e: Exception) { /* not bundled: fall through to the network */ }
+                }
+                return super.shouldInterceptRequest(view, request)
             }
 
             override fun onPageFinished(view: WebView, url: String) {
