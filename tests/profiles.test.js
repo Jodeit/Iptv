@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Profiles } from '../js/profiles.js';
+import { Profiles, metaPopularityFresh, metaRecordFresh } from '../js/profiles.js';
 
 function fingerprint(str) {
   let h = 0x811c9dc5;
@@ -48,4 +48,16 @@ test('coalesces overlapping profile pulls and throttles redundant checks', async
   assert.equal(instance.pull(), undefined);
   await instance.pull({ force: true });
   assert.equal(requests, 2);
+});
+
+test('keeps known age ratings while retrying titles with no rating weekly', () => {
+  const now = Date.now();
+  const oldKnown = ['PG-13', 7.5, now - 365 * 86400000];
+  const oldUnknown = ['', 0, now - 8 * 86400000];
+  const recentUnknown = ['', 0, now - 6 * 86400000];
+
+  assert.equal(metaRecordFresh(oldKnown, now), true);
+  assert.equal(metaPopularityFresh(oldKnown, now), false);
+  assert.equal(metaRecordFresh(oldUnknown, now), false);
+  assert.equal(metaRecordFresh(recentUnknown, now), true);
 });

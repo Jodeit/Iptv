@@ -449,7 +449,7 @@ function initTV() {
   function fillGame(b, ch, g) {
     if (g.leaderboard) {
       const channel = ch.net || ch.clean || cleanName(ch.name);
-      b.innerHTML = `<span class="g-state ${g.live ? 'live' : ''}"><b>${esc(g.title)}</b>
+      b.innerHTML = `<span class="g-state tournament ${g.live ? 'live' : ''}"><b>${esc(g.title)}</b>
         <small><span>${esc(g.period)}</span>${ch.logo ? `<img alt="" src="${esc(ch.logo)}" referrerpolicy="no-referrer">` : ''}<span>${esc(channel)}</span></small></span>
         <span class="g-leaderboard">${(g.standings || []).map((p) => `<span class="g-leader"><b>${esc(p.position)}</b><span>${esc(p.name)}</span><strong>${esc(p.score)}</strong></span>`).join('')}</span>
         <span class="star">★</span>`;
@@ -1839,8 +1839,6 @@ function initTV() {
     if (!o.state.current && !o.state.channels.length) o.loadPlaylist(added[0].url, added[0].name, { fresh: false });
     else T().toast(`New from your phone: ${added[0].name}. Home → Settings to switch.`);
   }
-  setInterval(watchPlaylists, 4000);
-
   // ---------- Touch (Tuner view in a browser) ----------
   if (WEB) {
     // Rows play on a tap; a long press favorites (the remote's "hold OK")
@@ -1888,6 +1886,8 @@ function initTV() {
     // Android WebView draws a large grey play icon on a <video> that has nothing to show; a transparent poster replaces it.
     T().video.poster = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
     checkUpdate('timer'); // sets the baseline
+    watchPlaylists();
+    setInterval(watchPlaylists, 4000);
     if (needsSetup()) runSetup(); else settleOnHome();
   };
   if (window.o3xr) boot(); else addEventListener('o3xr-ready', boot, { once: true });

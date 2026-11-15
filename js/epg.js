@@ -15,9 +15,10 @@ const TTL = 30 * 60 * 1000;
 const PARALLEL = 3;
 
 export class Guide {
-  constructor({ fetcher, onUpdate }) {
+  constructor({ fetcher, onUpdate, onProblem }) {
     this.fetcher = fetcher; // (url) => Promise<Response>, proxied as needed
     this.onUpdate = onUpdate; // (channelIds[]) => void
+    this.onProblem = onProblem;
     this.reset();
   }
 
@@ -87,6 +88,10 @@ export class Guide {
   // ---------- Xtream short EPG ----------
   request(ch) {
     if (!this.source?.xtream) return;
+    if (!ch?.id || typeof ch.url !== 'string' || !ch.url) {
+      this.onProblem?.('Skipped an Xtream EPG request for a channel missing its ID or stream URL');
+      return;
+    }
     if (this.inFlight.has(ch.id) || this.queue.some((c) => c.id === ch.id)) return;
     const streamId = ch.url.split('?')[0].split('/').pop().replace(/\.\w+$/, '');
     if (!/^\d+$/.test(streamId)) return;
@@ -137,7 +142,12 @@ export class Guide {
     if (this.bgTotal) return;
     const jobs = [];
     for (const ch of channels) {
-      if (kindOf(ch) !== 'live' || this.byChannel.has(ch.id)) continue;
+      if (!ch || kindOf(ch) !== 'live') continue;
+      if (!ch.id || typeof ch.url !== 'string' || !ch.url) {
+        this.onProblem?.('Skipped an Xtream EPG crawl entry for a channel missing its ID or stream URL');
+        continue;
+      }
+      if (this.byChannel.has(ch.id)) continue;
       const streamId = ch.url.split('?')[0].split('/').pop().replace(/\.\w+$/, '');
       if (/^\d+$/.test(streamId)) jobs.push({ id: ch.id, streamId });
     }

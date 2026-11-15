@@ -1008,6 +1008,14 @@ html.tv .tvh-row.game img.tl, html.tv .tvh-row.game i.tl { width: 36px; height: 
 .tvh-body.grid .tvh-row.game .g-leader > strong { font-variant-numeric: tabular-nums; }
 .tvh-body.grid .tvh-row.game img.tl, .tvh-body.grid .tvh-row.game i.tl { width: 32px; height: 32px; }
 .tvh-body.grid .tvh-row.game .g-state > b { flex: none; }
+.tvh-body.grid .tvh-row.game .g-state.tournament {
+  display: grid; grid-template-columns: minmax(0, 1fr); justify-content: stretch; justify-items: start;
+  width: 100%; min-width: 0; text-align: left;
+}
+.tvh-body.grid .tvh-row.game .g-state.tournament > b {
+  min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; text-overflow: clip; line-height: 1.15;
+}
+.tvh-body.grid .tvh-row.game .g-state.tournament small { min-width: 0; justify-content: flex-start; }
 
 /* Films on now: poster tiles with the Tomatometer */
 .tvh-body.grid.posters { grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 16px 14px; }

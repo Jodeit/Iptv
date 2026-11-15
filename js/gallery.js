@@ -268,7 +268,7 @@ export class GalleryView {
     const worker = async () => {
       while (next < todo.length && this.metaRun === run) {
         const item = todo[next++];
-        try { this.meta.set(item.id, (await this.app.tmdbMeta(item)) || { cert: '', pop: 0 }); } catch { this.meta.set(item.id, { cert: '', pop: 0 }); }
+        try { this.meta.set(item.id, (await this.app.tmdbMeta(item, { refreshPopularity: this.sort === 'popular' })) || { cert: '', pop: 0 }); } catch { this.meta.set(item.id, { cert: '', pop: 0 }); }
         this.metaDone++;
         if (performance.now() - last > 1500) { last = performance.now(); this.rerender(); }
       }

@@ -10,7 +10,7 @@ import { cacheGet, cachePut, cacheDelete } from './cache.js';
 import { FILTER_DEFAULTS, makeFilter, kindOf } from './filter.js';
 import { annotate, localFilter, dedupe, DEFAULT_MARKET } from './normalize.js';
 import { VERSION } from './version.js';
-import { Profiles, emptyDoc, canSync, capMeta, mergeProgress } from './profiles.js';
+import { Profiles, emptyDoc, canSync, capMeta, mergeProgress, metaRecordFresh, metaPopularityFresh } from './profiles.js';
 import { Guide } from './epg.js';
 import { GuideView } from './guide-view.js';
 import { Ratings, parseTitle } from './ratings.js';
@@ -110,6 +110,7 @@ async function fetchJsonSmart(url, onProgress) {
 
 const guide = new Guide({
   fetcher: smartFetch,
+  onProblem: (message) => logEvent('epg', message),
   onUpdate: (ids) => {
     for (const id of ids || visibleRows) if (visibleRows.has(id)) updateRowEpg(id);
     if (!ids || ids.includes(state.current?.id)) updateNowPlayingEpg();
@@ -317,9 +318,8 @@ const ratings = new Ratings({
 // browsers to call it directly, so no proxy is involved.
 const similar = new Similar({ fetcher: (u, init) => fetch(u, init), getKey: () => profiles.doc.tmdbKey || '' });
 
-// Age rating and popularity for a title, from the profile if any device looked it up already
-// (within 30 days), else from TMDB. New results are saved to the profile in batches.
-const META_TTL = 30 * 86400000;
+// Age ratings and popularity come from the profile or device cache when available; only missing
+// age ratings or stale popularity trigger another TMDB request.
 const metaKey = (item) => {
   const { title, year } = parseTitle(item.name);
   return `${item.kind === 'series' ? 't' : 'm'}:${item.tmdb || `${title.toLowerCase()}|${year || ''}`}`;
@@ -337,13 +337,20 @@ const flushLocalMeta = () => { clearTimeout(localMetaTimer); localMetaTimer = 0;
 const saveLocalMeta = () => { if (!localMetaTimer) localMetaTimer = setTimeout(flushLocalMeta, 3000); };
 addEventListener('pagehide', () => { if (localMetaTimer) flushLocalMeta(); });
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && localMetaTimer) flushLocalMeta(); });
-const metaFresh = (rec) => !!rec && Date.now() - rec[2] < (rec[0] ? META_TTL : 7 * 86400000);
-const metaRecord = (item) => { const k = metaKey(item); const r = [profiles.doc.tmdbMeta?.[k], metaBatch[k], localMeta[k]].find(metaFresh); return r; };
-async function tmdbMeta(item) {
+const metaRecord = (item) => {
+  const k = metaKey(item);
+  return [profiles.doc.tmdbMeta?.[k], metaBatch[k], localMeta[k]]
+    .filter((rec) => metaRecordFresh(rec))
+    .sort((a, b) => b[2] - a[2])[0];
+};
+async function tmdbMeta(item, { refreshPopularity = false } = {}) {
   await localMetaReady;
   const key = metaKey(item);
   const have = metaRecord(item);
-  if (have) { if (!localMeta[key]) { localMeta[key] = have; saveLocalMeta(); } return { cert: have[0], pop: have[1] }; }
+  if (have && (!refreshPopularity || metaPopularityFresh(have))) {
+    if (!localMeta[key] || localMeta[key][2] < have[2]) { localMeta[key] = have; saveLocalMeta(); }
+    return { cert: have[0], pop: have[1] };
+  }
   const ref = await similar.tmdbId(item);
   const meta = ref ? await similar.meta(ref) : { cert: '', pop: 0 };
   const rec = [meta.cert, Math.round(meta.pop * 10) / 10, Date.now()];

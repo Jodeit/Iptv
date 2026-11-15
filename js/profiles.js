@@ -93,6 +93,18 @@ export function mergeProgress(a = {}, b = {}) {
 // { 'm:<tmdb id or title|year>': [cert, popularity, lookedUpAt] }. The newest few thousand
 // keep the profile small; it's all public data, but still encrypted with the rest.
 export const META_CAP = 6000;
+const META_RATING_RETRY = 7 * 86400000;
+const META_POPULARITY_TTL = 30 * 86400000;
+
+export function metaRecordFresh(rec, now = Date.now()) {
+  if (!Array.isArray(rec) || !Number.isFinite(rec[2])) return false;
+  return !!rec[0] || now - rec[2] < META_RATING_RETRY;
+}
+
+export function metaPopularityFresh(rec, now = Date.now()) {
+  return Array.isArray(rec) && Number.isFinite(rec[2]) && now - rec[2] < META_POPULARITY_TTL;
+}
+
 export function capMeta(meta = {}) {
   const entries = Object.entries(meta);
   if (entries.length <= META_CAP) return meta;
