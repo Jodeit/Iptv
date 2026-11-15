@@ -61,7 +61,7 @@ export class StreamPlayer {
   // `startAt` (seconds) resumes a film part-way through.
   // engine / forceTranscode: play with that engine only (and, for the MKV engine, convert AC-3 / E-AC-3 / DTS / TrueHD audio
   // whatever the browser claims). They stay in force for reconnects of the same source, until the next fresh load.
-  async load(sources, { reconnect = false, startAt = 0, keepReport = false, engine: only = null, forceTranscode = false } = {}) {
+  async load(sources, { reconnect = false, startAt = 0, keepReport = false, engine: only = null, forceTranscode = false, live = false } = {}) {
     const token = ++this.token;
     this.destroy();
     let list = (Array.isArray(sources) ? sources : [sources]).map((s) => (typeof s === 'string' ? { src: s, hint: s } : s));
@@ -69,7 +69,8 @@ export class StreamPlayer {
       this.sources = list;
       this.sticky = { engine: only, force: forceTranscode };
       this.reconnects = 0;
-      this.resumeAt = startAt;
+      this.live = live;
+      this.resumeAt = live ? 0 : startAt;
       if (!keepReport) this.report = [];
     } else if (this.winner) {
       // Go straight back to what worked.
@@ -122,7 +123,7 @@ export class StreamPlayer {
         await this.confirmPlaying(token);
         if (token !== this.token) return false;
         // The MKV remuxer starts at resumeAt itself; other engines jump once they're playing.
-        if (this.resumeAt > 0 && engine !== 'mkv' && Number.isFinite(this.video.duration) && this.resumeAt < this.video.duration - 5) {
+        if (!this.live && this.resumeAt > 0 && engine !== 'mkv' && Number.isFinite(this.video.duration) && this.resumeAt < this.video.duration - 5) {
           this.video.currentTime = this.resumeAt;
         }
         this.winner = { source };
@@ -222,7 +223,8 @@ export class StreamPlayer {
   recover(token, reason) {
     if (token !== this.token) return;
     // Films resume where they were; live streams rejoin the live edge.
-    if (this.video.duration && Number.isFinite(this.video.duration)) this.resumeAt = this.video.currentTime;
+    if (this.live) this.resumeAt = 0;
+    else if (this.video.duration && Number.isFinite(this.video.duration)) this.resumeAt = this.video.currentTime;
     clearInterval(this.watchdog);
     this.log(`↻ ${reason} after playing (reconnect ${this.reconnects + 1} of 3)`);
     if (this.reconnects >= 3) {
@@ -315,7 +317,7 @@ export class StreamPlayer {
   async switchEngine(engine, at = 0, { forceTranscode = false } = {}) {
     if (!this.sources) return false;
     this.log(`↻ switching to ${ENGINE_NAMES[engine] || engine} at ${Math.round(at)} s${forceTranscode ? ' (converting audio)' : ''}`);
-    return this.load(this.sources, { startAt: at, keepReport: true, engine, forceTranscode });
+    return this.load(this.sources, { startAt: at, keepReport: true, engine, forceTranscode, live: this.live });
   }
 
   // Remuxes MKV to fragmented MP4 in the browser (js/mkv), for Safari and anything else

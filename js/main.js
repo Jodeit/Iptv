@@ -1405,8 +1405,9 @@ async function play(ch, { startAt = resumePoint(ch) } = {}) {
     if (state.current !== ch) return;
     if (/E-AC-3|AC-3|DTS|TrueHD/i.test(streams)) hint = { engine: 'mkv', forceTranscode: true };
   }
-  let ok = await player.load(sources, { startAt, ...hint });
-  if (!ok && hint.engine && state.current === ch) ok = await player.load(sources, { startAt, keepReport: true }); // the MKV engine could not take it: the usual way
+  const live = kindOf(ch) === 'live';
+  let ok = await player.load(sources, { startAt, live, ...hint });
+  if (!ok && hint.engine && state.current === ch) ok = await player.load(sources, { startAt, live, keepReport: true }); // the MKV engine could not take it: the usual way
   if (ok && state.current === ch) {
     theater.setVideoActive(true);
     updateAspect();
