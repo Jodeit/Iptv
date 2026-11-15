@@ -158,7 +158,16 @@ export class VRPanel {
     ctx.font = '800 28px system-ui, sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.save(); ctx.translate(36, 32); ctx.scale(1.5, 1.5); ctx.fill(new Path2D('M5 16C9 9 19 8 24 14L29 9 27.5 16 29 23 24 18C19 24 9 23 5 16ZM13 10.6 16 6 18.4 10ZM14 21.4 16 25.5 18.4 22Z')); ctx.restore();
+    ctx.save();
+    ctx.translate(36, 32); ctx.scale(1.5, 1.5);
+    ctx.fill(new Path2D('M3.3 16C5.8 12.4 9.4 10.6 12 10.4L14.2 6.1 17.1 10.2C18.3 10.1 19.5 9.7 20.7 9.2L20.3 11C22.5 11.3 24.2 12.4 25.3 14L29.5 9.6 28.1 16 29.5 22.4 25.3 18C24.4 19.1 22.8 20.1 20.3 21L20.7 22.8C19.2 22.3 18.1 21.8 17.1 21.8L14.1 25.9 12 21.6C8.7 21.4 5.7 19.5 3.3 16Z'));
+    ctx.fillStyle = '#895a31';
+    ctx.fill(new Path2D('M10.1 14.4C13.4 14.8 18.2 16.3 22.5 18.3 18.4 18 14.3 16.8 10.1 14.4Z'));
+    ctx.fillStyle = '#f3e7c6';
+    ctx.beginPath(); ctx.arc(7.5, 15, 1.25, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#4a3216';
+    ctx.beginPath(); ctx.arc(7.5, 15, 0.58, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
     ctx.textAlign = 'left';
     ctx.fillStyle = C.text;
     ctx.font = '600 30px system-ui, sans-serif';

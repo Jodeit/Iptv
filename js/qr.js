@@ -4,7 +4,7 @@
 
 import qrcode from './vendor/qrcode.js';
 
-const FISH = 'M5 16C9 9 19 8 24 14L29 9 27.5 16 29 23 24 18C19 24 9 23 5 16ZM13 10.6 16 6 18.4 10ZM14 21.4 16 25.5 18.4 22Z';
+const FISH = 'M3.3 16C5.8 12.4 9.4 10.6 12 10.4L14.2 6.1 17.1 10.2C18.3 10.1 19.5 9.7 20.7 9.2L20.3 11C22.5 11.3 24.2 12.4 25.3 14L29.5 9.6 28.1 16 29.5 22.4 25.3 18C24.4 19.1 22.8 20.1 20.3 21L20.7 22.8C19.2 22.3 18.1 21.8 17.1 21.8L14.1 25.9 12 21.6C8.7 21.4 5.7 19.5 3.3 16Z';
 
 export function styledQr(text, { ink = '#3a2817', oak = '#9a6431', plate = '#fffaf0', logo = true, dot = 0.88, round = 0.3, eyes = true } = {}) {
   const q = qrcode(0, 'Q');
@@ -33,7 +33,7 @@ export function styledQr(text, { ink = '#3a2817', oak = '#9a6431', plate = '#fff
   const fishSize = side * 0.78, fs = fishSize / 32;
   const mark = logo
     ? `<rect x="${lx}" y="${ly}" width="${side}" height="${side}" rx="${side * 0.22}" fill="${plate}"/>`
-      + `<g transform="translate(${lx + (side - fishSize) / 2} ${ly + (side - fishSize) / 2 + side * 0.02}) scale(${fs})"><path fill="${oak}" d="${FISH}"/></g>`
+      + `<g transform="translate(${lx + (side - fishSize) / 2} ${ly + (side - fishSize) / 2 + side * 0.02}) scale(${fs})"><path fill="${oak}" d="${FISH}"/><path d="M10.1 14.4C13.4 14.8 18.2 16.3 22.5 18.3 18.4 18 14.3 16.8 10.1 14.4Z" fill="${ink}" fill-opacity=".65"/><circle cx="7.5" cy="15" r="1.25" fill="${plate}"/><circle cx="7.5" cy="15" r=".58" fill="${ink}"/></g>`
     : '';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="geometricPrecision">`
     + `<rect width="${size}" height="${size}" rx="2.2" fill="${plate}"/>`
