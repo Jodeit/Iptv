@@ -17,6 +17,7 @@ const dec = new TextDecoder();
 const TOMBSTONE_DAYS = 90;
 const PUSH_DELAY = 1200;
 const PULL_EVERY = 5 * 60 * 1000;
+const PULL_COOLDOWN = 30 * 1000;
 
 const b64u = {
   // In slices: spreading a few hundred KB into one call overflows the stack ("Maximum call stack size
@@ -159,14 +160,17 @@ async function decrypt(key, data) {
 export class Profiles {
   // apiBase(): absolute URL of the API root ("…/api/"). onDoc(doc, reason): the active document
   // was replaced, reason 'switch' (another profile) or 'merge' (changes from another device). onStatus(): sync status or profile list changed.
-  constructor({ apiBase, onDoc, onStatus, migrate }) {
+  constructor({ apiBase, onDoc, onStatus, onLog, migrate }) {
     this.apiBase = apiBase;
     this.onDoc = onDoc;
     this.onStatus = onStatus;
+    this.onLog = onLog;
     this.keys = new Map();
     this.status = { state: 'local', message: '' };
     this.timer = 0;
     this.pushing = null;
+    this.pulling = null;
+    this.lastPullAt = 0;
     this.doc = read(this.docKey(), null) || migrate?.() || emptyDoc();
     this._dirty = !!read('dirty', false);
     this.saveLocal();
@@ -209,6 +213,10 @@ export class Profiles {
     this.onStatus?.();
   }
 
+  logSync(action, metrics) {
+    this.onLog?.('sync', action, metrics, { dedupe: false });
+  }
+
   // ---------- Server ----------
   async api(path, { method = 'GET', body } = {}) {
     const res = await fetch(new URL(path, this.apiBase()), {
@@ -239,29 +247,48 @@ export class Profiles {
   }
 
   // ---------- Sync ----------
-  sync() { return this.dirty ? this.push() : this.pull(); }
+  sync() { return this.dirty ? this.push() : this.pull({ force: true }); }
 
-  async pull() {
+  pull({ force = false } = {}) {
     const p = this.active();
     if (!p || this.pushing) return;
-    try {
-      this.setStatus('syncing', 'Checking for changes…');
-      const { id, key } = await this.keysFor(p);
-      const r = await this.api(`profile/${id}`);
-      if (r.status === 404) return this.setStatus('error', 'This profile was deleted on another device.');
-      if (!r.ok) throw new Error(r.data?.error || `HTTP ${r.status}`);
-      const rev = fingerprint(r.data.data);
-      if (r.data.version !== p.version || rev !== p.rev) {
-        this.setStatus('syncing', 'Downloading changes…');
-        const remote = await decrypt(key, r.data.data);
-        this.setStatus('syncing', 'Merging…');
-        this.adopt(p, r.data.version, mergeDocs(this.doc, remote), remote, rev);
+    if (this.pulling) return this.pulling;
+    if (!force && Date.now() - this.lastPullAt < PULL_COOLDOWN) return;
+    this.lastPullAt = Date.now();
+    this.pulling = (async () => {
+      const started = performance.now();
+      let result = 'unchanged';
+      try {
+        this.setStatus('syncing', 'Checking for changes…');
+        const { id, key } = await this.keysFor(p);
+        const r = await this.api(`profile/${id}`);
+        if (r.status === 404) {
+          result = 'missing';
+          this.setStatus('error', 'This profile was deleted on another device.');
+          return;
+        }
+        if (!r.ok) throw new Error(r.data?.error || `HTTP ${r.status}`);
+        const rev = fingerprint(r.data.data);
+        if (r.data.version !== p.version || rev !== p.rev) {
+          this.setStatus('syncing', 'Downloading changes…');
+          const remote = await decrypt(key, r.data.data);
+          this.setStatus('syncing', 'Merging…');
+          this.adopt(p, r.data.version, mergeDocs(this.doc, remote), remote, rev);
+          result = 'updated';
+        }
+        this.logSync('Profile pull', { result, durationMs: Math.round(performance.now() - started) });
+        if (this.dirty) return this.push();
+        this.setStatus('synced', 'Synced');
+      } catch (err) {
+        result = 'failed';
+        this.setStatus('offline', navigator.onLine ? `Sync failed: ${err.message}` : 'Offline, changes are saved on this device');
+        this.logSync('Profile pull', { result, durationMs: Math.round(performance.now() - started), errorType: err?.name || 'Error' });
+      } finally {
+        this.pulling = null;
+        if (result === 'missing') this.logSync('Profile pull', { result, durationMs: Math.round(performance.now() - started) });
       }
-      if (this.dirty) return this.push();
-      this.setStatus('synced', 'Synced');
-    } catch (err) {
-      this.setStatus('offline', navigator.onLine ? `Sync failed: ${err.message}` : 'Offline, changes are saved on this device');
-    }
+    })();
+    return this.pulling;
   }
 
   async push() {
@@ -270,17 +297,22 @@ export class Profiles {
     clearTimeout(this.timer);
     if (this.pushing) return this.pushing;
     this.pushing = (async () => {
+      const started = performance.now();
+      let attempts = 0, bytes = 0;
       try {
         this.setStatus('syncing', 'Uploading your changes…');
         const { id, key } = await this.keysFor(p);
         for (let attempt = 0; attempt < 3; attempt++) {
+          attempts = attempt + 1;
           this.dirty = false;
           const cur = this.active();
           const sent = await encrypt(key, this.doc);
+          bytes = sent.length;
           const r = await this.api(`profile/${id}`, { method: 'PUT', body: { version: cur.version, data: sent } });
           if (r.ok) {
             this.saveMeta({ ...cur, version: r.data.version, rev: fingerprint(sent) });
             if (!this.dirty) this.setStatus('synced', 'Synced');
+            this.logSync('Profile push', { result: 'saved', durationMs: Math.round(performance.now() - started), attempts, bytes });
             return;
           }
           if (r.status !== 409) throw new Error(r.data?.error || `HTTP ${r.status}`);
@@ -292,6 +324,7 @@ export class Profiles {
       } catch (err) {
         this.dirty = true;
         this.setStatus('offline', navigator.onLine ? `Sync failed: ${err.message}` : 'Offline, changes are saved on this device');
+        this.logSync('Profile push', { result: 'failed', durationMs: Math.round(performance.now() - started), attempts, bytes, errorType: err?.name || 'Error' });
       } finally {
         this.pushing = null;
       }

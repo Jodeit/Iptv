@@ -24,12 +24,12 @@ function flush() {
 }
 
 // kind: 'player' | 'audio' | 'silent' | 'error' | …; extra: a small object of facts (codecs, engine…)
-export function logEvent(kind, message, extra) {
+export function logEvent(kind, message, extra, { dedupe = true } = {}) {
   try {
     const m = redact(message);
     const key = `${kind}|${m}`;
-    if (SEEN.has(key) || sent >= 40) return;
-    SEEN.add(key);
+    if ((dedupe && SEEN.has(key)) || sent >= 40) return;
+    if (dedupe) SEEN.add(key);
     sent++;
     queue.push({ t: Date.now(), v: VERSION, d: device, k: String(kind).slice(0, 20), m, x: extra ? redact(JSON.stringify(extra)).slice(0, 500) : '', ua: navigator.userAgent.replace(/\s+/g, ' ').slice(0, 160) });
     if (!timer) timer = setTimeout(flush, 2500);

@@ -1608,7 +1608,7 @@ function initTV() {
   //   groups:  ▶ to the list, ◀ or ▲ from the first group to the tabs
   //   list:    ◀ to the groups, ▲ from the first row to the tabs
   // Returns true when it handled the key; anything else (▲▼ inside a list) is left to the normal movement.
-  function homeNav(key) {
+  function homeNav(key, e) {
     const t = document.activeElement;
     const picture = $('flatStage');
     if (guideSession && tab === 'live' && t === picture) {
@@ -1652,9 +1652,8 @@ function initTV() {
         if (!hasTileToRight && focusGuidePicture(t)) return true;
       }
       if (key === 'ArrowUp' && (grid ? first.offsetTop === t.offsetTop : first === t)) { toTabs(); return true; }
-      if (key === 'ArrowDown') { // the bottom of the list is the bottom: never fall through to the next category
-        move(home, ...DIR.ArrowDown);
-        if (!bodyEl.contains(document.activeElement)) t.focus();
+      if (key === 'ArrowDown') {
+        moveRepeated(bodyEl, key, e);
         return true;
       }
       return false;
@@ -1663,7 +1662,14 @@ function initTV() {
     if (bodyEl.contains(t) && key === 'ArrowUp' && bodyEl.querySelector('button') === t) { toTabs(); return true; }
     return false;
   }
-  let synthetic = false;
+  let synthetic = false, heldDirection = '', heldDirectionAt = 0;
+  function moveRepeated(root, key, e) {
+    const [dx, dy] = DIR[key];
+    if (key !== 'ArrowUp' && key !== 'ArrowDown') return move(root, dx, dy);
+    if (!e.repeat || heldDirection !== key) { heldDirection = key; heldDirectionAt = Date.now(); }
+    const steps = e.repeat && Date.now() - heldDirectionAt > 650 ? 3 : 1;
+    for (let i = 0; i < steps; i++) move(root, dx, dy);
+  }
   const backKey = (k) => k === 'Escape' || k === 'GoBack' || k === 'BrowserBack';
 
   function goBack() {
@@ -1708,8 +1714,13 @@ function initTV() {
         openHome();
         return;
       }
-      if (s === 'home' && DIR[e.key] && homeNav(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
-      if (DIR[e.key]) { e.preventDefault(); e.stopImmediatePropagation(); move(root, ...DIR[e.key]); return; }
+      if (s === 'home' && DIR[e.key] && homeNav(e.key, e)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
+      if (DIR[e.key]) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        const scroll = s === 'gallery' ? document.activeElement?.closest?.('.gallery-scroll') : null;
+        moveRepeated(scroll || root, e.key, e);
+        return;
+      }
       if ((e.key === 'Enter' || (e.key === ' ' && document.activeElement === $('flatStage'))) && !typing) {
         const t = document.activeElement;
         if (s === 'home' && t?.classList.contains('tvh-row')) {
@@ -1765,6 +1776,7 @@ function initTV() {
   }, true);
 
   addEventListener('keyup', (e) => {
+    if (e.key === heldDirection) { heldDirection = ''; heldDirectionAt = 0; }
     if (e.key !== 'Enter') return;
     const pressed = rowPressed;
     rowPressed = false;
@@ -1876,8 +1888,6 @@ function initTV() {
     // Android WebView draws a large grey play icon on a <video> that has nothing to show; a transparent poster replaces it.
     T().video.poster = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
     checkUpdate('timer'); // sets the baseline
-    // Phone edits should reach the TV quickly: look every 45 s (the app's own check is every 5 min).
-    setInterval(() => { if (document.visibilityState === 'visible' && !running) P().pull(); }, 45000);
     if (needsSetup()) runSetup(); else settleOnHome();
   };
   if (window.o3xr) boot(); else addEventListener('o3xr-ready', boot, { once: true });

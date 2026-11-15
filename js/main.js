@@ -213,6 +213,7 @@ const profiles = new Profiles({
   migrate: legacyDoc,
   onDoc: (doc, reason) => applyDoc(doc, reason),
   onStatus: () => renderProfiles(),
+  onLog: (kind, message, extra, options) => logEvent(kind, message, extra, options),
 });
 state.favs = new Set(Object.keys(profiles.doc.favs));
 if (profiles.doc.contentFilter) settings.contentFilter = { ...FILTER_DEFAULTS, ...profiles.doc.contentFilter };
@@ -446,15 +447,36 @@ const gallery = new GalleryView($('gallery'), {
   onToggle: () => syncMini(),
   categories: (kind) => (state.xlib ? vodCategories(kind) : galleryGroups(kind)),
   loadCategory: async (kind, catId) => {
-    if (!state.xlib) return state.library.filter((c) => kindOf(c) === kind && c.group === catId);
-    const lib = state.xlib;
-    const have = lib.items[kind].get(catId);
-    if (have) return have;
-    const before = state.status;
+    const started = performance.now();
+    let result = 'failed', cached = false, itemCount = 0;
     try {
-      showLoading(`Loading ${lib.catName(kind, catId)}…`);
-      return await lib.category(kind, catId, (p) => showLoading(`Loading ${lib.catName(kind, catId)} · ${mb(p.received)}`));
-    } finally { hideLoading(); setStatus(before); }
+      if (!state.xlib) {
+        const items = state.library.filter((c) => kindOf(c) === kind && c.group === catId);
+        result = 'loaded';
+        itemCount = items.length;
+        return items;
+      }
+      const lib = state.xlib;
+      const have = lib.items[kind].get(catId);
+      if (have) {
+        result = 'cached';
+        itemCount = have.length;
+        cached = true;
+        return have;
+      }
+      const before = state.status;
+      try {
+        showLoading(`Loading ${lib.catName(kind, catId)}…`);
+        const items = await lib.category(kind, catId, (p) => showLoading(`Loading ${lib.catName(kind, catId)} · ${mb(p.received)}`));
+        result = 'loaded';
+        itemCount = items.length;
+        return items;
+      } finally { hideLoading(); setStatus(before); }
+    } finally {
+      logEvent('perf', 'VOD category load', {
+        kind, result, cached, itemCount, durationMs: Math.round(performance.now() - started),
+      }, { dedupe: false });
+    }
   },
   searchAll: (kind) => allOfKind(kind),
   episodes: (series) => state.xlib.seriesEpisodes(series),
@@ -845,8 +867,16 @@ const ago = (t) => {
 // If the page reloads mid-load (iPad Safari does that when a tab runs out of memory), the
 // marker survives and the next start doesn't retry automatically: no reload loop.
 async function loadPlaylistUrl(url, name, opts = {}) {
+  const started = performance.now();
   store.set('loadingSince', { url, name, at: Date.now() });
-  try { await loadPlaylistInner(url, name, opts); } finally { store.set('loadingSince', null); }
+  try { await loadPlaylistInner(url, name, opts); } finally {
+    store.set('loadingSince', null);
+    logEvent('perf', 'Playlist load attempt', {
+      durationMs: Math.round(performance.now() - started),
+      fresh: opts.fresh !== false,
+      channelsCurrentlyLoaded: state.library.length,
+    }, { dedupe: false });
+  }
 }
 
 async function loadPlaylistInner(url, name, { fresh = true } = {}) {
