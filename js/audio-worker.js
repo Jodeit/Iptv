@@ -10,6 +10,12 @@ const LOCAL = new URL('../decoder/', self.location.href).href;
 const CDNS = ['https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd/', 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.10/dist/umd/'];
 const PARTS = 4;
 let core = null;
+let wasmBytes = null;
+let converted = 0;           // chunks converted by the current instance
+let errLines = [];           // the last things FFmpeg said (kept for error messages)
+// FFmpeg compiled to WebAssembly leaks and fragments its heap a little with every run. On a TV with little memory a long
+// episode (hundreds of chunks) ends in "memory access out of bounds", so the instance is replaced now and then.
+const RECYCLE_EVERY = 25;
 const say = (text) => postMessage({ type: 'log', text });
 
 async function fetchCached(url) {
@@ -34,6 +40,55 @@ async function fetchSet(base, chunked) {
   return { js, wasm: join(parts.map((p) => p.buf)), cached: parts.every((p) => p.cached) };
 }
 
+const makeCore = () => createFFmpegCore({
+  wasmBinary: wasmBytes,
+  locateFile: (p) => p,
+  print: () => {},
+  printErr: (l) => { errLines.push(String(l).slice(0, 160)); if (errLines.length > 12) errLines.shift(); },
+});
+
+async function recycle(why) {
+  const n = converted;
+  core = null; // let the old heap go before the new one is built
+  core = await makeCore();
+  converted = 0;
+  errLines = [];
+  say(`audio decoder: restarted (${why}, after ${n} chunks)`);
+}
+
+function convertOnce(m) {
+  const input = new Uint8Array(m.data);
+  try {
+    core.FS.writeFile('in.bin', input);
+    const filter = `aresample=${48000}${m.startSample > 0 ? `,atrim=start_sample=${m.startSample}` : ''}`;
+    core.exec('-f', m.fmt, '-i', 'in.bin', '-vn', '-af', filter, '-ac', '2', '-c:a', 'aac', '-b:a', '192k', '-f', 'adts', 'out.aac');
+    core.reset();
+    let out = null;
+    try { out = core.FS.readFile('out.aac'); } catch { /* nothing produced */ }
+    converted++;
+    return out;
+  } finally {
+    for (const f of ['in.bin', 'out.aac']) { try { core.FS.unlink(f); } catch { /* not there, or the instance is gone */ } }
+  }
+}
+
+async function convert(m) {
+  if (converted >= RECYCLE_EVERY) await recycle('routine');
+  try {
+    return convertOnce(m);
+  } catch (err) {
+    // A trap leaves the instance unusable: start a fresh one and give this chunk one more go
+    const first = String((err && err.message) || err);
+    await recycle(`after “${first}”`);
+    try {
+      return convertOnce(m);
+    } catch (err2) {
+      const said = errLines.slice(-3).join(' | ');
+      throw new Error(`${String((err2 && err2.message) || err2)} (chunk of ${m.data.byteLength} bytes as ${m.fmt}; first error “${first}”${said ? `; FFmpeg said: ${said}` : ''})`);
+    }
+  }
+}
+
 async function load() {
   try { await navigator.storage?.persist?.(); } catch { /* best effort: keeps the saved decoder from being evicted */ }
   const errors = [];
@@ -46,7 +101,8 @@ async function load() {
         throw new Error(`not a WebAssembly file (${wasm.length} bytes, starts “${String.fromCharCode(...wasm.slice(0, 12)).replace(/[^\x20-\x7e]/g, '?')}”)`);
       }
       importScripts(URL.createObjectURL(new Blob([js], { type: 'text/javascript' })));
-      core = await createFFmpegCore({ wasmBinary: wasm, locateFile: (p) => p, print: () => {}, printErr: () => {} });
+      wasmBytes = wasm;
+      core = await makeCore();
       say(`audio decoder: ready (${(wasm.length / 1048576).toFixed(0)} MB, ${cached ? 'saved on this device' : `downloaded from ${host}`})`);
       return;
     } catch (err) {
@@ -56,8 +112,9 @@ async function load() {
   throw new Error(`decoder download failed (${errors.join('; ')})`);
 }
 
-onmessage = async (e) => {
-  const m = e.data;
+let chain = Promise.resolve(); // one job at a time: a restart in the middle of a chunk must not interleave with the next
+onmessage = (e) => { chain = chain.then(() => handle(e.data)); };
+async function handle(m) {
   try {
     if (m.type === 'init') {
       await load();
@@ -65,16 +122,11 @@ onmessage = async (e) => {
       return;
     }
     if (m.type === 'convert') {
-      core.FS.writeFile('in.bin', new Uint8Array(m.data));
-      const filter = `aresample=${48000}${m.startSample > 0 ? `,atrim=start_sample=${m.startSample}` : ''}`;
-      core.exec('-f', m.fmt, '-i', 'in.bin', '-vn', '-af', filter, '-ac', '2', '-c:a', 'aac', '-b:a', '192k', '-f', 'adts', 'out.aac');
-      core.reset();
-      let out = null;
-      try { out = core.FS.readFile('out.aac'); } catch { /* nothing produced */ }
-      for (const f of ['in.bin', 'out.aac']) { try { core.FS.unlink(f); } catch { /* not there */ } }
+      const out = await convert(m);
       postMessage({ id: m.id, out: out ? out.buffer : null }, out ? [out.buffer] : []);
     }
   } catch (err) {
     postMessage({ id: m.id, error: String((err && err.message) || err) });
   }
-};
+}
+
