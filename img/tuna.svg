@@ -33,8 +33,6 @@
   </g>
   <g transform="translate(72 4) scale(8)">
     <path fill="url(#lit)" d="M5 16C9 9 19 8 24 14L29 9 27.5 16 29 23 24 18C19 24 9 23 5 16ZM13 10.6 16 6 18.4 10ZM14 21.4 16 25.5 18.4 22Z"/>
-    <circle cx="9.5" cy="15" r="1.25" fill="#f3e7c6"/>
-    <circle cx="9.5" cy="15" r="1.25" fill="none" stroke="#6b4420" stroke-opacity=".35" stroke-width=".18"/>
   </g>
   <text x="200" y="272" text-anchor="middle" font-family="system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif" font-size="30" font-weight="600" letter-spacing="9" fill="#8a6a43">TUNER</text>
 </svg>

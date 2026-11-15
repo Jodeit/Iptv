@@ -33,7 +33,7 @@ export function styledQr(text, { ink = '#3a2817', oak = '#9a6431', plate = '#fff
   const fishSize = side * 0.78, fs = fishSize / 32;
   const mark = logo
     ? `<rect x="${lx}" y="${ly}" width="${side}" height="${side}" rx="${side * 0.22}" fill="${plate}"/>`
-      + `<g transform="translate(${lx + (side - fishSize) / 2} ${ly + (side - fishSize) / 2 + side * 0.02}) scale(${fs})"><path fill="${oak}" d="${FISH}"/><circle cx="9.5" cy="15" r="1.4" fill="${plate}"/></g>`
+      + `<g transform="translate(${lx + (side - fishSize) / 2} ${ly + (side - fishSize) / 2 + side * 0.02}) scale(${fs})"><path fill="${oak}" d="${FISH}"/></g>`
     : '';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size} ${size}" shape-rendering="geometricPrecision">`
     + `<rect width="${size}" height="${size}" rx="2.2" fill="${plate}"/>`
