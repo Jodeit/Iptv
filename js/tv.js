@@ -686,11 +686,32 @@ function initTV() {
   }
   setInterval(() => { if (document.documentElement.classList.contains('guide-mode')) paintCap(); }, 2000); // guide data arrives late
   // The picture window belongs to Live. Movies, Shows and Settings are the full-width menu.
-  let guideSession = false, savedNav = null;
+  let guideSession = false, savedNav = null, guidePictureReturn = null;
   function syncGuideMode() {
     const on = guideSession && tab === 'live';
     document.documentElement.classList.toggle('guide-mode', on);
+    const stage = $('flatStage');
+    if (stage) {
+      if (on) {
+        stage.setAttribute('tabindex', '0');
+        stage.setAttribute('role', 'button');
+        stage.setAttribute('aria-label', 'Return to full-screen playback');
+      } else {
+        stage.removeAttribute('tabindex');
+        stage.removeAttribute('role');
+        stage.removeAttribute('aria-label');
+        guidePictureReturn = null;
+      }
+    }
     if (on) paintCap();
+  }
+  function focusGuidePicture(from) {
+    if (!guideSession || tab !== 'live') return false;
+    const stage = $('flatStage');
+    if (!stage) return false;
+    guidePictureReturn = from;
+    stage.focus();
+    return true;
   }
   function openHome(opts = {}) {
     if (screen() === 'setup') return;
@@ -725,7 +746,7 @@ function initTV() {
       row?.scrollIntoView({ block: 'center' });
     });
   }
-  function closeHome() { home.classList.add('hidden'); document.documentElement.classList.remove('home-open', 'guide-mode'); guideSession = false;
+  function closeHome() { home.classList.add('hidden'); document.documentElement.classList.remove('home-open'); guideSession = false; syncGuideMode();
     if (savedNav) { ({ tab, view, group, genre } = savedNav); savedNav = null; } document.activeElement?.blur?.(); }
   // A playlist can finish loading (or change after a sync) while Home is already open: rebuild instead of
   // leaving the old list on screen.
@@ -1509,6 +1530,16 @@ function initTV() {
   // Returns true when it handled the key; anything else (▲▼ inside a list) is left to the normal movement.
   function homeNav(key) {
     const t = document.activeElement;
+    const picture = $('flatStage');
+    if (guideSession && tab === 'live' && t === picture) {
+      if (key === 'ArrowLeft') {
+        const target = guidePictureReturn && home.contains(guidePictureReturn) && visible(guidePictureReturn)
+          ? guidePictureReturn
+          : bodyEl.querySelector('.tvh-row.playing') || bodyEl.querySelector('.tvh-row') || chipsEl.querySelector('.tvh-chip');
+        target?.focus();
+      }
+      return true;
+    }
     const tabs = [...tabsEl.querySelectorAll('.tvh-tab'), ...(verEl ? [verEl] : [])];
     const toTabs = () => (tabsEl.querySelector('.tvh-tab.on') || tabs[0])?.focus();
     if (tabs.includes(t)) {
@@ -1534,6 +1565,11 @@ function initTV() {
         if (grid && prev?.classList.contains('tvh-row') && prev.offsetTop === t.offsetTop) { prev.focus(); return true; }
         (chip || tabsEl.querySelector('.tvh-tab.on'))?.focus();
         return true;
+      }
+      if (key === 'ArrowRight' && guideSession && tab === 'live') {
+        const rect = t.getBoundingClientRect();
+        const hasTileToRight = grid && [...bodyEl.querySelectorAll('.tvh-row')].some((row) => row !== t && row.offsetTop === t.offsetTop && row.getBoundingClientRect().left > rect.left);
+        if (!hasTileToRight && focusGuidePicture(t)) return true;
       }
       if (key === 'ArrowUp' && (grid ? first.offsetTop === t.offsetTop : first === t)) { toTabs(); return true; }
       if (key === 'ArrowDown') { // the bottom of the list is the bottom: never fall through to the next category
@@ -1594,7 +1630,7 @@ function initTV() {
       }
       if (s === 'home' && DIR[e.key] && homeNav(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
       if (DIR[e.key]) { e.preventDefault(); e.stopImmediatePropagation(); move(root, ...DIR[e.key]); return; }
-      if (e.key === 'Enter' && !typing) {
+      if ((e.key === 'Enter' || (e.key === ' ' && document.activeElement === $('flatStage'))) && !typing) {
         const t = document.activeElement;
         if (s === 'home' && t?.classList.contains('tvh-row')) {
           // Press plays, hold favorites.
@@ -1744,7 +1780,8 @@ function initTV() {
     new MutationObserver(() => { if (!tabsEl.contains(x)) tabsEl.append(x); }).observe(tabsEl, { childList: true });
     // Tap the picture for the controls (pause, seek, audio, captions, episodes, guide)
     $('flatStage')?.addEventListener('click', () => {
-      if (!nativeAppleControls && screen() === 'player' && O().state.current) openControls();
+      if (screen() === 'home' && guideSession && tab === 'live') closeHome();
+      else if (!nativeAppleControls && screen() === 'player' && O().state.current) openControls();
     });
     controls.addEventListener('click', (e) => { if (e.target === controls) goBack(); }); // tap outside the bar
     detail.addEventListener('click', (e) => { if (e.target === detail) goBack(); });

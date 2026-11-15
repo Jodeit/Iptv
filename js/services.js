@@ -4,6 +4,7 @@ const SERVICE_TAGS = [
   ['Disney+', /\bdisney\s*(?:\+|plus)\b/i],
   ['Hulu', /\bhulu\b/i],
   ['HBO Max', /\bhbo\s*max\b/i],
+  ['HBO', /\bhbo\b(?!\s*max\b)/i],
   ['Apple TV+', /\bapple\s+tv(?:\s*(?:\+|plus))?\b/i],
   ['Paramount+', /\bparamount\s*(?:\+|plus)\b/i],
   ['Peacock', /\bpeacock\b/i],

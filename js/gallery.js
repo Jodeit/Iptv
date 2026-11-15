@@ -303,6 +303,9 @@ export class GalleryView {
     const genres = new Set();
     const source = this.pool?.[this.kind] && this.query.length >= 2 ? this.pool[this.kind] : this.items;
     const services = new Set();
+    for (const category of this.app.categories(this.kind)) {
+      for (const service of servicesFor({ group: category.name })) services.add(service);
+    }
     for (const i of source) {
       for (const g of String(i.genre || '').split(/[,/]/)) if (g.trim()) genres.add(g.trim());
       for (const service of servicesFor(i)) services.add(service);

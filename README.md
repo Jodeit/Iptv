@@ -76,9 +76,11 @@ by recently added, Rotten Tomatoes, provider rating, year or title. Tapping a po
 has the backdrop, plot, director and cast, and the ratings: Rotten Tomatoes Tomatometer, IMDb and Metacritic. It also
 has a trailer and **Play**. For a series it lists each season's episodes instead.
 
-The gallery's **Service** filter recognizes common streaming-service labels in a title or its category/source
-metadata (for example Netflix, Prime Video and Disney+). It filters the current category, or all categories when
-searching. It uses only labels present in the provider's data; it does not verify a title's availability on a service.
+The gallery's **Service** filter recognizes common streaming-service labels in titles and playlist categories/folders
+(for example Netflix, Prime Video and Disney+). Its choices are collected across the movie or show folders, so a
+combined folder such as “HBO Amazon Prime” contributes separate **HBO** and **Prime Video** options. Choosing one
+filters the current category, or all categories when searching. It uses only labels present in the provider's data;
+it does not verify a title's availability on a service.
 
 Films and episodes remember where you stopped, on this device. Posters show a progress bar, the preview page offers
 **Resume** or **From the start**, and playing from the list resumes too.
@@ -410,7 +412,7 @@ To build locally instead: `cd android-tv && gradle :app:assembleRelease [-PappUr
 - **Drawer:** moving right into the channel or game list tucks the category column into a thin drawer (◀), giving the list the full width; moving left reopens it. The Scoreboard has no bottom info bar, since each tile already says everything.
 - **Scoreboard grid:** games are tiles, three across (period or clock on top, both teams with logos and scores below, the network small in the corner). ◀ ▶ ▲ ▼ move between tiles; ◀ from the left column opens the categories.
 - **Films on now:** the Movies category is a grid of poster tiles with the Rotten Tomatoes score (IMDb rating if there is no tomatometer), title, network and end time. Posters and scores come from OMDb using the key in your profile (Settings → Sync on the phone), so without a key the tiles show the title on a plain card. A long programme on a movie network (HBO, Showtime, Cinemax, Starz, TCM…) of 80 minutes or more counts as a film even when the guide gives no genre; hour-long series on the same channels stay under Shows.
-- **Guide window:** pressing ◀ (or OK) while a channel plays opens the guide with the picture carrying on in a window on the right, with the channel and programme under it. Pick a channel to switch; Back returns straight to the full picture (no channel banner).
+- **Guide window:** pressing ◀ (or OK) while a channel plays opens the guide with the picture carrying on in a window on the right, with the channel and programme under it. Pick a channel to switch; move right from the guide list to focus the picture and press OK to return to full-screen playback. Back also returns to the full picture.
 - **Scoreboard sections:** each sport has its own section, with live games first, then later games, finals and (when requested) tomorrow's games. Point spread and over/under are shown from ESPN's odds feed when available. ▼ at the bottom of a list stays on the last item.
 - **Other countries' copies:** when you have a channel's US copy, copies tagged LAT / LATAM / MX / BR / UK / CA / AR (in the name or folder) are dropped, not even kept as fallback streams, so a game never lands on a Latin-American or UK feed. Channels with no US twin (a UK-only channel, say) are left alone.
 - **Movies and Shows:** the same layout as the films in On now. The left panel holds the filters (sort, rating, year, age rating; press OK on one to cycle it) and one list of categories (genres, "Classics", "IMDB Top 500"; press the chosen one again to see everything). Anything you are part-way through is the first tile in the grid; the grid is poster tiles with the Tomatometer (or the provider's rating) and a progress bar for anything part-watched. OK opens the title's page (details, resume, seasons and episodes); Back returns to the same tile. Hold OK to favorite. The TV no longer shows the "N channels" notice when a playlist loads.
