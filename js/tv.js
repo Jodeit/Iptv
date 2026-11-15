@@ -769,6 +769,14 @@ function initTV() {
   // as the films in On now; OK opens the title's page; Back returns to the same tile.
   let vodTabTimer = 0, vodKind = 'movie', vodSeq = 0, vodFocusI = 0, vodRestore = null, vodReturn = false;
   let vodItems = [], vodTags = new Map(); // what the grid is showing from, and each title's folder labels
+  let vodAlias = new Map(); // id of a copy that was folded into another listing of the same title → the id that was kept
+  // The same film or show is often listed in several folders, in several qualities, or twice with different ids
+  const vodKey = (it) => {
+    const { title, year } = T().vod.title(it);
+    const t = String(title || it.name || '').toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '');
+    return t ? `${t}|${it.year || year || ''}` : `id:${it.id}`;
+  };
+  const vodDedupe = (list) => { const seen = new Set(); return list.filter((x) => { const k = vodKey(x); if (seen.has(k)) return false; seen.add(k); return true; }); };
   const vodIndex = {}; // kind → { sig, items, tags: Map(id → Set(label)), done, total, state }
   const vodTag = { movie: '', series: '' }; // selected genre / collection ('' = everything)
   const vodF = { sort: 'added', rating: 0, year: '', age: 0 };
@@ -809,7 +817,7 @@ function initTV() {
     const sig = `${libSig()}|${pats.join(',')}`;
     let idx = vodIndex[kind];
     if (idx && idx.sig === sig) return idx;
-    idx = vodIndex[kind] = { sig, items: [], tags: new Map(), done: 0, total: 0, state: 'loading', onBatch: null };
+    idx = vodIndex[kind] = { sig, items: [], tags: new Map(), alias: new Map(), byKey: new Map(), done: 0, total: 0, state: 'loading', onBatch: null };
     const all = T().vod.categories(kind) || [];
     let chosen = pats.length ? all.map((c) => ({ c, m: primaryMatch(c.name, pats) })).filter((x) => x.m) : [];
     if (!chosen.length) chosen = all.slice(0, 60).map((c) => ({ c, m: '' })); // nothing matched: use the folders there are
@@ -825,7 +833,16 @@ function initTV() {
           const items = await T().vod.loadQuiet(kind, c.id);
           for (const it of items) {
             let tags = idx.tags.get(it.id);
-            if (!tags) { tags = new Set(); idx.tags.set(it.id, tags); idx.items.push(it); }
+            if (!tags) {
+              const k = vodKey(it), keep = idx.byKey.get(k);
+              if (keep) { // already listed under another id: one tile, with the folder labels of both
+                idx.alias.set(it.id, keep.id);
+                for (const f of ['logo', 'rating', 'year', 'genre', 'added']) if (!keep[f] && it[f]) keep[f] = it[f];
+                idx.tags.get(keep.id)?.add(label);
+                continue;
+              }
+              tags = new Set(); idx.tags.set(it.id, tags); idx.items.push(it); idx.byKey.set(k, it);
+            }
             tags.add(label);
           }
         } catch { /* one folder failing should not lose the rest */ }
@@ -852,7 +869,7 @@ function initTV() {
   let vodSeen = 0; // how many of the index's titles the grid has taken into account
   function vodPass(i) {
     const f = vodF, tag = vodTag[vodKind];
-    if (tag && !vodTags.get(i.id)?.has(tag)) return false;
+    if (tag && !(vodTags.get(i.id) || vodTags.get(vodAlias.get(i.id)))?.has(tag)) return false;
     if (f.rating && vodScore(i) < f.rating) return false;
     if (f.year) { if (!i.year) return false; if (f.year === 'old' ? i.year >= 1990 : i.year < +f.year || i.year >= +f.year + 10) return false; }
     if (f.age) { const lvl = ageLevel(i); if (!lvl || lvl > f.age) return false; } // unknown counts as too old
@@ -906,7 +923,7 @@ function initTV() {
     if (!vodTag[vodKind]) {
       const cont = T().vod.continueList(vodKind).filter(vodPass);
       const ids = new Set(cont.map((x) => x.id));
-      return [...cont, ...out.filter((x) => !ids.has(x.id))];
+      return vodDedupe([...cont, ...out.filter((x) => !ids.has(x.id))]);
     }
     return out;
   }
@@ -957,7 +974,7 @@ function initTV() {
     listCache = [];
     const idx = loadVodIndex(vodKind);
     vodItems = idx.items;
-    vodTags = idx.tags;
+    vodTags = idx.tags; vodAlias = idx.alias;
     idx.onBatch = (final) => { if (seq === vodSeq && tab === 'vod') vodBatch(idx, final); };
     if (idx.items.length || idx.state === 'done') {
       if (!chipsEl.contains(document.activeElement)) renderVodChips();
@@ -971,7 +988,7 @@ function initTV() {
   function vodBatch(idx, final) {
     const st = chipsEl.querySelector('.vod-status');
     if (st) st.textContent = vodStatusText(idx);
-    vodItems = idx.items; vodTags = idx.tags;
+    vodItems = idx.items; vodTags = idx.tags; vodAlias = idx.alias;
     const inGrid = bodyEl.contains(document.activeElement) && bodyEl.querySelector('.tvh-row:not(.skel)');
     if (!chipsEl.contains(document.activeElement) && (final || idx.done % 2 === 1 || idx.done === idx.total)) renderVodChips();
     if (final && vodF.age) fetchAges();
