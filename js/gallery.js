@@ -1,6 +1,7 @@
 // Poster gallery for movies and series, with a preview page per title (backdrop, plot, cast,
 // ratings incl. Rotten Tomatoes, trailer, play/resume, and seasons/episodes for series).
 import { servicesFor } from './services.js';
+import { searchCatalog } from './search.js';
 
 const PAGE = 120; // cards rendered per "Show more"
 
@@ -212,12 +213,15 @@ export class GalleryView {
     this.cards.clear();
     const q = this.query;
     const everywhere = q.length >= 2 && this.pool?.[this.kind];
-    let list = (everywhere ? this.pool[this.kind] : this.items).filter((i) => !q || i.name.toLowerCase().includes(q));
+    const source = everywhere ? this.pool[this.kind] : this.items;
+    let list = q ? searchCatalog(source, q, {
+      fieldsOf: (item) => [item.group, item.genre, item.cast, item.director, item.year],
+    }).map(({ item }) => item) : [...source];
     for (const i of list) this.itemsById.set(i.id, i);
     const needMeta = this.filters.age || this.sort === 'popular';
     if (needMeta && !this.quiet) this.fetchMeta(list);
     list = this.applyFilters(list);
-    if (SORTS[this.sort].fn) list = [...list].sort(SORTS[this.sort].fn);
+    if (!q && SORTS[this.sort].fn) list = [...list].sort(SORTS[this.sort].fn);
     this.note.classList.toggle('hidden', this.app.ratings.enabled());
     if (needMeta && !this.app.tmdbMeta) {
       this.note.classList.remove('hidden');

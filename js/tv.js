@@ -17,6 +17,7 @@ import { genreOf, GENRES } from './genre.js';
 import * as sports from './sports.js';
 import { VERSION } from './version.js';
 import { logEvent } from './telemetry.js';
+import { searchCatalog } from './search.js';
 import { TV_WALLS, TV_WALL_DEFAULT, hexToHsl, hslToHex } from './tv-wall.js';
 
 if (/TunerTV/.test(navigator.userAgent) || window.__tunerWeb) initTV();
@@ -62,6 +63,45 @@ function initTV() {
   let tab = 'live';            // 'live' | 'phone' | 'vod' (Movies and Shows)
   let group = '';              // '' = all, FAV = favorites, else a group name
   const FAV = '\u0000fav';
+  let searchQuery = '', searchSubmitted = false, searchPending = [], searchErrors = [], searchProgress = '';
+  let searchResults = [], searchRestoreI = null, searchRun = 0, searchCatalogSig = '';
+  let searchPools = new Map(), searchLoads = new Map(), searchRowsEl = null;
+  const searchSignature = () => String(T().searchRevision?.() ?? T().source()?.url ?? '');
+  function resetSearchCatalogs() {
+    const sig = searchSignature();
+    if (sig === searchCatalogSig) return;
+    searchCatalogSig = sig;
+    searchPools = new Map();
+    searchLoads = new Map();
+  }
+  function searchPool(kind, onProgress) {
+    resetSearchCatalogs();
+    if (searchPools.has(kind)) return Promise.resolve(searchPools.get(kind));
+    if (searchLoads.has(kind)) return searchLoads.get(kind);
+    const request = T().searchAll(kind, onProgress).then((items) => {
+      if (searchSignature() === searchCatalogSig) searchPools.set(kind, items || []);
+      return items || [];
+    }).finally(() => {
+      if (searchLoads.get(kind) === request) searchLoads.delete(kind);
+    });
+    searchLoads.set(kind, request);
+    return request;
+  }
+  function matchingSearchResults(query) {
+    const items = [...liveAll(), ...(searchPools.get('movie') || []), ...(searchPools.get('series') || [])];
+    return searchCatalog(items, query, {
+      titleOf: (item) => kindOf(item) === 'live' ? (item.clean || cleanName(item.name)) : (T().vod.title(item).title || item.name),
+      fieldsOf: (item) => {
+        const fields = [item.name, item.group, item.genre, item.cast, item.director, item.year];
+        if (kindOf(item) === 'live') {
+          const nn = T().guide.peek(item);
+          if (nn?.now?.title) fields.push(nn.now.title);
+          if (nn?.next?.title) fields.push(nn.next.title);
+        }
+        return fields;
+      },
+    }).map(({ item }) => item);
+  }
   // The Live tab toggles between provider channels and what's airing now (Sports, Movies, News…).
   // Remembered once you pick a view; until then On Now is the default when the provider has a guide.
   let viewChosen = false;
@@ -332,6 +372,7 @@ function initTV() {
   function renderTabs() {
     tabsEl.innerHTML = '';
     const defs = [];
+    if (liveAll().length || T().hasKind('movie') || T().hasKind('series')) defs.push(['search', 'Search']);
     if (liveAll().length) defs.push(['live', 'Live']);
     if (T().hasKind('movie')) defs.push(['movie', 'Movies']);
     if (T().hasKind('series')) defs.push(['series', 'Shows']);
@@ -367,6 +408,7 @@ function initTV() {
     for (const b of tabsEl.querySelectorAll('.tvh-tab')) {
       const k = b.dataset.tab;
       b.classList.toggle('on', k === 'movie' || k === 'series' ? tab === 'vod' && vodKind === k : k === 'phone' ? tab === 'phone' : k === 'live' ? tab === 'live' : false);
+      if (k === 'search') b.classList.toggle('on', tab === 'search');
     }
   };
   // Remember the view when you actually use it (OK, or ▼ into the list), not merely by passing over its tab.
@@ -377,6 +419,14 @@ function initTV() {
   }
   // The selected Live tab toggles between the channel list and On Now when activated again.
   function goTab(k, toggleLive = false) {
+    if (k === 'search') {
+      if (tab === 'search') { markTabs(); return; }
+      tab = 'search';
+      markTabs();
+      renderBody();
+      syncGuideMode();
+      return;
+    }
     if (k === 'movie' || k === 'series') {
       if (tab === 'vod' && vodKind === k) { markTabs(); return; }
       tab = 'vod'; vodKind = k; vodF.age = 0;
@@ -407,6 +457,8 @@ function initTV() {
     syncGuideMode();
   }
   function focusFirstInBody() {
+    if (tab === 'search') { bodyEl.querySelector('.tvh-search-input')?.focus(); return; }
+    if (tab === 'vod') { chipsEl.querySelector('.tvh-chip')?.focus(); return; }
     (bodyEl.querySelector('.tvh-row.playing') || bodyEl.querySelector('button'))?.focus();
   }
 
@@ -476,6 +528,7 @@ function initTV() {
   }
   function rowFor(ch, i) {
     if (tab === 'vod') return vodCard(ch, i);
+    if (tab === 'search') return kindOf(ch) === 'live' ? searchLiveCard(ch, i) : vodCard(ch, i);
     const b = el('button', 'tvh-row');
     const mv = posterView() && nowMap.get(ch);
     if (mv) {
@@ -554,7 +607,7 @@ function initTV() {
     const next = listCache.slice(shown, shown + ROW_PAGE);
     next.forEach((ch, k) => {
       if (scoreView() && ch._sect) bodyEl.append(el('div', 'tvh-sect', esc(ch._sect)));
-      bodyEl.append(rowFor(ch, shown + k));
+      (searchRowsEl || bodyEl).append(rowFor(ch, shown + k));
     });
     shown += next.length;
   }
@@ -585,15 +638,112 @@ function initTV() {
   bodyEl.addEventListener('focusin', (e) => {
     const row = e.target.closest?.('.tvh-row');
     if (row && tab === 'vod') { vodFocusI = +row.dataset.i; return; }
+    if (row && tab === 'search' && kindOf(listCache[+row.dataset.i]) !== 'live') return;
     if (row) { requestAround(+row.dataset.i); paintInfo(listCache[+row.dataset.i]); }
   });
 
+  function drawSearchResults() {
+    const status = bodyEl.querySelector('.tvh-search-status');
+    const query = bodyEl.querySelector('.tvh-search-input')?.value.trim() || searchQuery;
+    searchResults = matchingSearchResults(query);
+    listCache = searchResults;
+    shown = 0;
+    if (searchRowsEl) searchRowsEl.replaceChildren();
+
+    if (!query) {
+      status.textContent = 'Search live channels, movies, and shows. Focus the box and use the microphone on the on-screen keyboard to speak.';
+    } else if (!searchSubmitted) {
+      status.textContent = `Press Search or Enter to search your full library · ${searchResults.length.toLocaleString()} quick matches so far`;
+    } else if (searchPending.length) {
+      status.textContent = `${searchProgress || 'Searching your library'} · ${searchResults.length.toLocaleString()} matches so far`;
+    } else {
+      status.textContent = `${searchResults.length.toLocaleString()} result${searchResults.length === 1 ? '' : 's'}${searchErrors.length ? ` · ${searchErrors.join(' · ')}` : ''}`;
+    }
+
+    if (searchRowsEl) {
+      if (searchResults.length) addRows();
+      else if (query && searchSubmitted && !searchPending.length && !searchErrors.length) {
+        searchRowsEl.append(el('p', 'tvh-empty tvh-search-empty', `No matches for “${esc(query)}”.`));
+      }
+    }
+  }
+
+  async function submitSearch() {
+    const input = bodyEl.querySelector('.tvh-search-input');
+    searchQuery = input?.value.trim() || '';
+    if (input) input.value = searchQuery;
+    const run = ++searchRun;
+    if (!searchQuery) {
+      searchSubmitted = false;
+      searchErrors = [];
+      searchProgress = '';
+      searchPending = [];
+      drawSearchResults();
+      return;
+    }
+    searchSubmitted = true;
+    searchErrors = [];
+    searchProgress = '';
+    resetSearchCatalogs();
+    const kinds = ['movie', 'series'].filter((kind) => T().hasKind(kind) && !searchPools.has(kind));
+    searchPending = [...kinds];
+    drawSearchResults();
+
+    for (const kind of kinds) {
+      const label = kind === 'movie' ? 'movies' : 'shows';
+      searchProgress = `Loading ${label} from your provider…`;
+      drawSearchResults();
+      try {
+        await searchPool(kind, (p) => {
+          if (run !== searchRun || !searchSubmitted) return;
+          const received = ((p.received || 0) / 1048576).toFixed(1);
+          const total = p.total ? ` of ${(p.total / 1048576).toFixed(1)} MB` : '';
+          searchProgress = `Loading ${label} · ${received} MB${total}`;
+          const status = bodyEl.querySelector('.tvh-search-status');
+          if (status) status.textContent = `${searchProgress} · ${searchResults.length.toLocaleString()} matches so far`;
+        });
+      } catch (err) {
+        if (run !== searchRun) return;
+        searchErrors.push(`Couldn’t load ${label}: ${err.message}`);
+      }
+      if (run !== searchRun) return;
+      searchPending = searchPending.filter((pending) => pending !== kind);
+      searchProgress = '';
+      drawSearchResults();
+    }
+  }
+
+  function renderSearch() {
+    bodyEl.className = 'tvh-body search';
+    bodyEl.innerHTML = `<form class="tvh-search-form" role="search">
+        <input class="tvh-search-input" type="search" inputmode="search" enterkeyhint="search" autocomplete="off" autocapitalize="off" spellcheck="false"
+          aria-label="Search live channels, movies, and shows" placeholder="Search channels, movies, and shows…">
+        <button class="btn" type="submit">Search</button>
+      </form>
+      <p class="tvh-search-status" aria-live="polite"></p>
+      <div class="tvh-search-results"></div>`;
+    searchRowsEl = bodyEl.querySelector('.tvh-search-results');
+    const form = bodyEl.querySelector('.tvh-search-form');
+    const input = bodyEl.querySelector('.tvh-search-input');
+    input.value = searchQuery;
+    form.addEventListener('submit', (event) => { event.preventDefault(); submitSearch(); });
+    input.addEventListener('input', () => {
+      searchQuery = input.value;
+      searchSubmitted = false;
+      drawSearchResults();
+    });
+    resetSearchCatalogs();
+    drawSearchResults();
+  }
+
   function renderBody(withChips = true) {
     if (withChips) renderChips();
+    searchRowsEl = null;
     bodyEl.innerHTML = '';
     bodyEl.className = `tvh-body ${tab}${tab === 'live' && scoreView() ? ' grid' : tab === 'live' && posterView() ? ' grid posters' : ''}`; // games and films are tiles
     infoEl.classList.add('hidden');
     if (tab === 'phone') return renderPhone();
+    if (tab === 'search') return renderSearch();
     if (tab === 'vod') return renderVod();
     listCache = visibleList();
     shown = 0;
@@ -813,12 +963,18 @@ function initTV() {
     syncGuideMode();
     requestAnimationFrame(() => {
       let row = bodyEl.querySelector('.tvh-row.playing') || bodyEl.querySelector('.tvh-row');
+      if (tab === 'search' && searchRestoreI != null) {
+        const i = searchRestoreI;
+        searchRestoreI = null;
+        while (shown <= i && shown < listCache.length) addRows();
+        row = bodyEl.querySelector(`.tvh-row[data-i="${i}"]`) || row;
+      } else if (tab === 'search') row = null;
       if (opts.browse && row) { // one step from the playing channel, without tuning it
         const i = +row.dataset.i + opts.browse;
         while (shown <= i && shown < listCache.length) addRows();
         row = bodyEl.querySelector(`.tvh-row[data-i="${Math.max(0, Math.min(listCache.length - 1, i))}"]`) || row;
       }
-      (row || bodyEl.querySelector('button') || tabsEl.firstElementChild)?.focus();
+      (row || (tab === 'search' ? bodyEl.querySelector('.tvh-search-input') : bodyEl.querySelector('button')) || tabsEl.firstElementChild)?.focus();
       row?.scrollIntoView({ block: 'center' });
     });
   }
@@ -1161,15 +1317,28 @@ function initTV() {
     const poster = item.logo || r?.poster;
     const badge = r?.rt != null ? `<span class="pc-rt"><i>🍅</i>${r.rt}%</span>` : r?.imdb ? `<span class="pc-rt"><i>★</i>${esc(r.imdb)}</span>` : +item.rating > 0 ? `<span class="pc-rt"><i>★</i>${(+item.rating).toFixed(1)}</span>` : '';
     const p = T().vod.progress(item);
-    const meta = [item.year || r?.year, String(item.genre || r?.genre || '').split(/[,/]/)[0].trim()].filter(Boolean).join(' · ');
+    const meta = [tab === 'search' ? (kindOf(item) === 'series' ? 'Show' : 'Movie') : '', item.year || r?.year, String(item.genre || r?.genre || '').split(/[,/]/)[0].trim()].filter(Boolean).join(' · ');
     b.innerHTML = `<span class="pc-img">${poster ? `<img alt="" src="${esc(poster)}" referrerpolicy="no-referrer">` : `<em>${esc(title || item.name)}</em>`}${badge}</span>
       <b>${esc(title || item.name)}</b><small>${esc(meta)}</small>${p?.d ? `<i class="prog on"><u style="width:${Math.round(Math.min(100, (p.t / p.d) * 100))}%"></u></i>` : ''}<span class="star">★</span>`;
     const img = b.querySelector('img');
     if (img) img.onerror = () => { const em = el('em', '', esc(title || item.name)); img.replaceWith(em); };
     b.querySelector('.star').style.visibility = T().isFav(item.id) ? 'visible' : 'hidden';
   }
+  function searchLiveCard(ch, i) {
+    const b = el('button', 'tvh-row movie search-live');
+    b.dataset.i = i;
+    const nn = T().guide.peek(ch);
+    const info = [ch.group, nn?.now?.title ? `Now · ${nn.now.title}` : ''].filter(Boolean).join(' · ');
+    b.innerHTML = `<span class="pc-img">${ch.logo ? `<img alt="" src="${esc(ch.logo)}" referrerpolicy="no-referrer">` : `<em>${esc(ch.clean || cleanName(ch.name))}</em>`}</span>
+      <b>${esc(ch.clean || cleanName(ch.name))}</b><small>${esc(`Live${info ? ` · ${info}` : ''}`)}</small><span class="star">★</span>`;
+    const img = b.querySelector('img');
+    if (img) img.onerror = () => { const em = el('em', '', esc(ch.clean || cleanName(ch.name))); img.replaceWith(em); };
+    b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
+    return b;
+  }
   function openVod(item, i) {
-    vodRestore = i;
+    if (tab === 'search') { searchRestoreI = i; vodRestore = null; }
+    else vodRestore = i;
     vodReturn = true;
     closeHome();
     openDetail(item);
@@ -1626,7 +1795,11 @@ function initTV() {
       const i = tabs.indexOf(t);
       if (key === 'ArrowLeft') tabs[Math.max(0, i - 1)].focus();
       else if (key === 'ArrowRight') tabs[Math.min(tabs.length - 1, i + 1)].focus();
-      else if (key === 'ArrowDown') { commitView(); focusFirstInBody(); }
+      else if (key === 'ArrowDown') {
+        if (t.dataset.tab === 'movie' || t.dataset.tab === 'series') goTab(t.dataset.tab);
+        commitView();
+        focusFirstInBody();
+      }
       return true; // ▲ stays on the tab bar
     }
     if (t?.classList.contains('tvh-chip')) {
@@ -1652,6 +1825,7 @@ function initTV() {
         if (!hasTileToRight && focusGuidePicture(t)) return true;
       }
       if (key === 'ArrowUp' && (grid ? first.offsetTop === t.offsetTop : first === t)) { toTabs(); return true; }
+      if (key === 'ArrowUp' && tab === 'search' && first === t) { bodyEl.querySelector('.tvh-search-input')?.focus(); return true; }
       if (key === 'ArrowDown') {
         moveRepeated(bodyEl, key, e);
         return true;
@@ -1685,6 +1859,11 @@ function initTV() {
     if (s === 'controls') { if (controlsMenu) { controlsMenu = ''; paintControls(); controls.querySelector('[data-k="primary"]')?.focus(); } else closeControls(); return true; } // Back closes the bar without changing playback
     if (s === 'detail') { closeDetail(true); return true; }
     if (s === 'home') {
+      if (tab === 'search' && document.activeElement === bodyEl.querySelector('.tvh-search-input')) {
+        document.activeElement.blur();
+        tabsEl.querySelector('.tvh-tab[data-tab="search"]')?.focus();
+        return true;
+      }
       // With a picture behind it, Back returns to the picture (no channel banner). With nothing playing there is
       // nowhere to return to, so Back leaves the app.
       if (!document.documentElement.classList.contains('tv-picture') || !O().state.current) return false;
@@ -1786,7 +1965,10 @@ function initTV() {
     if (t?.classList.contains('tvh-row') && !holdFired) {
       const ch = listCache[+t.dataset.i];
       if (ch?._day) { showTomorrow = !showTomorrow; if (showTomorrow) sports.wantTomorrow(); computeNow(true); renderChips(); renderBody(false); bodyEl.querySelector('.tvh-row.daybtn')?.focus(); }
-      else if (ch && tab === 'vod') openVod(ch, +t.dataset.i);
+      else if (ch && (tab === 'vod' || (tab === 'search' && kindOf(ch) !== 'live'))) {
+        if (tab === 'search') searchRestoreI = +t.dataset.i;
+        openVod(ch, +t.dataset.i);
+      }
       else if (ch) { closeHome(); T().play(ch._real || ch); }
     }
     holdFired = false;
@@ -1858,7 +2040,10 @@ function initTV() {
       if (swallow) { swallow = false; return; }
       const ch = listCache[+t.dataset.i];
       if (ch?._day) { showTomorrow = !showTomorrow; if (showTomorrow) sports.wantTomorrow(); computeNow(true); renderChips(); renderBody(false); }
-      else if (ch && tab === 'vod') openVod(ch, +t.dataset.i);
+      else if (ch && (tab === 'vod' || (tab === 'search' && kindOf(ch) !== 'live'))) {
+        if (tab === 'search') searchRestoreI = +t.dataset.i;
+        openVod(ch, +t.dataset.i);
+      }
       else if (ch) { closeHome(); T().play(ch._real || ch); }
     });
     // Visible Back / Close, since there is no Back key

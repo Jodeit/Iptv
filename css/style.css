@@ -1035,6 +1035,20 @@ html.tv .tvh-row.movie .pc-img img { background: none !important; padding: 0 !im
 .tvh-body.grid.posters { grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); }
 .tvh-row.movie > b { font-size: 15px; }
 .tvh-row.movie > small { font-size: 12px; }
+.tvh-body.search { display: flex; flex-direction: column; gap: 12px; }
+.tvh-search-form { display: flex; flex: none; gap: 10px; }
+.tvh-search-input {
+  flex: 1; min-width: 0; padding: 11px 16px; border: 2px solid rgba(60,50,30,.2); border-radius: 12px;
+  background: rgba(255,255,255,.82); color: var(--ink); font-size: 20px;
+}
+.tvh-search-input:focus { outline: none; border-color: var(--blue); box-shadow: 0 0 0 3px rgba(47,93,155,.16); }
+.tvh-search-form .btn { flex: none; min-width: 104px; }
+.tvh-search-status { flex: none; margin: 0; color: var(--ink-3); font-size: 15px; }
+.tvh-search-results { display: grid; grid-template-columns: repeat(auto-fill, minmax(116px, 1fr)); gap: 14px 10px; align-content: start; }
+.tvh-search-empty { grid-column: 1 / -1; }
+.tvh-row.search-live .pc-img img { object-fit: contain; padding: 18%; }
+.tvh-row.search-live .pc-img em { font-size: 14px; }
+html.tv-web .tvh-search-input { font-size: 16px; }
 
 /* Scoreboard sections and odds */
 .tvh-body.grid .tvh-sect { grid-column: 1 / -1; margin: 8px 4px 0; font-size: 15px; letter-spacing: .08em; text-transform: uppercase; font-weight: 700; color: #8a6a3a; }

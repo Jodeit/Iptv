@@ -81,6 +81,7 @@ const state = {
   status: 'Pick a channel to start',
   activeMode: settings.mode,
 };
+let libraryRevision = 0;
 
 let vrPanel = null;
 let logTimer = 0;
@@ -437,15 +438,17 @@ const galleryGroups = (kind) => [...new Set(state.library.filter((c) => kindOf(c
   .sort((a, b) => a.localeCompare(b)).map((g) => ({ id: g, name: g }));
 
 // Every movie/series of a kind, for searching across categories. Honours the content filter.
-async function allOfKind(kind) {
+async function allOfKind(kind, onProgress) {
   if (!state.xlib) return state.library.filter((c) => kindOf(c) === kind);
   const lib = state.xlib;
   const before = state.status;
   let items;
   try {
-    showLoading('Loading the full list to search it…');
-    items = await lib.all(kind, (p) => showLoading(`Loading the full list · ${mb(p.received)}`));
-  } finally { hideLoading(); setStatus(before); }
+    if (!onProgress) showLoading('Loading the full list to search it…');
+    items = await lib.all(kind, onProgress || ((p) => showLoading(`Loading the full list · ${mb(p.received)}`)));
+  } finally {
+    if (!onProgress) { hideLoading(); setStatus(before); }
+  }
   const allowed = new Set(vodCategories(kind).map((c) => c.id));
   return items.filter((i) => allowed.has(i.catId));
 }
@@ -485,7 +488,7 @@ const gallery = new GalleryView($('gallery'), {
       }, { dedupe: false });
     }
   },
-  searchAll: (kind) => allOfKind(kind),
+  searchAll: (kind, onProgress) => allOfKind(kind, onProgress),
   episodes: (series) => state.xlib.seriesEpisodes(series),
   // Seasons and episode count for a series card, cached a day. One API call each (not a
   // stream, so it doesn't use a connection), made only for cards that stay on screen.
@@ -842,6 +845,7 @@ video.addEventListener('playing', () => { clearTimeout(accountTimer); accountTim
 document.addEventListener('visibilitychange', () => { if (!document.hidden) showAccount(state.source, { quiet: true }); });
 
 function setChannels(channels, label, source = null) {
+  libraryRevision++;
   annotate(channels); // once per playlist; the result is saved with the cached copy
   state.source = source;
   guide.setSource({ xtream: source?.url ? parseXtream(source.url) : null, tvgUrl: source?.tvgUrl || channels.tvgUrl || null });
@@ -2301,7 +2305,9 @@ window.o3xr = {
     isFav: (id) => state.favs.has(id),
     toggleFav: (ch) => toggleFav(ch),
     live: () => state.library.filter((c) => kindOf(c) === 'live'),
-    hasKind: (k) => !!state.xlib || state.library.some((c) => kindOf(c) === k),
+    hasKind: (k) => state.xlib ? !!state.xlib.cats[k]?.length : state.library.some((c) => kindOf(c) === k),
+    searchRevision: () => libraryRevision,
+    searchAll: (kind, onProgress) => allOfKind(kind, onProgress),
     openGallery(kind) { state.kind = kind; rebuildGroups(); guideView.close(); gallery.open(kind); },
     galleryOpen: () => gallery.isOpen(),
     source: () => state.source,
