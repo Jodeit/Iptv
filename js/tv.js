@@ -17,7 +17,7 @@ import { genreOf, GENRES } from './genre.js';
 import * as sports from './sports.js';
 import { VERSION } from './version.js';
 import { logEvent } from './telemetry.js';
-import { TV_WALLS, TV_WALL_DEFAULT } from './tv-wall.js';
+import { TV_WALLS, TV_WALL_DEFAULT, hexToHsl, hslToHex } from './tv-wall.js';
 
 if (/TunerTV/.test(navigator.userAgent) || window.__tunerWeb) initTV();
 
@@ -614,6 +614,28 @@ function initTV() {
       b.classList.toggle('on', selected);
       b.setAttribute('aria-pressed', String(selected));
     }
+    const hsl = hexToHsl(current);
+    if (!hsl) return;
+    for (const [key, value, suffix] of [
+      ['Hue', hsl.hue, '°'],
+      ['Saturation', hsl.saturation, '%'],
+      ['Lightness', hsl.lightness, '%'],
+    ]) {
+      const input = bodyEl.querySelector(`#tvWall${key}`);
+      const output = bodyEl.querySelector(`#tvWall${key}Value`);
+      if (input.value !== String(value)) input.value = String(value);
+      output.value = `${value}${suffix}`;
+    }
+    bodyEl.querySelector('#tvWallHue').style.setProperty('--track', 'linear-gradient(90deg, #f00, #ff0, #0f0, #0ff, #00f, #f0f, #f00)');
+    bodyEl.querySelector('#tvWallSaturation').style.setProperty('--track', `linear-gradient(90deg, hsl(${hsl.hue} 0% ${hsl.lightness}%), hsl(${hsl.hue} 100% ${hsl.lightness}%))`);
+    bodyEl.querySelector('#tvWallLightness').style.setProperty('--track', `linear-gradient(90deg, #000, ${hslToHex(hsl.hue, hsl.saturation, 50)}, #fff)`);
+  }
+
+  function updateWallFromSliders() {
+    const hue = bodyEl.querySelector('#tvWallHue').value;
+    const saturation = bodyEl.querySelector('#tvWallSaturation').value;
+    const lightness = bodyEl.querySelector('#tvWallLightness').value;
+    chooseWall(hslToHex(hue, saturation, lightness));
   }
 
   function chooseWall(colour) {
@@ -639,6 +661,11 @@ function initTV() {
           <input id="tvWallTV" type="color" aria-label="Custom TV background colour">
           <button type="button" class="btn ghost tvh-wall-reset">Default</button>
         </div>
+        <div class="tvh-wall-adjust">
+          <label class="tvh-wall-axis"><span>Hue <output id="tvWallHueValue"></output></span><input id="tvWallHue" type="range" min="0" max="359" step="1"></label>
+          <label class="tvh-wall-axis"><span>Saturation <output id="tvWallSaturationValue"></output></span><input id="tvWallSaturation" type="range" min="0" max="100" step="1"></label>
+          <label class="tvh-wall-axis"><span>Lightness <output id="tvWallLightnessValue"></output></span><input id="tvWallLightness" type="range" min="0" max="100" step="1"></label>
+        </div>
       </div>
       <p class="tvh-note dim tvh-showing"></p>
       <h3>Playlists on your profile${a ? ` (${n})` : ''}</h3><div class="tvh-lists"></div>`;
@@ -656,9 +683,13 @@ function initTV() {
       wallSwatches.append(b);
     }
     bodyEl.querySelector('#tvWallTV').onchange = (e) => chooseWall(e.target.value);
+    for (const id of ['tvWallHue', 'tvWallSaturation', 'tvWallLightness']) {
+      bodyEl.querySelector(`#${id}`).oninput = updateWallFromSliders;
+    }
     bodyEl.querySelector('.tvh-wall-reset').onclick = () => chooseWall(TV_WALL_DEFAULT);
     paintWallPicker();
     if (WEB) mk('Settings & playlists', openSettings);
+    else mk('Advanced settings', openSettings, 'btn ghost');
     if (a) {
       mk('Sync now', () => { P().sync(); paintSync(); });
       if (src?.url) mk('Reload channels', () => { O().loadPlaylist(src.url, src.name, { fresh: true }); closeHome(); }, 'btn ghost');
@@ -688,12 +719,15 @@ function initTV() {
     document.querySelector('.tab[data-tab="sources"]')?.click();
     $('panel').classList.remove('collapsed');
     html.classList.add('settings-open');
+    requestAnimationFrame(() => $('panel').querySelector('.tab.active')?.focus());
   }
 
   function closeSettings() {
     $('panel').classList.add('collapsed');
     html.classList.remove('settings-open');
+    if (isOpen.home()) tabsEl.querySelector('.tvh-tab.on')?.focus();
   }
+  $('panelToggle').addEventListener('click', () => { if (isOpen.settings()) closeSettings(); });
   // Live sync line: what it's doing now, or when it last finished and what it found.
   function paintSync() {
     const line = bodyEl.querySelector('.tvh-sync'), bar = bodyEl.querySelector('.tvh-syncbar');
@@ -1821,7 +1855,6 @@ function initTV() {
     const mkBtn = (cls, label, fn) => { const b = el('button', `web-btn ${cls}`, label); b.onclick = fn; document.body.append(b); return b; };
     mkBtn('web-menu', '☰ Menu', () => { if (screen() === 'controls') closeControls(); if (screen() === 'player') openHome({ menu: true }); });
     mkBtn('web-back', '‹ Back', () => goBack());
-    $('panelToggle').addEventListener('click', () => html.classList.remove('settings-open'));
     const x = el('button', 'tvh-x', '✕ Picture'); x.onclick = () => goBack(); tabsEl.append(x);
     new MutationObserver(() => { if (!tabsEl.contains(x)) tabsEl.append(x); }).observe(tabsEl, { childList: true });
     // Tap the picture for the controls (pause, seek, audio, captions, episodes, guide)

@@ -386,9 +386,10 @@ pop-out player are hidden there; setup and settings happen on the phone and sync
   channel in the background (the column shows progress). The choice is remembered.
 - **Background colour:** the plaster behind the glass is a creamy butter by default. Match it to your wall under
   **Settings → Playback → TV background** on the phone (presets or any colour), or choose a preset/custom colour in
-  the TV's Settings tab; it syncs with the profile. The selected wall colour also fills the video letterbox, while
-  stronger panel and guide-window shadows make the glass sections stand out. The TV uses it for the startup splash
-  too. Screens render colours cooler than they look to the eye, so pick warmer than the wall seems.
+  the TV's Settings tab, where the hue, saturation and lightness can be adjusted with the remote; it syncs with the
+  profile. **Advanced settings** opens the full settings workspace on the TV. The selected wall colour also fills the
+  video letterbox, while stronger panel and guide-window shadows make the glass sections stand out. The TV uses it
+  for the startup splash too. Screens render colours cooler than they look to the eye, so pick warmer than the wall seems.
 - **Load screen:** the Tuner fish cut from oak (grain, soft shadow) on the same plaster, in `img/tuna.svg`, inlined
   in the stylesheet so it is there on the first frame; the Android app shows the same fish on cream (no black
   flash) the moment it starts, which needs the newer APK.

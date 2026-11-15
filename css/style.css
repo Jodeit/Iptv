@@ -929,6 +929,11 @@ html.setup-open .toast, html.detail-open .toast { display: none !important; }
 .tvh-wall-picker { display: flex; align-items: center; gap: 12px; color: var(--ink-2); font-size: 15px; }
 .tvh-wall-picker input[type="color"] { width: 64px; height: 44px; padding: 2px; border: 1px solid var(--line); border-radius: 10px; background: transparent; }
 .tvh-wall-picker .btn { margin-left: auto; }
+.tvh-wall-adjust { display: grid; gap: 8px; }
+.tvh-wall-axis { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 12px; color: var(--ink-2); font-size: 14px; }
+.tvh-wall-axis input[type="range"] { grid-column: 1 / -1; width: 100%; height: 22px; margin: 0; appearance: none; background: transparent; }
+.tvh-wall-axis input[type="range"]::-webkit-slider-runnable-track { height: 8px; border-radius: 999px; background: var(--track); }
+.tvh-wall-axis input[type="range"]::-webkit-slider-thumb { width: 20px; height: 20px; margin-top: -6px; appearance: none; border: 2px solid #252a36; border-radius: 50%; background: #fff; box-shadow: 0 2px 6px rgba(40,30,12,.35); }
 
 /* ---------- TV: tabs fit four items ---------- */
 .tvh-tab { padding: 7px 16px; font-size: 17px; }
@@ -1265,53 +1270,56 @@ html.tv-web .tv-detail { overflow-y: auto; -webkit-overflow-scrolling: touch; }
 }
 html.tv-web .toast { font-size: 15px; padding: 10px 16px; width: max-content; max-width: min(92vw, 560px); box-sizing: border-box; }
 
-/* A dedicated full-screen settings workspace for Tuner view. It reuses the existing controls,
+/* A dedicated full-screen settings workspace for the TV interface. It reuses the existing controls,
    while replacing the classic drawer layout with a page and persistent category navigation. */
-html.tv-web.settings-open #panel {
+html.tv.settings-open #panel {
   position: fixed; inset: 0; z-index: 110; display: grid !important;
   grid-template: "head head" auto "nav content" minmax(0, 1fr) / minmax(190px, 250px) minmax(0, 1fr);
   width: auto; height: 100%; height: 100dvh; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
-  border: 0; border-radius: 0; background: var(--wall, #ebdfb8); color: var(--ink, #2d2a24);
+  border: 0; border-radius: 0;
+  background: radial-gradient(120% 95% at 28% 8%, var(--tv-wall-hi, #f5eed2) 0%, var(--tv-wall, #ebdfb8) 52%, var(--tv-wall-lo, #d9cb9f) 100%);
+  color: var(--ink, #2d2a24);
   box-shadow: none; backdrop-filter: none; -webkit-backdrop-filter: none; opacity: 1; transform: none; pointer-events: auto;
 }
-html.tv-web.settings-open #panel.collapsed { display: none !important; }
-html.tv-web.settings-open #panel .panel-head {
+html.tv.settings-open #panel.collapsed { display: none !important; }
+html.tv.settings-open #panel .panel-head {
   grid-area: head; min-width: 0; padding: 14px 24px; border-bottom: 1px solid rgba(60,50,30,.16);
 }
-html.tv-web.settings-open #panel .panel-head .icon-btn { width: 44px; height: 44px; font-size: 22px; }
-html.tv-web.settings-open #panel .tabs {
+html.tv.settings-open #panel .panel-head .icon-btn { width: 44px; height: 44px; font-size: 22px; }
+html.tv.settings-open #panel .tabs {
   grid-area: nav; min-width: 0; flex-direction: column; align-items: stretch; gap: 6px; overflow-x: hidden; overflow-y: auto;
   padding: 18px 12px; border-right: 1px solid rgba(60,50,30,.16); border-bottom: 0;
 }
-html.tv-web.settings-open #panel .tab { flex: none; padding: 12px 14px; text-align: left; color: var(--ink-2, #695638); }
-html.tv-web.settings-open #panel .tab.active { background: rgba(60,50,30,.12); color: var(--ink, #2d2a24); }
-html.tv-web.settings-open #panel .tab-body {
+html.tv.settings-open #panel .tab { flex: none; padding: 12px 14px; text-align: left; font-size: 18px; color: var(--ink-2, #695638); }
+html.tv.settings-open #panel .tab.active { background: rgba(60,50,30,.12); color: var(--ink, #2d2a24); }
+html.tv.settings-open #panel .tab-body {
   grid-area: content; width: min(100%, 1080px); min-width: 0; margin: 0 auto; padding: 22px clamp(18px, 4vw, 56px) calc(24px + env(safe-area-inset-bottom, 0px));
+  font-size: 17px;
   overflow-y: auto; color: var(--ink, #2d2a24); -webkit-overflow-scrolling: touch;
 }
-html.tv-web.settings-open #panel .tab-body h3 { color: var(--oak-dk, #7a4d22); }
-html.tv-web.settings-open #panel .muted { color: var(--ink-3, #7a6c55); }
-html.tv-web.settings-open #panel input[type=text],
-html.tv-web.settings-open #panel input[type=url],
-html.tv-web.settings-open #panel input[type=search],
-html.tv-web.settings-open #panel input[type=password],
-html.tv-web.settings-open #panel select { color: var(--ink, #2d2a24); background: rgba(255,255,255,.48); border-color: rgba(60,50,30,.18); }
-html.tv-web.settings-open #panel input[type=range],
-html.tv-web.settings-open #panel input[type=checkbox] { accent-color: var(--oak, #9a6431); }
-html.tv-web.settings-open #panel .seg { border-color: rgba(60,50,30,.2); }
-html.tv-web.settings-open #panel .seg button { color: var(--ink-2, #695638); }
-html.tv-web.settings-open #panel .seg button.active { background: var(--oak, #9a6431); color: #fff; }
-html.tv-web.settings-open #panel .btn.ghost { color: var(--ink, #2d2a24); border-color: rgba(60,50,30,.2); }
+html.tv.settings-open #panel .tab-body h3 { color: var(--oak-dk, #7a4d22); }
+html.tv.settings-open #panel .muted { color: var(--ink-3, #7a6c55); }
+html.tv.settings-open #panel input[type=text],
+html.tv.settings-open #panel input[type=url],
+html.tv.settings-open #panel input[type=search],
+html.tv.settings-open #panel input[type=password],
+html.tv.settings-open #panel select { color: var(--ink, #2d2a24); background: rgba(255,255,255,.48); border-color: rgba(60,50,30,.18); }
+html.tv.settings-open #panel input[type=range],
+html.tv.settings-open #panel input[type=checkbox] { accent-color: var(--oak, #9a6431); }
+html.tv.settings-open #panel .seg { border-color: rgba(60,50,30,.2); }
+html.tv.settings-open #panel .seg button { color: var(--ink-2, #695638); }
+html.tv.settings-open #panel .seg button.active { background: var(--oak, #9a6431); color: #fff; }
+html.tv.settings-open #panel .btn.ghost { color: var(--ink, #2d2a24); border-color: rgba(60,50,30,.2); }
 @media (max-width: 720px) {
-  html.tv-web.settings-open #panel {
+  html.tv.settings-open #panel {
     grid-template: "head" auto "nav" auto "content" minmax(0, 1fr) / minmax(0, 1fr);
     padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px);
   }
-  html.tv-web.settings-open #panel .panel-head { padding: 8px 14px; }
-  html.tv-web.settings-open #panel .tabs {
+  html.tv.settings-open #panel .panel-head { padding: 8px 14px; }
+  html.tv.settings-open #panel .tabs {
     flex-direction: row; overflow-x: auto; overflow-y: hidden; padding: 8px 12px; border-right: 0; border-bottom: 1px solid rgba(60,50,30,.16);
   }
-  html.tv-web.settings-open #panel .tab { padding: 10px 12px; }
-  html.tv-web.settings-open #panel .tab-body { padding: 14px 16px calc(22px + env(safe-area-inset-bottom, 0px)); }
-  html.tv-web.settings-open #panel .row { flex-wrap: wrap; }
+  html.tv.settings-open #panel .tab { padding: 10px 12px; }
+  html.tv.settings-open #panel .tab-body { padding: 14px 16px calc(22px + env(safe-area-inset-bottom, 0px)); }
+  html.tv.settings-open #panel .row { flex-wrap: wrap; }
 }
