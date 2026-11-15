@@ -853,7 +853,7 @@ function initTV() {
     idx.promise = Promise.all([worker(), worker(), worker()]).then(() => { idx.state = 'done'; idx.onBatch?.(true); return idx; });
     return idx;
   }
-  const vodStatusText = (idx) => `Loading more · ${idx.done} of ${idx.total} folders`;
+  const vodStatusText = (idx) => `Still loading titles · ${idx.done} of ${idx.total} categories`;
   const vodSkeleton = () => Array.from({ length: 12 }, () => '<button class="tvh-row movie skel" tabindex="-1"><span class="pc-img"></span><b>&nbsp;</b><small>&nbsp;</small></button>').join('');
   const vodIO = new IntersectionObserver((es) => {
     // Scores cost a lookup each, so only posters that stay on screen for a moment ask
@@ -888,7 +888,7 @@ function initTV() {
     // screens fill in within seconds and the rest follow in the background
     const todo = vodItems.filter((i) => !vodMeta.has(i.id));
     const first = todo.filter((i) => vodPass(i, true)).sort(vodSortBy()), firstSet = new Set(first);
-    const list = [...first, ...todo.filter((i) => !firstSet.has(i))].slice(0, 4000), total = list.length;
+    const list = [...first, ...todo.filter((i) => !firstSet.has(i))], total = list.length;
     if (!total || ageRun !== run) return;
     let next = 0, done = 0, last = performance.now();
     const status = () => { const s = chipsEl.querySelector('.vod-age'); if (s) s.textContent = done < total ? `Checking age ratings · ${done.toLocaleString()} of ${total.toLocaleString()}` : ''; };
@@ -968,7 +968,7 @@ function initTV() {
       chipsEl.append(b);
     };
     const cur = vodIndex[vodKind];
-    if (cur && cur.state === 'loading') chipsEl.append(el('div', 'tvh-gstatus vod-status', vodStatusText(cur)));
+    if (cur && cur.state === 'loading' && cur.done < cur.total) chipsEl.append(el('div', 'tvh-gstatus vod-status', vodStatusText(cur)));
     const labels = [...counts.keys()].sort((a, b) => a.localeCompare(b));
     if (labels.length) chipsEl.append(el('div', 'tvh-gstatus', 'Category'));
     for (const g of labels) chip(g, g, counts.get(g));
@@ -993,7 +993,7 @@ function initTV() {
   // A folder finished loading (or all of them did). Update the left panel and the grid without taking the cursor away.
   function vodBatch(idx, final) {
     const st = chipsEl.querySelector('.vod-status');
-    if (st) st.textContent = vodStatusText(idx);
+    if (st) { if (idx.done >= idx.total) st.remove(); else st.textContent = vodStatusText(idx); }
     vodItems = idx.items; vodTags = idx.tags; vodAlias = idx.alias;
     const inGrid = bodyEl.contains(document.activeElement) && bodyEl.querySelector('.tvh-row:not(.skel)');
     if (!chipsEl.contains(document.activeElement) && (final || idx.done % 2 === 1 || idx.done === idx.total)) renderVodChips();
