@@ -782,13 +782,13 @@ html.tv-booting body::before {
 .tvh-info .i-next.dim { color: #8a90a6; font-size: 15px; }
 .tvh-info .i-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.15); margin: 3px 0; }
 .tvh-info .i-bar u { display: block; height: 100%; border-radius: 2px; background: var(--accent); text-decoration: none; }
-/* The video is black until something plays, with no browser play icon on it */
-html.tv #video, html.tv #flatStage { background: #000; }
+/* The selected wall colour shows through the picture's letterbox bars. */
+html.tv #video, html.tv #flatStage { background: radial-gradient(120% 95% at 28% 8%, var(--tv-wall-hi, #f5eed2) 0%, var(--tv-wall, #ebdfb8) 52%, var(--tv-wall-lo, #d9cb9f) 100%); }
 
 /* ---------- TV: the picture is the whole screen ---------- */
 html.tv #flatStage { inset: 0; width: 100%; height: 100%; border-radius: 0; border: 0; box-shadow: none; }
 html.tv #flatStage video { width: 100%; height: 100%; object-fit: contain; }
-html.tv, html.tv body { background: #000; }
+html.tv, html.tv body { background: var(--tv-wall, #ebdfb8); }
 
 
 /* =====================================================================================================
@@ -803,8 +803,8 @@ html.tv, html.tv body { background: #000; }
   --ink: #252a36; --ink-2: #4a4d58; --ink-3: #6e6b5f;
   --blue: #2f5d9b; --brass: #a8832f;
   --glass: linear-gradient(180deg, rgba(var(--glass-rgb), .8), rgba(var(--glass-rgb), .6));
-  --glass-edge: rgba(255,255,255,.7);
-  --lift: 0 18px 38px -12px rgba(70,52,22,.38), 0 3px 8px rgba(70,52,22,.12), inset 0 1px 0 rgba(255,255,255,.8);
+  --glass-edge: rgba(255,255,255,.88);
+  --lift: 0 28px 58px -10px rgba(45,34,16,.48), 0 8px 18px rgba(45,34,16,.2), inset 0 2px 0 rgba(255,255,255,.9);
   --text: var(--ink); --muted: var(--ink-3); --accent: var(--blue); --accent-ink: #fff; --line: rgba(60,50,30,.16);
   color: var(--ink);
 }
@@ -924,6 +924,11 @@ html.setup-open .toast, html.detail-open .toast { display: none !important; }
 .swatch { width: 48px; height: 48px; border-radius: 14px; border: 2px solid var(--line); cursor: pointer; }
 .swatch.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #tvWall { width: 64px; height: 44px; padding: 2px; background: none; border: 1px solid var(--line); border-radius: 10px; }
+.tvh-wall-setting { display: grid; gap: 8px; padding: 10px 12px 12px; border-radius: 16px; background: rgba(255,255,255,.28); border: 1px solid var(--line); }
+.tvh-wall-setting h3 { margin: 0; }
+.tvh-wall-picker { display: flex; align-items: center; gap: 12px; color: var(--ink-2); font-size: 15px; }
+.tvh-wall-picker input[type="color"] { width: 64px; height: 44px; padding: 2px; border: 1px solid var(--line); border-radius: 10px; background: transparent; }
+.tvh-wall-picker .btn { margin-left: auto; }
 
 /* ---------- TV: tabs fit four items ---------- */
 .tvh-tab { padding: 7px 16px; font-size: 17px; }
@@ -1019,7 +1024,8 @@ html.tv .tvh-row.movie .pc-img img { background: none !important; padding: 0 !im
 html.tv.guide-mode .tvh-panel { width: 62%; }
 html.tv.guide-mode.tv-picture .tv-home { background: radial-gradient(120% 95% at 28% 8%, var(--wall-hi) 0%, var(--wall) 52%, var(--wall-lo) 100%); }
 html.tv.guide-mode #flatStage { inset: 34px 40px auto auto !important; width: 33vw !important; height: auto !important; aspect-ratio: 16 / 9; z-index: 80 !important;
-  border-radius: 18px; border: 3px solid rgba(255,250,240,.92) !important; box-shadow: 0 16px 36px rgba(70,52,22,.4); }
+  border-radius: 18px; border: 3px solid rgba(255,250,240,.92) !important;
+  box-shadow: 0 0 0 7px rgba(var(--tv-glass, 248,243,224),.62), 0 0 0 10px rgba(70,52,22,.22), 0 28px 64px rgba(40,30,12,.62) !important; }
 html.tv.guide-mode .tvh-cap { display: grid; gap: 6px; position: fixed; z-index: 80; right: 40px; width: 33vw; top: calc(34px + 33vw * 9 / 16 + 14px); }
 html.tv.guide-mode .tvh-cap > b { font-size: 22px; color: var(--text); }
 html.tv.guide-mode .tvh-cap .cap-now { font-size: 17px; color: var(--text); }

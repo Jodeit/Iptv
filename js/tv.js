@@ -17,6 +17,7 @@ import { genreOf, GENRES } from './genre.js';
 import * as sports from './sports.js';
 import { VERSION } from './version.js';
 import { logEvent } from './telemetry.js';
+import { TV_WALLS, TV_WALL_DEFAULT } from './tv-wall.js';
 
 if (/TunerTV/.test(navigator.userAgent) || window.__tunerWeb) initTV();
 
@@ -603,6 +604,24 @@ function initTV() {
     addRows();
   }
 
+  function paintWallPicker() {
+    const picker = bodyEl.querySelector('#tvWallTV'), swatches = bodyEl.querySelector('.tvh-wall-swatches');
+    if (!picker || !swatches) return;
+    const current = P().doc.tvWall || TV_WALL_DEFAULT;
+    if (picker.value !== current) picker.value = current;
+    for (const b of swatches.children) {
+      const selected = b.dataset.hex === current;
+      b.classList.toggle('on', selected);
+      b.setAttribute('aria-pressed', String(selected));
+    }
+  }
+
+  function chooseWall(colour) {
+    P().update((d) => { d.tvWall = colour === TV_WALL_DEFAULT ? '' : colour; });
+    applyWall(colour);
+    paintWallPicker();
+  }
+
   function renderPhone() {
     const p = P(), a = p.active(), src = T().source();
     const n = p.doc.playlists.length;
@@ -610,12 +629,35 @@ function initTV() {
       <div class="tvh-profile"><span class="avatar">${a ? esc(a.name.trim().charAt(0).toUpperCase()) : '·'}</span>
         <div class="grow"><div class="tvh-pname">${a ? esc(a.name) : 'Not linked to a phone'}</div><div class="tvh-sync"></div></div></div>
       <div class="tvh-syncbar"><u></u></div>
-      <p class="tvh-note">${WEB ? 'Manage playlists, playback, filters and account settings here. Changes sync to your other devices.' : `Change playlists and settings on your phone at <b>${esc(host)}</b>. They sync here.`}</p>
+      <p class="tvh-note">${WEB ? 'Manage playlists, playback, filters and account settings here. Changes sync to your other devices.' : `Change playlists on your phone at <b>${esc(host)}</b>. The TV background can be changed here and syncs to your profile.`}</p>
       <div class="tvh-actions"></div>
+      <div class="tvh-wall-setting">
+        <h3>TV background</h3>
+        <div class="tvh-wall-swatches swatches row"></div>
+        <div class="tvh-wall-picker">
+          <label for="tvWallTV">Custom colour</label>
+          <input id="tvWallTV" type="color" aria-label="Custom TV background colour">
+          <button type="button" class="btn ghost tvh-wall-reset">Default</button>
+        </div>
+      </div>
       <p class="tvh-note dim tvh-showing"></p>
       <h3>Playlists on your profile${a ? ` (${n})` : ''}</h3><div class="tvh-lists"></div>`;
     const actions = bodyEl.querySelector('.tvh-actions');
     const mk = (label, fn, cls = 'btn') => { const b = el('button', cls, esc(label)); b.onclick = fn; actions.append(b); return b; };
+    const wallSwatches = bodyEl.querySelector('.tvh-wall-swatches');
+    for (const [name, hex] of TV_WALLS) {
+      const b = el('button', 'swatch');
+      b.type = 'button';
+      b.dataset.hex = hex;
+      b.title = name;
+      b.style.background = hex;
+      b.setAttribute('aria-label', `${name} TV background`);
+      b.onclick = () => chooseWall(hex);
+      wallSwatches.append(b);
+    }
+    bodyEl.querySelector('#tvWallTV').onchange = (e) => chooseWall(e.target.value);
+    bodyEl.querySelector('.tvh-wall-reset').onclick = () => chooseWall(TV_WALL_DEFAULT);
+    paintWallPicker();
     if (WEB) mk('Settings & playlists', openSettings);
     if (a) {
       mk('Sync now', () => { P().sync(); paintSync(); });
@@ -668,7 +710,7 @@ function initTV() {
       : `${st.message || 'Not synced'} · ${detail}`;
     bar.classList.toggle('on', busy);
   }
-  setInterval(() => { if (isOpen.home() && tab === 'phone') paintSync(); }, 400);
+  setInterval(() => { if (isOpen.home() && tab === 'phone') { paintSync(); paintWallPicker(); } }, 400);
   const ageText = (t) => {
     const m = Math.round((Date.now() - t) / 60000);
     return m < 2 ? 'just now' : m < 120 ? `${m} min ago` : m < 2880 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
@@ -1146,8 +1188,12 @@ function initTV() {
   const seekRange = () => { const v = T().video; return v.seekable?.length ? [v.seekable.start(0), v.seekable.end(v.seekable.length - 1)] : null; };
   function seekBy(seconds) {
     const v = T().video;
-    const end = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : Infinity;
-    v.currentTime = Math.max(0, Math.min(end, v.currentTime + seconds));
+    const current = O().state.current;
+    const live = !!current && kindOf(current) === 'live';
+    const range = live ? seekRange() : null;
+    if (live && !range) return;
+    const [start, end] = range || [0, Number.isFinite(v.duration) && v.duration > 0 ? v.duration : Infinity];
+    v.currentTime = Math.max(start, Math.min(end, v.currentTime + seconds));
     if (screen() === 'controls') paintControlsBar(); else showOsd();
   }
   function openControls() {
