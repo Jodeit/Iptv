@@ -1,5 +1,6 @@
 // Poster gallery for movies and series, with a preview page per title (backdrop, plot, cast,
 // ratings incl. Rotten Tomatoes, trailer, play/resume, and seasons/episodes for series).
+import { servicesFor } from './services.js';
 
 const PAGE = 120; // cards rendered per "Show more"
 
@@ -57,12 +58,13 @@ export class GalleryView {
         <label>Age <select class="gf-age"></select></label>
         <label>Year <select class="gf-year"><option value="">Any</option><option value="2020">2020s</option><option value="2010">2010s</option><option value="2000">2000s</option><option value="1990">1990s</option><option value="1980">1980s</option><option value="old">Before 1980</option></select></label>
         <label class="gf-genre-wrap hidden">Genre <select class="gf-genre"><option value="">Any</option></select></label>
+        <label class="gf-service-wrap hidden">Service <select class="gf-service"><option value="">Any</option></select></label>
         <label class="check"><input type="checkbox" class="gf-fav"> Favorites</label>
         <label class="check"><input type="checkbox" class="gf-unwatched"> Hide watched</label>
         <button class="chip gf-reset hidden">Clear filters</button>
       </div>
       <div class="gallery-note muted small hidden"></div>
-      <div class="gallery-scroll"><section class="gcontinue hidden"><h3>Continue watching</h3><div class="pv-row"></div></section><div class="gallery-grid"></div><div class="gallery-more"></div></div>
+      <div class="gallery-scroll"><section class="gfor-you hidden"><h3>Picked for you</h3><div class="pv-row"></div><p class="muted small"></p></section><section class="gcontinue hidden"><h3>Continue watching</h3><div class="pv-row"></div></section><div class="gallery-grid"></div><div class="gallery-more"></div></div>
       <div class="gallery-preview hidden"></div>`;
     this.grid = root.querySelector('.gallery-grid');
     this.more = root.querySelector('.gallery-more');
@@ -73,6 +75,7 @@ export class GalleryView {
     this.countQueue = [];
     this.countBusy = 0;
     this.best = new Set(); // ids of the fullest listing among duplicates
+    this.forYouCards = new Map();
     // Ratings cost a lookup each (1,000 a day on a free key), so only posters that stay on
     // screen for a moment ask; scrolling quickly past a hundred titles costs nothing.
     this.dwell = new Map(); // card → timer
@@ -92,17 +95,18 @@ export class GalleryView {
     for (const b of root.querySelectorAll('.gallery-kind button')) b.onclick = () => this.open(b.dataset.kind);
     root.querySelector('.gallery-cat').onchange = (e) => this.showCategory(e.target.value);
     root.querySelector('.gallery-search').oninput = (e) => this.search(e.target.value);
-    this.filters = { age: 0, rating: 0, year: '', genre: '', fav: false, unwatched: false };
+    this.filters = { age: 0, rating: 0, year: '', genre: '', service: '', fav: false, unwatched: false };
     const f = (cls) => root.querySelector(cls);
     const sync = () => {
-      this.filters = { age: +f('.gf-age').value, rating: +f('.gf-rating').value, year: f('.gf-year').value, genre: f('.gf-genre').value, fav: f('.gf-fav').checked, unwatched: f('.gf-unwatched').checked };
+      this.filters = { age: +f('.gf-age').value, rating: +f('.gf-rating').value, year: f('.gf-year').value, genre: f('.gf-genre').value, service: f('.gf-service').value, fav: f('.gf-fav').checked, unwatched: f('.gf-unwatched').checked };
       this.limit = PAGE;
       this.render();
     };
-    for (const c of ['.gf-age', '.gf-rating', '.gf-year', '.gf-genre']) f(c).onchange = sync;
+    for (const c of ['.gf-age', '.gf-rating', '.gf-year', '.gf-genre', '.gf-service']) f(c).onchange = sync;
     for (const c of ['.gf-fav', '.gf-unwatched']) f(c).onchange = sync;
     f('.gf-reset').onclick = () => {
       f('.gf-age').value = '0'; f('.gf-rating').value = '0'; f('.gf-year').value = ''; f('.gf-genre').value = '';
+      f('.gf-service').value = '';
       f('.gf-fav').checked = false; f('.gf-unwatched').checked = false;
       sync();
     };
@@ -118,6 +122,9 @@ export class GalleryView {
 
   async open(kind = this.kind, catId) {
     this.kind = kind;
+    this.forYouRun = (this.forYouRun || 0) + 1;
+    this.forYouKind = null;
+    this.forYouState = null;
     this.root.classList.remove('hidden');
     this.closePreview();
     this.app.onToggle?.(true);
@@ -173,6 +180,7 @@ export class GalleryView {
     this.items = items;
     this.itemsById = new Map(items.map((i) => [i.id, i]));
     this.render();
+    this.loadForYou();
   }
 
   // Two or more characters search every category of this kind; clearing returns to the category.
@@ -222,6 +230,7 @@ export class GalleryView {
       this.note.textContent = `${list.length.toLocaleString()} result${list.length === 1 ? '' : 's'} across all categories`;
     } else this.note.innerHTML = 'Add a free OMDb key in <b>Settings → Playback → Ratings</b> to see Rotten Tomatoes, IMDb and Metacritic scores.';
     this.renderContinue(!q && !everywhere);
+    this.renderForYou(!q && !everywhere);
     const frag = document.createDocumentFragment();
     for (const item of list.slice(0, this.limit)) frag.append(this.card(item));
     this.grid.innerHTML = '';
@@ -292,7 +301,12 @@ export class GalleryView {
   applyFilters(list) {
     const f = this.filters;
     const genres = new Set();
-    for (const i of this.pool?.[this.kind] && this.query.length >= 2 ? this.pool[this.kind] : this.items) for (const g of String(i.genre || '').split(/[,/]/)) if (g.trim()) genres.add(g.trim());
+    const source = this.pool?.[this.kind] && this.query.length >= 2 ? this.pool[this.kind] : this.items;
+    const services = new Set();
+    for (const i of source) {
+      for (const g of String(i.genre || '').split(/[,/]/)) if (g.trim()) genres.add(g.trim());
+      for (const service of servicesFor(i)) services.add(service);
+    }
     const sel = this.root.querySelector('.gf-genre');
     const names = [...genres].sort((a, b) => a.localeCompare(b));
     if (sel.options.length - 1 !== names.length) {
@@ -301,7 +315,16 @@ export class GalleryView {
       f.genre = sel.value;
     }
     this.root.querySelector('.gf-genre-wrap').classList.toggle('hidden', !names.length);
-    const active = f.age || f.rating || f.year || f.genre || f.fav || f.unwatched;
+    const serviceSel = this.root.querySelector('.gf-service');
+    const serviceNames = [...services].sort((a, b) => a.localeCompare(b));
+    const oldServices = [...serviceSel.options].slice(1).map((o) => o.value);
+    if (oldServices.length !== serviceNames.length || oldServices.some((v, i) => v !== serviceNames[i])) {
+      serviceSel.innerHTML = '<option value="">Any</option>' + serviceNames.map((name) => `<option>${esc(name)}</option>`).join('');
+    }
+    serviceSel.value = serviceNames.includes(f.service) ? f.service : '';
+    f.service = serviceSel.value;
+    this.root.querySelector('.gf-service-wrap').classList.toggle('hidden', !serviceNames.length);
+    const active = f.age || f.rating || f.year || f.genre || f.service || f.fav || f.unwatched;
     this.root.querySelector('.gf-reset').classList.toggle('hidden', !active);
     if (!active) return list;
     return list.filter((i) => {
@@ -312,6 +335,7 @@ export class GalleryView {
         if (f.year === 'old' ? i.year >= 1980 : i.year < +f.year || i.year >= +f.year + 10) return false;
       }
       if (f.genre && !String(i.genre || '').split(/[,/]/).some((g) => g.trim() === f.genre)) return false;
+      if (f.service && !servicesFor(i).includes(f.service)) return false;
       if (f.fav && !this.app.isFav(i.id)) return false;
       if (f.unwatched) { const p = this.app.progress(i); if (p && p.d && p.t / p.d > 0.9) return false; }
       return true;
@@ -390,6 +414,59 @@ export class GalleryView {
     }
   }
 
+  loadForYou() {
+    if (!this.app.forYou || this.forYouKind === this.kind) return;
+    this.forYouKind = this.kind;
+    const run = this.forYouRun = (this.forYouRun || 0) + 1;
+    this.forYouState = { loading: 'Based on your favorites and watch history…' };
+    this.renderForYou(!this.query);
+    const kind = this.kind;
+    this.app.forYou(kind, (done, total) => {
+      if (this.kind === kind && this.forYouRun === run) {
+        this.forYouState = { loading: `Checking your catalog · ${done} of ${total} categories` };
+        this.renderForYou(!this.query);
+      }
+    }).then((state) => {
+      if (this.kind !== kind || this.forYouRun !== run) return;
+      this.forYouState = state;
+      this.renderForYou(!this.query);
+    }).catch((err) => {
+      if (this.kind !== kind || this.forYouRun !== run) return;
+      this.forYouState = { items: [], note: `Couldn’t load personalized picks: ${err.message}` };
+      this.renderForYou(!this.query);
+    });
+  }
+
+  renderForYou(show) {
+    const box = this.root.querySelector('.gfor-you');
+    const state = this.forYouState;
+    box.classList.toggle('hidden', !show || !state);
+    if (!show || !state) return;
+    const row = box.querySelector('.pv-row');
+    const note = box.querySelector('p');
+    this.forYouCards.clear();
+    if (state.loading) {
+      row.innerHTML = '';
+      note.textContent = state.loading;
+      return;
+    }
+    row.innerHTML = '';
+    note.textContent = state.note || '';
+    for (const item of state.items || []) {
+      const el = document.createElement('button');
+      el.className = 'gcard';
+      const { title, year } = this.app.parseTitle(item.name);
+      el.innerHTML = `<div class="gposter"><span class="ginitial">${esc((title || item.name).charAt(0))}</span></div>
+        <div class="gtitle">${esc(title || item.name)}</div><div class="gmeta"><span>${item.year || year || ''}</span><span class="gbadges"></span></div>`;
+      if (item.logo) this.poster(el.querySelector('.gposter'), item.logo);
+      this.badges(el, item);
+      el.onclick = () => this.showPreview(item);
+      this.forYouCards.set(item.id, el);
+      row.append(el);
+    }
+    for (const item of (state.items || []).slice(0, 10)) this.app.ratings.get(item);
+  }
+
   // What tells one listing of a title from another: its category (language, quality), how
   // many seasons and episodes it has, and when the provider last updated it.
   info(el, item) {
@@ -453,6 +530,8 @@ export class GalleryView {
     if (el) this.badges(el, item);
     const row = item && this.rowCards?.get(item.id);
     if (row) this.badges(row, item);
+    const forYouCard = item && this.forYouCards.get(item.id);
+    if (forYouCard) this.badges(forYouCard, item);
     if (this.previewItem && item?.id === this.previewItem.id) this.renderPreview();
   }
 
@@ -596,7 +675,14 @@ export class GalleryView {
     $('.pv-back').onclick = () => this.back();
     $('.pv-play')?.addEventListener('click', () => { this.app.play(item, canResume ? prog.t : 0); this.close(); });
     $('.pv-restart')?.addEventListener('click', () => { this.app.play(item, 0); this.close(); });
-    $('.pv-fav').onclick = () => { this.app.toggleFav(item); this.renderPreview(); const c = this.cards.get(item.id); if (c) c.replaceWith(this.card(item)); };
+    $('.pv-fav').onclick = () => {
+      this.app.toggleFav(item);
+      this.forYouKind = null;
+      this.loadForYou();
+      this.renderPreview();
+      const c = this.cards.get(item.id);
+      if (c) c.replaceWith(this.card(item));
+    };
     $('.pv-ext')?.addEventListener('click', () => this.app.external(item));
     $('.pv-trailer')?.addEventListener('click', () => {
       $('.pv-trailer-box').innerHTML = `<iframe src="https://www.youtube-nocookie.com/embed/${encodeURIComponent(trailer)}?autoplay=1&rel=0" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen title="Trailer"></iframe>`;

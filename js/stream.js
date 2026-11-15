@@ -9,8 +9,7 @@ import { probe, describeProbe } from './diagnose.js';
 let hlsPreference = 'auto';
 export const setHlsPreference = (p) => { hlsPreference = p || 'auto'; };
 // AirPlay sends the Apple TV a URL to fetch itself, so only Safari's own player (a plain src)
-// works there: hls.js, mpegts.js and the MKV remuxer feed video through Media Source, which
-// AirPlay can't carry, and the Apple TV gets audio only.
+// can send video. MSE engines may play audio only on the Apple TV.
 let airPlay = false;
 export const setAirPlay = (on) => { airPlay = !!on; };
 
@@ -534,10 +533,8 @@ function withTimeout(promise, ms, message) {
 
 function orderEngines(url) {
   const path = url.split('?')[0].toLowerCase();
-  // AirPlay: Safari's player first (the only one the Apple TV shows video from), but keep the
-  // others as a fallback so a stream it can't take still plays (audio only on the TV).
-  if (airPlay && (/\.(m3u8?)$/.test(path) || url.includes('m3u8'))) return ['native', 'hlsjs'];
-  if (airPlay && /\.(mp4|mov|m4v)$/.test(path)) return ['native'];
+  // Don't fall back to MSE during AirPlay: it can appear to work while sending audio only.
+  if (airPlay) return ['native'];
   const canNativeHls = document.createElement('video').canPlayType('application/vnd.apple.mpegurl');
   if (path.endsWith('.m3u8') || path.endsWith('.m3u') || url.includes('m3u8')) {
     const hlsjs = !!(window.Hls && Hls.isSupported());

@@ -15,7 +15,7 @@ import { Guide } from './epg.js';
 import { GuideView } from './guide-view.js';
 import { Ratings, parseTitle } from './ratings.js';
 import { GalleryView } from './gallery.js';
-import { Similar, indexCatalog, matchCatalog } from './similar.js';
+import { Similar, indexCatalog, matchCatalog, combineRecommendations } from './similar.js';
 import { findLatestSources } from './source-finder.js';
 
 const $ = (id) => document.getElementById(id);
@@ -363,7 +363,7 @@ const catalogs = new Map(); // kind → { key, promise }
 function catalogIndex(kind, onProgress) {
   const lib = state.xlib;
   const cats = lib ? vodCategories(kind).map((c) => c.id) : [];
-  const key = lib ? `catalog:${playlistKey(state.source?.url || '')}:${kind}:${cats.join(',')}` : `m3u:${state.library.length}`;
+  const key = lib ? `catalog:${playlistKey(state.source?.url || '')}:${kind}:${cats.join(',')}` : `m3u:${playlistKey(state.source?.url || '')}:${state.library.length}`;
   const have = catalogs.get(kind);
   if (have?.key === key) return have.promise;
   const promise = (async () => {
@@ -390,6 +390,37 @@ async function moreLike(item, details, onProgress) {
     items,
     note: items.length ? '' : recs.length ? `None of TMDB’s ${recs.length} recommendations are on your provider${state.xlib && settings.contentFilter.on ? ' (in the categories your content filter keeps)' : ''}.` : 'TMDB has no recommendations for this title yet.',
   };
+}
+
+async function forYou(kind, onProgress) {
+  if (!similar.enabled()) return { items: [], note: 'Add a free TMDB key in Settings → Playback → Ratings to get personalized picks.' };
+  const index = await catalogIndex(kind, onProgress);
+  const seeds = index.items.map((item) => {
+    const watched = getProgress(item);
+    const favorite = state.favs.has(item.id);
+    return { item, watched, favorite };
+  }).filter((seed) => seed.favorite || seed.watched)
+    .sort((a, b) => Number(b.favorite) - Number(a.favorite) || (b.watched?.at || 0) - (a.watched?.at || 0))
+    .slice(0, 3);
+  if (!seeds.length) return { items: [], note: 'Favorite or watch a few titles to build recommendations for you.' };
+
+  const lookups = await Promise.allSettled(seeds.map(async ({ item, favorite, watched }) => {
+    const ref = await similar.tmdbId(item, { tmdb: item.tmdb, imdbID: ratings.peek(item)?.imdbID });
+    if (!ref) return null;
+    const recs = await similar.recommendations(ref);
+    return { recs, weight: 1 + Number(favorite) + (watched ? 0.5 : 0) };
+  }));
+  const batches = lookups.filter((r) => r.status === 'fulfilled' && r.value).map((r) => r.value);
+  const failures = lookups.filter((r) => r.status === 'rejected');
+  if (!batches.length && failures.length) throw new Error(failures[0].reason?.message || 'TMDB requests failed');
+  if (!batches.length) return { items: [], note: 'TMDB could not match your watched or favorite titles.' };
+
+  const excluded = new Set(index.items.filter((item) => state.favs.has(item.id) || getProgress(item)).map((item) => item.id));
+  const items = combineRecommendations(batches, index, excluded);
+  const note = items.length
+    ? failures.length ? 'Some recommendations could not be loaded; showing the available matches.' : ''
+    : 'No new recommendations from your watched and favorite titles are in this provider’s catalog.';
+  return { items, note };
 }
 
 // Playlists without the Xtream API: categories are the groups of that kind.
@@ -441,6 +472,7 @@ const gallery = new GalleryView($('gallery'), {
   },
   movieInfo: (item) => (state.xlib ? state.xlib.movieInfo(item) : {}),
   moreLike,
+  forYou,
   ratings,
   parseTitle,
   play: (item, startAt) => play(item, { startAt }),
@@ -1528,7 +1560,9 @@ video.addEventListener('webkitcurrentplaybacktargetiswirelesschanged', () => {
   const wireless = !!video.webkitCurrentPlaybackTargetIsWireless;
   setAirPlay(wireless);
   const ch = state.current;
-  if (!wireless || !ch || player.lastEngine === 'native') return;
+  const activeSource = player.winner?.source?.hint || player.winner?.source?.src || '';
+  const airPlaySource = /\.(m3u8?|mp4|mov|m4v|webm|ogv)(\?|$)/i.test(activeSource) || activeSource.includes('m3u8');
+  if (!wireless || !ch || (player.lastEngine === 'native' && airPlaySource)) return;
   if (/\.(mkv|avi)(\?|$)/i.test(ch.url)) {
     toast('Apple TV can’t play this file format over AirPlay. Open it in Infuse on the Apple TV instead.', true);
     return;

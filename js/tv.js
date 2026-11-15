@@ -2,12 +2,13 @@
 // user agent; everywhere else this file does nothing. The phone UI's chrome (top bar, drawer,
 // guide, pop-out player) is hidden there and replaced by three things:
 //
-//   Player   the video, full screen, nothing on top. A small overlay appears on any key.
+//   Player   the video, full screen, nothing on top. Up opens playback controls.
 //   Home     one screen on the left, video still playing on the right: tabs Live | Movies | Shows |
-//            Phone; Live is a group row over a channel list with what's on now. No submenus.
+//            Settings; Live toggles between On Now and the provider's channel list.
 //   Setup    shown when no profile/playlist: a phone on the same Wi-Fi sends its profile (js/profiles.js).
 //
-// Remote:  Player: ▲▼ channel, OK or ◀ Home, ▶ info.  (Movies/shows: OK pause, ◀▶ skip, ▲▼ info.)
+// Remote:  Player: Up opens controls (then Guide on live TV), OK toggles playback, ◀▶ skip 10 s on VOD.
+//          On live TV, ◀ opens the guide and ▼ browses the playing channel's folder.
 //          Home: arrows move, OK plays, hold OK = favorite, Back returns to the picture.
 //          Back on the picture leaves the app.
 
@@ -60,9 +61,8 @@ function initTV() {
   let tab = 'live';            // 'live' | 'phone' | 'vod' (Movies and Shows)
   let group = '';              // '' = all, FAV = favorites, else a group name
   const FAV = '\u0000fav';
-  // 'channels' browses the provider's folders; 'now' groups by what is airing right now (Sports, Movies, News…)
-  // Remembered once you pick one (by choosing it, not by passing over its tab); until then On now is the default
-  // when the provider has a guide, and Channels when it has none.
+  // The Live tab toggles between provider channels and what's airing now (Sports, Movies, News…).
+  // Remembered once you pick a view; until then On Now is the default when the provider has a guide.
   let viewChosen = false;
   let view = (() => { try { const v = localStorage.getItem('tvView'); if (v === 'now' || v === 'channels') { viewChosen = true; return v; } } catch { /* fine */ } return 'now'; })();
   const autoView = () => { if (!viewChosen) view = T().guide.available() ? 'now' : 'channels'; };
@@ -123,9 +123,8 @@ function initTV() {
       g,
       ch: Object.create(ch, { _game: { value: g }, _real: { value: ch }, _gkey: { value: `${ch.id}|${g.key}` }, _sect: { value: '', writable: true } }),
     }));
-    scoreData.sort((a, b) => order[a.g.when] - order[b.g.when] || (a.g.when === 'final' ? b.g.start - a.g.start : a.g.start - b.g.start));
-    const LABEL = { live: 'Live now', later: 'Later today', final: 'Final', tomorrow: 'Tomorrow' };
-    scoreData.forEach((x, k) => { x.ch._sect = k === 0 || scoreData[k - 1].g.when !== x.g.when ? LABEL[x.g.when] : ''; });
+    scoreData.sort((a, b) => a.g.sport.localeCompare(b.g.sport) || order[a.g.when] - order[b.g.when] || (a.g.when === 'final' ? b.g.start - a.g.start : a.g.start - b.g.start));
+    scoreData.forEach((x, k) => { x.ch._sect = k === 0 || scoreData[k - 1].g.sport !== x.g.sport ? x.g.sport : ''; });
   }
   let scoreData = [], scoreSig = '', showTomorrow = false;
   const dayBtn = { _day: true, id: '__day', name: '' };
@@ -332,7 +331,7 @@ function initTV() {
   function renderTabs() {
     tabsEl.innerHTML = '';
     const defs = [];
-    if (liveAll().length) defs.push(['now', 'On now'], ['live', 'Channels']);
+    if (liveAll().length) defs.push(['live', 'Live']);
     if (T().hasKind('movie')) defs.push(['movie', 'Movies']);
     if (T().hasKind('series')) defs.push(['series', 'Shows']);
     defs.push(['phone', 'Settings']);
@@ -341,15 +340,19 @@ function initTV() {
     ver.onclick = () => location.reload();
     verEl = ver;
     paintVersion();
+    let liveTabFocusedFromElsewhere = false;
     for (const [k, label] of defs) {
       const b = el('button', 'tvh-tab', esc(label));
       b.dataset.tab = k;
       b.onclick = () => {
-        goTab(k); commitView(); focusFirstInBody();
+        goTab(k, k === 'live' && !liveTabFocusedFromElsewhere);
+        liveTabFocusedFromElsewhere = false;
+        commitView(); focusFirstInBody();
       };
       // Tabs switch as soon as they get focus, so ◀ ▶ browses without pressing OK. Movies and Shows wait a moment, so
       // passing over them does not fetch a category.
       b.onfocus = () => {
+        liveTabFocusedFromElsewhere = k === 'live' && tab !== 'live';
         clearTimeout(vodTabTimer);
         if (k === 'movie' || k === 'series') vodTabTimer = setTimeout(() => { if (document.activeElement === b) goTab(k); }, 350);
         else goTab(k);
@@ -362,7 +365,7 @@ function initTV() {
   const markTabs = () => {
     for (const b of tabsEl.querySelectorAll('.tvh-tab')) {
       const k = b.dataset.tab;
-      b.classList.toggle('on', k === 'movie' || k === 'series' ? tab === 'vod' && vodKind === k : k === 'phone' ? tab === 'phone' : k === 'live' ? tab === 'live' && view === 'channels' : k === 'now' ? tab === 'live' && view === 'now' : false);
+      b.classList.toggle('on', k === 'movie' || k === 'series' ? tab === 'vod' && vodKind === k : k === 'phone' ? tab === 'phone' : k === 'live' ? tab === 'live' : false);
     }
   };
   // Remember the view when you actually use it (OK, or ▼ into the list), not merely by passing over its tab.
@@ -371,8 +374,8 @@ function initTV() {
     viewChosen = true;
     try { localStorage.setItem('tvView', view); } catch { /* fine */ }
   }
-  // Switch what the body shows: 'live' (Channels), 'now' (On now) or 'phone'.
-  function goTab(k) {
+  // The selected Live tab toggles between the channel list and On Now when activated again.
+  function goTab(k, toggleLive = false) {
     if (k === 'movie' || k === 'series') {
       if (tab === 'vod' && vodKind === k) { markTabs(); return; }
       tab = 'vod'; vodKind = k; vodF.age = 0;
@@ -381,12 +384,21 @@ function initTV() {
       syncGuideMode();
       return;
     }
+    if (k === 'live' && tab === 'live') {
+      if (!toggleLive) { markTabs(); return; }
+      view = view === 'now' ? 'channels' : 'now';
+      genre = ''; group = '';
+      if (view === 'now') { ensureGuide(); computeNow(true); }
+      markTabs();
+      renderBody();
+      syncGuideMode();
+      return;
+    }
     const nextTab = k === 'phone' ? 'phone' : 'live';
-    const nextView = k === 'now' ? 'now' : 'channels';
-    if (nextTab === tab && (nextTab === 'phone' || nextView === view)) { markTabs(); return; }
+    if (nextTab === tab && nextTab === 'phone') { markTabs(); return; }
     tab = nextTab;
     if (tab === 'live') {
-      view = nextView; genre = ''; group = '';
+      genre = ''; group = '';
       if (view === 'now') { ensureGuide(); computeNow(true); }
     }
     markTabs();
@@ -434,6 +446,15 @@ function initTV() {
   let shown = 0, listCache = [];
   // Scoreboard tile: both teams with logo and score, the period or clock, and the channel it is on (small)
   function fillGame(b, ch, g) {
+    if (g.leaderboard) {
+      const channel = ch.net || ch.clean || cleanName(ch.name);
+      b.innerHTML = `<span class="g-state ${g.live ? 'live' : ''}"><b>${esc(g.title)}</b>
+        <small><span>${esc(g.period)}</span>${ch.logo ? `<img alt="" src="${esc(ch.logo)}" referrerpolicy="no-referrer">` : ''}<span>${esc(channel)}</span></small></span>
+        <span class="g-leaderboard">${(g.standings || []).map((p) => `<span class="g-leader"><b>${esc(p.position)}</b><span>${esc(p.name)}</span><strong>${esc(p.score)}</strong></span>`).join('')}</span>
+        <span class="star">★</span>`;
+      b.querySelector('.star').style.visibility = T().isFav(ch.id) ? 'visible' : 'hidden';
+      return;
+    }
     const side = (t, lead) => `<div class="tm${t.won || lead ? ' lead' : ''}">${t.logo ? `<img class="tl" alt="" src="${esc(t.logo)}" referrerpolicy="no-referrer">` : '<i class="tl"></i>'}<span class="tn">${t.rank ? `<em>${t.rank}</em>` : ''}${esc(t.name)}</span><b class="ts">${esc(String(t.score))}</b></div>`;
     const a = +g.away.score, h = +g.home.score, live = (g.live || g.when === 'final') && !isNaN(a) && !isNaN(h); // who is ahead (or won)
     b.innerHTML = `<span class="g-teams">${side(g.away, live && a > h)}${side(g.home, live && h > a)}</span>
@@ -664,7 +685,7 @@ function initTV() {
     cap.innerHTML = c ? `<b>${esc(c.clean || cleanName(c.name))}</b>${p ? `<div class="cap-now">${esc(p.title)} <small>until ${esc(fmtClock(p.stop))}</small></div><i class="prog on"><u style="width:${pct}%"></u></i>${p.desc && p.desc.length > 3 ? `<p class="cap-desc">${esc(p.desc)}</p>` : ''}${nn.next ? `<div class="cap-next"><b>Next</b> ${esc(nn.next.title)} <small>${esc(fmtClock(nn.next.start))}</small></div>` : ''}` : ''}<small class="dim">Back returns to the picture</small>` : '';
   }
   setInterval(() => { if (document.documentElement.classList.contains('guide-mode')) paintCap(); }, 2000); // guide data arrives late
-  // The picture window belongs to the live tabs (On now, Channels). Movies, Shows and Phone are the full-width menu.
+  // The picture window belongs to Live. Movies, Shows and Settings are the full-width menu.
   let guideSession = false, savedNav = null;
   function syncGuideMode() {
     const on = guideSession && tab === 'live';
@@ -1089,8 +1110,8 @@ function initTV() {
     }
   }, 1500);
 
-  // A small tag while the picture is paused with nothing else on screen (Back from the controls leaves it paused)
-  const pausedTag = el('div', 'tv-paused hidden', 'Paused · OK for controls');
+  // A small tag while the picture is paused with no other overlay.
+  const pausedTag = el('div', 'tv-paused hidden', 'Paused · OK to play · ▲ controls');
   document.body.append(pausedTag);
   setInterval(() => {
     const v = T()?.video, c = O()?.state.current;
@@ -1098,17 +1119,20 @@ function initTV() {
   }, 400);
 
   // ---------- Player controls ----------
-  // The centre button while watching: pause and show a bar with ⏪ ⏯ ⏩, Audio, Captions and (live) the guide.
-  // Audio and Captions open a short list; OK picks, Back goes up a level, and Back from the bar resumes.
-  let controlsMenu = '', pausedByUs = false, controlsTick = 0;
+  // Up opens the bar without interrupting playback. Audio and Captions open a short list; OK picks and Back goes up a level.
+  let controlsMenu = '', controlsTick = 0;
   let epsData = null, epsSeason = 0, epsFocusNow = false; // the episode chooser
   const seekRange = () => { const v = T().video; return v.seekable?.length ? [v.seekable.start(0), v.seekable.end(v.seekable.length - 1)] : null; };
+  function seekBy(seconds) {
+    const v = T().video;
+    const end = Number.isFinite(v.duration) && v.duration > 0 ? v.duration : Infinity;
+    v.currentTime = Math.max(0, Math.min(end, v.currentTime + seconds));
+    if (screen() === 'controls') paintControlsBar(); else showOsd();
+  }
   function openControls() {
-    const v = T().video, c = O().state.current;
+    const c = O().state.current;
     if (!c) { openHome(); return; }
     hideOsd();
-    pausedByUs = !v.paused;
-    if (pausedByUs) T().togglePlay();
     controlsMenu = '';
     controls.classList.remove('hidden');
     paintControls();
@@ -1116,13 +1140,11 @@ function initTV() {
     clearInterval(controlsTick);
     controlsTick = setInterval(paintControlsBar, 500);
   }
-  function closeControls(resume) {
+  function closeControls() {
     clearInterval(controlsTick);
     controls.classList.add('hidden');
     controlsMenu = '';
     document.activeElement?.blur?.();
-    const v = T().video;
-    if (resume && v.paused) T().togglePlay();
   }
   function paintControlsBar() {
     const v = T().video, c = O().state.current;
@@ -1205,7 +1227,7 @@ function initTV() {
       <div class="tvc-row">
         ${btn('back', 'back', '10 s', '', !canSeek)}
         ${btn('primary', v.paused ? 'play' : 'pause', v.paused ? 'Resume' : 'Pause')}
-        ${btn('fwd', 'fwd', '30 s', '', !canSeek)}
+        ${btn('fwd', 'fwd', '10 s', '', !canSeek)}
         ${btn('audio', 'audio', 'Audio', tr.audio.length ? on(tr.audio) || '' : 'one track', !tr.audio.length)}
         ${btn('cc', 'cc', 'Captions', tr.text.length ? on(tr.text) || 'Off' : 'none', !tr.text.length)}
         ${c.kind === 'episode' && c.seriesId ? btn('eps', 'eps', 'Episodes', `S${pad2(c.season)}E${pad2(c.episode)}`) : ''}
@@ -1213,9 +1235,9 @@ function initTV() {
         ${live ? btn('guide', 'guide', 'Guide') : ''}
       </div></div>`;
     const q = (s) => controls.querySelector(s);
-    q('[data-k="primary"]').onclick = () => { closeControls(false); if (T().video.paused) T().togglePlay(); };
+    q('[data-k="primary"]').onclick = () => { T().togglePlay(); paintControls(); controls.querySelector('[data-k="primary"]')?.focus(); };
     q('[data-k="back"]').onclick = () => { const x = T().video, rg = seekRange(); x.currentTime = Math.max(rg && live ? rg[0] : 0, x.currentTime - 10); paintControlsBar(); };
-    q('[data-k="fwd"]').onclick = () => { const x = T().video, rg = seekRange(); x.currentTime = Math.min(rg ? rg[1] : x.duration || x.currentTime + 30, x.currentTime + 30); paintControlsBar(); };
+    q('[data-k="fwd"]').onclick = () => { const x = T().video, rg = seekRange(); x.currentTime = Math.min(rg ? rg[1] : x.duration || x.currentTime + 10, x.currentTime + 10); paintControlsBar(); };
     q('[data-k="audio"]').onclick = () => { controlsMenu = 'audio'; paintControls(); controls.querySelector('.tvc-opt.on, .tvc-opt')?.focus(); };
     q('[data-k="cc"]').onclick = () => { controlsMenu = 'cc'; paintControls(); controls.querySelector('.tvc-opt.on, .tvc-opt')?.focus(); };
     q('[data-k="eps"]')?.addEventListener('click', () => {
@@ -1232,13 +1254,13 @@ function initTV() {
     for (const b of controls.querySelectorAll('.tvc-eps .tvd-ep')) {
       b.onclick = () => {
         const ep = epsData.list[+b.dataset.e], p = T().vod.progress(ep);
-        closeControls(false);
+        closeControls();
         T().vod.play(ep, p && p.t > 30 && p.t < p.d - 60 ? p.t : 0);
       };
     }
     if (controlsMenu === 'eps' && epsData && epsFocusNow) { epsFocusNow = false; const row = controls.querySelector('.tvc-eps .tvd-ep.now') || controls.querySelector('.tvc-eps .tvd-ep'); row?.focus(); row?.scrollIntoView({ block: 'center' }); }
     q('[data-k="info"]').onclick = () => { controlsMenu = 'info'; paintControls(); controls.querySelector('.tvc-opt')?.focus(); };
-    q('[data-k="guide"]')?.addEventListener('click', () => { closeControls(false); openHome(); });
+    q('[data-k="guide"]')?.addEventListener('click', () => { closeControls(); openHome(); });
     for (const b of controls.querySelectorAll('.tvc-opt')) {
       b.onclick = () => {
         const key = b.dataset.k.slice(2);
@@ -1538,7 +1560,7 @@ function initTV() {
       synthetic = false;
       return true;
     }
-    if (s === 'controls') { if (controlsMenu) { controlsMenu = ''; paintControls(); controls.querySelector('[data-k="primary"]')?.focus(); } else closeControls(false); return true; } // Back closes the bar; a paused picture stays paused
+    if (s === 'controls') { if (controlsMenu) { controlsMenu = ''; paintControls(); controls.querySelector('[data-k="primary"]')?.focus(); } else closeControls(); return true; } // Back closes the bar without changing playback
     if (s === 'detail') { closeDetail(true); return true; }
     if (s === 'home') {
       // With a picture behind it, Back returns to the picture (no channel banner). With nothing playing there is
@@ -1564,6 +1586,12 @@ function initTV() {
     if (s !== 'player') {
       const root = s === 'setup' ? setup : s === 'gallery' ? $('gallery') : s === 'detail' ? detail : s === 'settings' ? $('panel') : s === 'controls' ? controls : home;
       if (typing && (!DIR[e.key] || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return; // let the keyboard type
+      if (s === 'controls' && e.key === 'ArrowUp' && !isVod() && !controlsMenu) {
+        e.preventDefault(); e.stopImmediatePropagation();
+        closeControls();
+        openHome();
+        return;
+      }
       if (s === 'home' && DIR[e.key] && homeNav(e.key)) { e.preventDefault(); e.stopImmediatePropagation(); return; }
       if (DIR[e.key]) { e.preventDefault(); e.stopImmediatePropagation(); move(root, ...DIR[e.key]); return; }
       if (e.key === 'Enter' && !typing) {
@@ -1584,12 +1612,11 @@ function initTV() {
     }
     // The picture.
     const vod = isVod();
-    const v = T()?.video;
     switch (e.key) {
-      // ▲▼ scroll the channel list without changing the picture; OK tunes. The channel buttons still zap.
+      // ▲ opens the controls; ▼ browses the playing channel's list. Channel buttons still zap directly.
       case 'ArrowUp':
         e.preventDefault(); e.stopImmediatePropagation();
-        if (vod) showOsd(); else openHome({ browse: -1 });
+        openControls();
         break;
       case 'ArrowDown':
         e.preventDefault(); e.stopImmediatePropagation();
@@ -1605,16 +1632,16 @@ function initTV() {
         break;
       case 'ArrowLeft':
         e.preventDefault(); e.stopImmediatePropagation();
-        if (vod) { v.currentTime = Math.max(0, v.currentTime - 10); showOsd(); } else openHome();
+        if (vod) seekBy(-10); else openHome();
         break;
       case 'ArrowRight':
         e.preventDefault(); e.stopImmediatePropagation();
-        if (vod) { v.currentTime += 30; showOsd(); } else showOsd();
+        if (vod) seekBy(10); else showOsd();
         break;
       case 'Enter':
         e.preventDefault(); e.stopImmediatePropagation();
         if (e.repeat) break;
-        if (!nativeAppleControls) openControls(); // Apple’s native media controls handle playback on iOS
+        if (!nativeAppleControls) { T().togglePlay(); showOsd(); } // Apple’s native media controls handle playback on iOS
         break;
       default:
         if (e.key.length === 1 && e.key !== ' ') e.stopImmediatePropagation(); // the phone UI's letter shortcuts open hidden panels
@@ -1652,13 +1679,13 @@ function initTV() {
   window.tunerTV = {
     key(action) {
       const v = T().video, c = O().state.current;
-      if (action === 'playpause') { T().togglePlay(); showOsd(); }
-      else if (action === 'play') { if (v.paused) T().togglePlay(); showOsd(); }
-      else if (action === 'pause') { if (!v.paused) T().togglePlay(); showOsd(); }
+      if (action === 'playpause') { T().togglePlay(); if (screen() === 'controls') paintControls(); else showOsd(); }
+      else if (action === 'play') { if (v.paused) T().togglePlay(); if (screen() === 'controls') paintControls(); else showOsd(); }
+      else if (action === 'pause') { if (!v.paused) T().togglePlay(); if (screen() === 'controls') paintControls(); else showOsd(); }
       else if (action === 'next') { if (c && kindOf(c) === 'live') surf(1); else showOsd(); }
       else if (action === 'prev') { if (c && kindOf(c) === 'live') surf(-1); else showOsd(); }
-      else if (action === 'ff') { v.currentTime += 30; showOsd(); }
-      else if (action === 'rw') { v.currentTime -= 10; showOsd(); }
+      else if (action === 'ff') seekBy(10);
+      else if (action === 'rw') seekBy(-10);
     },
     // Called by the activity on Back. True if the page used it; false means leave the app.
     back: () => goBack(),
@@ -1710,7 +1737,7 @@ function initTV() {
     });
     // Visible Back / Close, since there is no Back key
     const mkBtn = (cls, label, fn) => { const b = el('button', `web-btn ${cls}`, label); b.onclick = fn; document.body.append(b); return b; };
-    mkBtn('web-menu', '☰ Menu', () => { if (screen() === 'controls') closeControls(false); if (screen() === 'player') openHome({ menu: true }); });
+    mkBtn('web-menu', '☰ Menu', () => { if (screen() === 'controls') closeControls(); if (screen() === 'player') openHome({ menu: true }); });
     mkBtn('web-back', '‹ Back', () => goBack());
     $('panelToggle').addEventListener('click', () => html.classList.remove('settings-open'));
     const x = el('button', 'tvh-x', '✕ Picture'); x.onclick = () => goBack(); tabsEl.append(x);

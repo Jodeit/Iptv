@@ -603,6 +603,8 @@ body.mini-on #video {
 .pv-continue { display: flex; align-items: center; gap: 10px; margin: 6px 0 12px; }
 .gcontinue { margin-bottom: 18px; }
 .gcontinue h3 { margin: 0 0 10px; font-size: 15px; }
+.gfor-you { margin-bottom: 18px; }
+.gfor-you h3 { margin: 0 0 10px; font-size: 15px; }
 .mini-grip {
   position: fixed; z-index: 42; width: 18px; height: 18px; cursor: nesw-resize; touch-action: none;
   right: calc(var(--mini-r) + var(--mini-w) - 18px); bottom: var(--mini-b);
@@ -909,7 +911,7 @@ html.tv-picture .tvh-tabs, html.tv-picture .tvh-chips, html.tv-picture .tvh-body
 .tvs-ver { margin-top: 12px; font-size: 13px; }
 html.setup-open .toast, html.detail-open .toast { display: none !important; }
 
-/* ---------- TV: Channels | On now ---------- */
+/* ---------- TV: Live view ---------- */
 .tvh-modes { display: flex; gap: 6px; margin-bottom: 6px; }
 .tvh-chip.mode { flex: 1; justify-content: center; text-align: center; font-weight: 600; padding: 7px 8px; background: rgba(60,50,30,.07); }
 .tvh-chip.mode.on { background: var(--blue); color: #fff; }
@@ -923,7 +925,7 @@ html.setup-open .toast, html.detail-open .toast { display: none !important; }
 .swatch.on { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 #tvWall { width: 64px; height: 44px; padding: 2px; background: none; border: 1px solid var(--line); border-radius: 10px; }
 
-/* ---------- TV: tabs fit five items ---------- */
+/* ---------- TV: tabs fit four items ---------- */
 .tvh-tab { padding: 7px 16px; font-size: 17px; }
 
 /* ---------- TV setup: steps beside a styled QR ---------- */
@@ -981,6 +983,11 @@ html.tv .tvh-row.game img.tl, html.tv .tvh-row.game i.tl { width: 36px; height: 
 .tvh-body.grid .tvh-row.game .tn { font-size: 20px; }
 .tvh-body.grid .tvh-row.game .ts { font-size: 24px; min-width: 40px; }
 .tvh-body.grid .tvh-row.game .tm { gap: 10px; }
+.tvh-body.grid .tvh-row.game .g-leaderboard { display: grid; gap: 4px; width: 100%; }
+.tvh-body.grid .tvh-row.game .g-leader { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; align-items: center; gap: 8px; font-size: 15px; }
+.tvh-body.grid .tvh-row.game .g-leader > b { color: #8a6a3a; }
+.tvh-body.grid .tvh-row.game .g-leader > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tvh-body.grid .tvh-row.game .g-leader > strong { font-variant-numeric: tabular-nums; }
 .tvh-body.grid .tvh-row.game img.tl, .tvh-body.grid .tvh-row.game i.tl { width: 32px; height: 32px; }
 .tvh-body.grid .tvh-row.game .g-state > b { flex: none; }
 

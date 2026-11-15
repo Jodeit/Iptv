@@ -5,6 +5,7 @@
 
 const LEAGUES = [
   [/women'?s college basketball|wncaa/i, 'basketball/womens-college-basketball'],
+  [/lpga|women'?s golf/i, 'golf/lpga'],
   [/college basketball|ncaa.*basketball|ncaab|march madness/i, 'basketball/mens-college-basketball'],
   [/college football|ncaa football|ncaaf/i, 'football/college-football'],
   [/\bnfl\b|monday night football|sunday night football|thursday night football|pro football/i, 'football/nfl'],
@@ -20,7 +21,9 @@ const LEAGUES = [
   [/champions league/i, 'soccer/uefa.champions'],
   [/europa league/i, 'soccer/uefa.europa'],
   [/nations league/i, 'soccer/uefa.nations'],
+  [/\bgolf\b|\bpga\b|masters|u\.s\. open|the open championship/i, 'golf/pga'],
 ];
+const SPORT_NAMES = { baseball: 'Baseball', basketball: 'Basketball', football: 'Football', golf: 'Golf', hockey: 'Hockey', soccer: 'Soccer' };
 const BASE = 'https://site.api.espn.com/apis/site/v2/sports/';
 const FRESH = 60_000, RETRY = 5 * 60_000;
 const boards = new Map(); // league -> { at, ok, events }
@@ -32,21 +35,54 @@ export const leagueOf = (p) => {
   for (const [re, path] of LEAGUES) if (re.test(text)) return path;
   return '';
 };
+export const sportOf = (league) => {
+  const key = String(league || '').split(/[\/#]/, 1)[0].toLowerCase();
+  return SPORT_NAMES[key] || (key ? `${key[0].toUpperCase()}${key.slice(1)}` : 'Other');
+};
 // Channel names and ESPN's network names for the same channel, brought to one spelling
-const ALIAS = { espn1: 'espn', foxsports1: 'fs1', foxsports2: 'fs2', bigtennetwork: 'btn', accnetwork: 'accn', cbssportsnetwork: 'cbssn', espnnews: 'espnews', secnetworkplus: 'secnetwork' };
+const ALIAS = { espn1: 'espn', foxsports1: 'fs1', foxsports2: 'fs2', bigtennetwork: 'btn', accnetwork: 'accn', cbssportsnetwork: 'cbssn', espnnews: 'espnews', secnetworkplus: 'secnetwork', golfchnl: 'golfchannel' };
 const net = (s) => { const k = String(s || '').toLowerCase().replace(/\+/g, 'plus').replace(/\b(hd|us|usa|fhd|4k)\b/g, '').replace(/[^a-z0-9]/g, ''); return ALIAS[k] || k; };
 
 const ord = (n) => ['', '1st', '2nd', '3rd', '4th'][n] || `${n}th`;
-function normalize(ev) {
+export function normalize(ev, league = '') {
   const c = ev.competitions?.[0];
   if (!c) return null;
   const team = (t) => t?.team?.shortDisplayName || t?.team?.displayName || t?.team?.name || '';
-  const away = c.competitors?.find((t) => t.homeAway === 'away'), home = c.competitors?.find((t) => t.homeAway === 'home');
-  if (!away || !home) return null;
-  const st = ev.status?.type || {};
   const nets = new Set();
   for (const b of c.broadcasts || []) for (const n of b.names || []) nets.add(net(n));
   for (const g of c.geoBroadcasts || []) if (g.media?.shortName) nets.add(net(g.media.shortName));
+  const st = ev.status?.type || {};
+  if (sportOf(league) === 'Golf') {
+    const competitors = c.competitors?.filter((p) => p.athlete) || [];
+    if (!competitors.length) return null;
+    const counts = new Map(), ranks = new Map();
+    competitors.forEach((p, i) => {
+      const score = String(p.score ?? '');
+      if (!score) return;
+      counts.set(score, (counts.get(score) || 0) + 1);
+      ranks.set(score, Math.min(ranks.get(score) || Infinity, +p.order || i + 1));
+    });
+    const standings = competitors.slice(0, 5).map((p, i) => {
+      const score = String(p.score ?? 'E');
+      const rank = +p.order || i + 1;
+      return {
+        position: counts.get(score) > 1 ? `T${ranks.get(score)}` : String(rank),
+        name: p.athlete.shortName || p.athlete.displayName || p.athlete.fullName || 'Unknown',
+        score,
+      };
+    });
+    const state = st.state || c.status?.type?.state || 'pre';
+    const detail = state === 'post' ? 'Final'
+      : c.status?.type?.shortDetail || c.status?.type?.description || st.shortDetail || st.description
+        || (state === 'in' ? 'In progress' : 'Upcoming');
+    return {
+      title: ev.name || ev.shortName || 'Golf leaderboard',
+      state, start: Date.parse(ev.date || c.date) || 0, nets, detail,
+      leaderboard: true, standings,
+    };
+  }
+  const away = c.competitors?.find((t) => t.homeAway === 'away'), home = c.competitors?.find((t) => t.homeAway === 'home');
+  if (!away || !home) return null;
   const live = st.state === 'in';
   // "13:52 - 3rd" -> "3rd 13:52"; "Halftime", "Top 5th", "67'" stay as they are
   const period = (() => {
@@ -88,7 +124,7 @@ export function want(league) {
   if (b && Date.now() - b.at < (b.ok ? FRESH : RETRY)) return;
   if (pending.has(league)) return;
   const job = get(`${BASE}${league}/scoreboard`)
-    .then((d) => boards.set(league, { at: Date.now(), ok: true, events: (d.events || []).map(normalize).filter(Boolean) }))
+    .then((d) => boards.set(league, { at: Date.now(), ok: true, events: (d.events || []).map((ev) => normalize(ev, league)).filter(Boolean) }))
     .catch(() => boards.set(league, { at: Date.now(), ok: false, events: [] }))
     .finally(() => { pending.delete(league); index = null; for (const f of listeners) f(); });
   pending.set(league, job);
@@ -103,13 +139,13 @@ function games() {
   if (index) return index;
   index = new Map();
   const cut = cutoff(), seen = new Set();
-  for (const b of boards.values()) for (const e of b.events || []) {
+  for (const [league, b] of boards) for (const e of b.events || []) {
     const key = `${e.title}|${e.start}`;
     if (seen.has(key)) continue;
     seen.add(key);
     const when = e.state === 'in' ? 'live' : e.state === 'post' ? 'final' : e.start < cut ? 'later' : e.start < cut + 864e5 ? 'tomorrow' : '';
     if (!when) continue;
-    const g = { ...e, when };
+    const g = { ...e, when, sport: sportOf(league) };
     for (const n of e.nets) { if (!index.has(n)) index.set(n, []); index.get(n).push(g); }
   }
   const order = { live: 0, later: 1, final: 2, tomorrow: 3 };
@@ -124,7 +160,7 @@ export function wantTomorrow() {
     const key = `${l}#${day}`, b = boards.get(key);
     if ((b && Date.now() - b.at < (b.ok ? FRESH * 5 : RETRY)) || pending.has(key)) continue;
     const job = get(`${BASE}${l}/scoreboard?dates=${day}`)
-      .then((d) => boards.set(key, { at: Date.now(), ok: true, events: (d.events || []).map(normalize).filter(Boolean) }))
+      .then((d) => boards.set(key, { at: Date.now(), ok: true, events: (d.events || []).map((ev) => normalize(ev, key)).filter(Boolean) }))
       .catch(() => boards.set(key, { at: Date.now(), ok: false, events: [] }))
       .finally(() => { pending.delete(key); index = null; for (const f of listeners) f(); });
     pending.set(key, job);
@@ -143,10 +179,10 @@ export function gamesFor(ch) {
   const list = games().get(chKey(ch)) || [];
   return list.map((e) => ({
     key: `${e.title}|${e.start}`,
-    title: e.title, when: e.when,
+    title: e.title, when: e.when, sport: e.sport, leaderboard: e.leaderboard, standings: e.standings,
     live: e.when === 'live', start: e.start, away: e.away, home: e.home, odds: e.odds,
-    period: e.when === 'live' ? e.detail : e.when === 'final' ? e.detail || 'Final' : `Starts ${dayClock(e.start)}`,
-    status: e.when === 'live' ? [e.detail, e.score].filter(Boolean).join(' · ') : e.when === 'final' ? [e.detail || 'Final', e.score].filter(Boolean).join(' · ') : `starts ${dayClock(e.start)}`,
+    period: e.leaderboard ? e.detail : e.when === 'live' ? e.detail : e.when === 'final' ? e.detail || 'Final' : `Starts ${dayClock(e.start)}`,
+    status: e.leaderboard ? `${e.detail}|${e.standings.map((p) => `${p.position}:${p.score}`).join(',')}` : e.when === 'live' ? [e.detail, e.score].filter(Boolean).join(' · ') : e.when === 'final' ? [e.detail || 'Final', e.score].filter(Boolean).join(' · ') : `starts ${dayClock(e.start)}`,
   }));
 }
 export const onChange = (f) => { listeners.add(f); };

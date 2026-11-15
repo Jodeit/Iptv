@@ -124,13 +124,13 @@ export function indexCatalog(items) {
     if (!byTitle.has(k)) byTitle.set(k, []);
     byTitle.get(k).push({ it, year: it.year || year });
   }
-  return { byTmdb, byTitle, size: items.length };
+  return { byTmdb, byTitle, items, size: items.length };
 }
 
 // Recommendations the provider has, in TMDB's order.
 export function matchCatalog(recs, index, exclude) {
   const out = [];
-  const used = new Set([exclude]);
+  const used = new Set(exclude instanceof Set ? exclude : [exclude]);
   for (const r of recs) {
     let hit = index.byTmdb.get(r.id);
     if (!hit) {
@@ -149,4 +149,19 @@ export function matchCatalog(recs, index, exclude) {
     }
   }
   return out;
+}
+
+// Combine several ranked lists, giving titles recommended by multiple seeds a boost.
+export function combineRecommendations(batches, index, exclude = new Set(), limit = 12) {
+  const scores = new Map();
+  for (const { recs, weight = 1 } of batches) {
+    for (const [rank, item] of matchCatalog(recs, index, exclude).entries()) {
+      const score = (scores.get(item.id)?.score || 0) + weight / (rank + 1);
+      scores.set(item.id, { item, score, first: scores.get(item.id)?.first ?? scores.size });
+    }
+  }
+  return [...scores.values()]
+    .sort((a, b) => b.score - a.score || a.first - b.first)
+    .slice(0, limit)
+    .map(({ item }) => item);
 }
