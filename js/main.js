@@ -329,7 +329,12 @@ let metaBatch = {}, metaTimer = 0;
 let localMeta = {};
 const localMetaReady = cacheGet('tmdb-meta-local').then((v) => { localMeta = v?.map || {}; }).catch(() => {});
 let localMetaTimer = 0;
-const saveLocalMeta = () => { clearTimeout(localMetaTimer); localMetaTimer = setTimeout(() => cachePut('tmdb-meta-local', { map: localMeta }).catch(() => {}), 4000); };
+// Saved at most every few seconds while lookups run (not only once they stop: a TV app can be closed at any moment), and
+// again whenever the page is hidden or closed
+const flushLocalMeta = () => { clearTimeout(localMetaTimer); localMetaTimer = 0; cachePut('tmdb-meta-local', { map: localMeta }).catch(() => {}); };
+const saveLocalMeta = () => { if (!localMetaTimer) localMetaTimer = setTimeout(flushLocalMeta, 3000); };
+addEventListener('pagehide', () => { if (localMetaTimer) flushLocalMeta(); });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden' && localMetaTimer) flushLocalMeta(); });
 const metaFresh = (rec) => !!rec && Date.now() - rec[2] < (rec[0] ? META_TTL : 7 * 86400000);
 const metaRecord = (item) => { const k = metaKey(item); const r = [profiles.doc.tmdbMeta?.[k], metaBatch[k], localMeta[k]].find(metaFresh); return r; };
 async function tmdbMeta(item) {
@@ -343,12 +348,12 @@ async function tmdbMeta(item) {
   metaBatch[key] = rec;
   localMeta[key] = rec;
   saveLocalMeta();
-  clearTimeout(metaTimer);
-  metaTimer = setTimeout(() => {
+  if (!metaTimer) metaTimer = setTimeout(() => { // not reset by each new result, so a long run still saves as it goes
+    metaTimer = 0;
     const batch = metaBatch;
     metaBatch = {};
     profiles.update((d) => { d.tmdbMeta = capMeta({ ...d.tmdbMeta, ...batch }); });
-  }, 3000);
+  }, 8000);
   return meta;
 }
 

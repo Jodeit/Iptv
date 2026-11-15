@@ -867,12 +867,12 @@ function initTV() {
     return imdb > 0 ? imdb : r?.rt != null ? r.rt / 10 : +i.rating || 0;
   };
   let vodSeen = 0; // how many of the index's titles the grid has taken into account
-  function vodPass(i) {
+  function vodPass(i, skipAge = false) {
     const f = vodF, tag = vodTag[vodKind];
     if (tag && !(vodTags.get(i.id) || vodTags.get(vodAlias.get(i.id)))?.has(tag)) return false;
     if (f.rating && vodScore(i) < f.rating) return false;
     if (f.year) { if (!i.year) return false; if (f.year === 'old' ? i.year >= 1990 : i.year < +f.year || i.year >= +f.year + 10) return false; }
-    if (f.age) { const lvl = ageLevel(i); if (!lvl || lvl > f.age) return false; } // unknown counts as too old
+    if (f.age && !skipAge) { const lvl = ageLevel(i); if (!lvl || lvl > f.age) return false; } // unknown counts as too old
     return true;
   }
   const ageLevel = (i) => AGE[vodMeta.get(i.id)?.cert || T().vod.peek(i)?.rated] || 0;
@@ -884,7 +884,11 @@ function initTV() {
     for (const i of vodItems) if (!vodMeta.has(i.id)) { const hit = T().vod.metaPeek?.(i); if (hit) vodMeta.set(i.id, hit); }
     vodRefresh();
     // Only the rest is looked up
-    const list = vodItems.filter((i) => !vodMeta.has(i.id)).slice(0, 4000), total = list.length;
+    // The titles the grid would show first (current sort, other filters applied) are checked first, so the first
+    // screens fill in within seconds and the rest follow in the background
+    const todo = vodItems.filter((i) => !vodMeta.has(i.id));
+    const first = todo.filter((i) => vodPass(i, true)).sort(vodSortBy()), firstSet = new Set(first);
+    const list = [...first, ...todo.filter((i) => !firstSet.has(i))].slice(0, 4000), total = list.length;
     if (!total || ageRun !== run) return;
     let next = 0, done = 0, last = performance.now();
     const status = () => { const s = chipsEl.querySelector('.vod-age'); if (s) s.textContent = done < total ? `Checking age ratings · ${done.toLocaleString()} of ${total.toLocaleString()}` : ''; };
@@ -908,20 +912,22 @@ function initTV() {
     const add = vodItems.filter((i) => !have.has(i.id) && vodPass(i));
     if (add.length) { const wasAll = shown >= listCache.length; listCache.push(...add); if (wasAll) addRows(); }
   }
-  function vodList() {
-    const f = vodF;
-    const out = vodItems.filter(vodPass);
-    const by = {
+  function vodSortBy() {
+    return {
       added: (a, b) => (b.added || 0) - (a.added || 0),
       rt: (a, b) => (T().vod.peek(b)?.rt ?? -1) - (T().vod.peek(a)?.rt ?? -1),
       rating: (a, b) => (b.rating || 0) - (a.rating || 0),
       year: (a, b) => (b.year || 0) - (a.year || 0),
       title: (a, b) => cleanName(a.name).localeCompare(cleanName(b.name)),
-    }[f.sort];
-    out.sort(by);
+    }[vodF.sort];
+  }
+  function vodList() {
+    const f = vodF;
+    const out = vodItems.filter((x) => vodPass(x));
+    out.sort(vodSortBy());
     // Things you are part-way through come first (unless a category is picked)
     if (!vodTag[vodKind]) {
-      const cont = T().vod.continueList(vodKind).filter(vodPass);
+      const cont = T().vod.continueList(vodKind).filter((x) => vodPass(x));
       const ids = new Set(cont.map((x) => x.id));
       return vodDedupe([...cont, ...out.filter((x) => !ids.has(x.id))]);
     }
