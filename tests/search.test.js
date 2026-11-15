@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeSearchText, searchCatalog } from '../js/search.js';
+import { createSearchIndex, normalizeSearchText, searchCatalog } from '../js/search.js';
 
 test('normalizes accents and punctuation for voice-friendly matching', () => {
   assert.equal(normalizeSearchText('  Amélie: À Paris! '), 'amelie a paris');
@@ -30,4 +30,20 @@ test('matches multiword searches across title and catalog metadata', () => {
     searchCatalog(items, 'expanse science', { fieldsOf: (item) => [item.genre] }).map(({ item }) => item),
     [items[0]],
   );
+});
+
+test('reuses normalized catalog fields while keeping dynamic fields current', () => {
+  const item = { name: 'Channel One', group: 'News' };
+  let now = 'Morning News';
+  let fieldReads = 0;
+  const index = createSearchIndex([item], {
+    fieldsOf: (entry) => { fieldReads++; return [entry.group]; },
+    dynamicFieldsOf: () => [now],
+  });
+
+  assert.deepEqual(index.search('morning').map(({ item: found }) => found), [item]);
+  now = 'Evening News';
+  assert.deepEqual(index.search('morning'), []);
+  assert.deepEqual(index.search('evening').map(({ item: found }) => found), [item]);
+  assert.equal(fieldReads, 1);
 });

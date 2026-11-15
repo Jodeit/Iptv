@@ -17,7 +17,7 @@ import { genreOf, GENRES } from './genre.js';
 import * as sports from './sports.js';
 import { VERSION } from './version.js';
 import { logEvent } from './telemetry.js';
-import { searchCatalog } from './search.js';
+import { createSearchIndex, normalizeSearchText } from './search.js';
 import { TV_WALLS, TV_WALL_DEFAULT, hexToHsl, hslToHex } from './tv-wall.js';
 
 if (/TunerTV/.test(navigator.userAgent) || window.__tunerWeb) initTV();
@@ -65,7 +65,10 @@ function initTV() {
   const FAV = '\u0000fav';
   let searchQuery = '', searchSubmitted = false, searchPending = [], searchErrors = [], searchProgress = '';
   let searchResults = [], searchRestoreI = null, searchRun = 0, searchCatalogSig = '';
-  let searchPools = new Map(), searchLoads = new Map(), searchRowsEl = null;
+  let searchPools = new Map(), searchLoads = new Map(), searchRowsEl = null, searchInputTimer = 0;
+  const emptySearchPool = [];
+  let searchIndex = null, searchIndexSignature = '', searchIndexMoviePool = null, searchIndexSeriesPool = null;
+  let searchIndexMovieCategories = '', searchIndexSeriesCategories = '';
   const searchSignature = () => String(T().searchRevision?.() ?? T().source()?.url ?? '');
   function resetSearchCatalogs() {
     const sig = searchSignature();
@@ -73,6 +76,7 @@ function initTV() {
     searchCatalogSig = sig;
     searchPools = new Map();
     searchLoads = new Map();
+    searchIndex = null;
   }
   function searchPool(kind, onProgress) {
     resetSearchCatalogs();
@@ -88,19 +92,50 @@ function initTV() {
     return request;
   }
   function matchingSearchResults(query) {
-    const items = [...liveAll(), ...(searchPools.get('movie') || []), ...(searchPools.get('series') || [])];
-    return searchCatalog(items, query, {
-      titleOf: (item) => kindOf(item) === 'live' ? (item.clean || cleanName(item.name)) : (T().vod.title(item).title || item.name),
-      fieldsOf: (item) => {
-        const fields = [item.name, item.group, item.genre, item.cast, item.director, item.year];
-        if (kindOf(item) === 'live') {
+    if (!normalizeSearchText(query)) return [];
+    const moviePool = searchPools.get('movie') || emptySearchPool;
+    const seriesPool = searchPools.get('series') || emptySearchPool;
+    const movieSelection = vodCategorySelection('movie');
+    const seriesSelection = vodCategorySelection('series');
+    const movieCategorySignature = movieSelection.categories.map(({ c }) => String(c.id)).join('\u0000');
+    const seriesCategorySignature = seriesSelection.categories.map(({ c }) => String(c.id)).join('\u0000');
+    let indexBuildMs = 0;
+    if (!searchIndex || searchIndexSignature !== searchCatalogSig || searchIndexMoviePool !== moviePool || searchIndexSeriesPool !== seriesPool ||
+      searchIndexMovieCategories !== movieCategorySignature || searchIndexSeriesCategories !== seriesCategorySignature) {
+      const started = performance.now();
+      const movieCategoryIds = new Set(movieSelection.categories.map(({ c }) => String(c.id)));
+      const seriesCategoryIds = new Set(seriesSelection.categories.map(({ c }) => String(c.id)));
+      const visibleMovies = moviePool.filter((item) => movieCategoryIds.has(String(item.catId ?? item.group)));
+      const visibleSeries = seriesPool.filter((item) => seriesCategoryIds.has(String(item.catId ?? item.group)));
+      searchIndex = createSearchIndex([...liveAll(), ...visibleMovies, ...visibleSeries], {
+        titleOf: (item) => kindOf(item) === 'live' ? (item.clean || cleanName(item.name)) : (T().vod.title(item).title || item.name),
+        fieldsOf: (item) => [item.name, item.group, item.genre, item.cast, item.director, item.year],
+        dynamicFieldsOf: (item) => {
+          if (kindOf(item) !== 'live') return [];
           const nn = T().guide.peek(item);
-          if (nn?.now?.title) fields.push(nn.now.title);
-          if (nn?.next?.title) fields.push(nn.next.title);
-        }
-        return fields;
-      },
-    }).map(({ item }) => item);
+          return [nn?.now?.title, nn?.next?.title];
+        },
+      });
+      indexBuildMs = Math.round(performance.now() - started);
+      searchIndexSignature = searchCatalogSig;
+      searchIndexMoviePool = moviePool;
+      searchIndexSeriesPool = seriesPool;
+      searchIndexMovieCategories = movieCategorySignature;
+      searchIndexSeriesCategories = seriesCategorySignature;
+    }
+    const started = performance.now();
+    searchResults = searchIndex.search(query).map(({ item }) => item);
+    const durationMs = Math.round(performance.now() - started);
+    if (durationMs + indexBuildMs >= 150) {
+      logEvent('perf', 'TV search filter', {
+        durationMs,
+        indexBuildMs,
+        catalogSize: searchIndex.size,
+        resultCount: searchResults.length,
+        queryLength: String(query).length,
+      }, { dedupe: false });
+    }
+    return searchResults;
   }
   // The Live tab toggles between provider channels and what's airing now (Sports, Movies, News…).
   // Remembered once you pick a view; until then On Now is the default when the provider has a guide.
@@ -644,6 +679,7 @@ function initTV() {
 
   function drawSearchResults() {
     const status = bodyEl.querySelector('.tvh-search-status');
+    if (!status) return;
     const query = bodyEl.querySelector('.tvh-search-input')?.value.trim() || searchQuery;
     searchResults = matchingSearchResults(query);
     listCache = searchResults;
@@ -669,6 +705,7 @@ function initTV() {
   }
 
   async function submitSearch() {
+    clearTimeout(searchInputTimer);
     const input = bodyEl.querySelector('.tvh-search-input');
     searchQuery = input?.value.trim() || '';
     if (input) input.value = searchQuery;
@@ -730,13 +767,15 @@ function initTV() {
     input.addEventListener('input', () => {
       searchQuery = input.value;
       searchSubmitted = false;
-      drawSearchResults();
+      clearTimeout(searchInputTimer);
+      searchInputTimer = setTimeout(drawSearchResults, 120);
     });
     resetSearchCatalogs();
     drawSearchResults();
   }
 
   function renderBody(withChips = true) {
+    clearTimeout(searchInputTimer);
     if (withChips) renderChips();
     searchRowsEl = null;
     bodyEl.innerHTML = '';
@@ -1074,6 +1113,13 @@ function initTV() {
     }
     return '';
   }
+  function vodCategorySelection(kind) {
+    const pats = String(T().vod.primary?.() || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const all = T().vod.categories(kind) || [];
+    let categories = pats.length ? all.map((c) => ({ c, m: primaryMatch(c.name, pats) })).filter((x) => x.m) : [];
+    if (!categories.length) categories = all.slice(0, 60).map((c) => ({ c, m: '' }));
+    return { pats, categories };
+  }
   // "VOD | EN Action" matched by "VOD | EN*" → "Action"
   function folderLabel(name, matched) {
     const words = String(name).split(/[\s|:\-–_]+/).filter(Boolean);
@@ -1087,14 +1133,11 @@ function initTV() {
   // Starts loading (or returns the load already under way). Titles land in idx.items as each folder arrives, and
   // idx.onBatch is called so the grid can show them straight away.
   function loadVodIndex(kind) {
-    const pats = String(T().vod.primary?.() || '').split(',').map((s) => s.trim()).filter(Boolean);
+    const { pats, categories: chosen } = vodCategorySelection(kind);
     const sig = `${libSig()}|${pats.join(',')}`;
     let idx = vodIndex[kind];
     if (idx && idx.sig === sig) return idx;
     idx = vodIndex[kind] = { sig, items: [], tags: new Map(), alias: new Map(), byKey: new Map(), done: 0, total: 0, state: 'loading', onBatch: null };
-    const all = T().vod.categories(kind) || [];
-    let chosen = pats.length ? all.map((c) => ({ c, m: primaryMatch(c.name, pats) })).filter((x) => x.m) : [];
-    if (!chosen.length) chosen = all.slice(0, 60).map((c) => ({ c, m: '' })); // nothing matched: use the folders there are
     // Small curated folders (IMDB Top 500…) first, so there is something to look at quickly
     const withLabel = chosen.map((x) => ({ ...x, label: folderLabel(x.c.name, x.m) }));
     withLabel.sort((a, b) => isCollection(b.label) - isCollection(a.label));

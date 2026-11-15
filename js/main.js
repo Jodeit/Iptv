@@ -442,15 +442,29 @@ async function allOfKind(kind, onProgress) {
   if (!state.xlib) return state.library.filter((c) => kindOf(c) === kind);
   const lib = state.xlib;
   const before = state.status;
+  const started = performance.now();
   let items;
+  let itemCount = 0;
+  let failed = false;
   try {
     if (!onProgress) showLoading('Loading the full list to search it…');
     items = await lib.all(kind, onProgress || ((p) => showLoading(`Loading the full list · ${mb(p.received)}`)));
+    const allowed = new Set(vodCategories(kind).map((c) => c.id));
+    const filtered = items.filter((i) => allowed.has(i.catId));
+    itemCount = filtered.length;
+    return filtered;
+  } catch (err) {
+    failed = true;
+    throw err;
   } finally {
     if (!onProgress) { hideLoading(); setStatus(before); }
+    logEvent('perf', 'VOD full-catalog load', {
+      kind,
+      durationMs: Math.round(performance.now() - started),
+      itemCount,
+      failed,
+    }, { dedupe: false });
   }
-  const allowed = new Set(vodCategories(kind).map((c) => c.id));
-  return items.filter((i) => allowed.has(i.catId));
 }
 
 const gallery = new GalleryView($('gallery'), {
