@@ -1,8 +1,9 @@
 name: Android TV APK
+# Only a change to the Android wrapper needs a new APK: the app loads the live web page, so web changes (js/, css/) reach the TV through the Cloudflare deploy alone.
 
 on:
   push:
-    paths: ['android-tv/**', 'js/tv.js', '.github/workflows/android-tv.yml']
+    paths: ['android-tv/**', '.github/workflows/android-tv.yml']
   workflow_dispatch:
     inputs:
       app_url:
