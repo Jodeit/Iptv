@@ -1851,6 +1851,15 @@ function initTV() {
       if (key === 'ArrowLeft' || (key === 'ArrowUp' && chips[0] === t)) { toTabs(); return true; }
       return false;
     }
+    if (tab === 'search' && (t?.classList.contains('tvh-search-input') || t?.matches('.tvh-search-form button'))) {
+      if (key === 'ArrowDown') {
+        const firstResult = bodyEl.querySelector('.tvh-search-results .tvh-row');
+        if (firstResult) firstResult.focus();
+        else if (t.classList.contains('tvh-search-input')) bodyEl.querySelector('.tvh-search-form button')?.focus();
+        return true;
+      }
+      if (key === 'ArrowUp' && t.classList.contains('tvh-search-input')) { toTabs(); return true; }
+    }
     if (t?.classList.contains('tvh-row')) {
       const chip = (tab === 'live' || tab === 'vod') && !chipsEl.classList.contains('hidden') ? (chipsEl.querySelector('.tvh-chip.on') || chipsEl.querySelector('.tvh-chip')) : null;
       const grid = bodyEl.classList.contains('grid');

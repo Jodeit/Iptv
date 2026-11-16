@@ -791,8 +791,9 @@ html.tv-booting body::before {
 .tvh-info .i-next.dim { color: #8a90a6; font-size: 15px; }
 .tvh-info .i-bar { height: 4px; border-radius: 2px; background: rgba(255,255,255,.15); margin: 3px 0; }
 .tvh-info .i-bar u { display: block; height: 100%; border-radius: 2px; background: var(--accent); text-decoration: none; }
-/* The selected wall colour shows through the picture's letterbox bars. */
+/* Keep the selected wall colour while idle; playback uses black letterbox bars. */
 html.tv #video, html.tv #flatStage { background: radial-gradient(120% 95% at 28% 8%, var(--tv-wall-hi, #f5eed2) 0%, var(--tv-wall, #ebdfb8) 52%, var(--tv-wall-lo, #d9cb9f) 100%); }
+html.tv-picture #video, html.tv-picture #flatStage { background: #000; }
 
 /* ---------- TV: the picture is the whole screen ---------- */
 html.tv #flatStage { inset: 0; width: 100%; height: 100%; border-radius: 0; border: 0; box-shadow: none; }
