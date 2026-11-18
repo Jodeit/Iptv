@@ -27,7 +27,7 @@ import com.meta.spatial.toolkit.AppSystemActivity
 import com.meta.spatial.toolkit.DpPerMeterDisplayOptions
 import com.meta.spatial.toolkit.MediaPanelRenderOptions
 import com.meta.spatial.toolkit.MediaPanelSettings
-import com.meta.spatial.toolkit.Panel
+import com.meta.spatial.toolkit.createPanelEntity
 import com.meta.spatial.toolkit.PanelRegistration
 import com.meta.spatial.toolkit.PixelDisplayOptions
 import com.meta.spatial.toolkit.QuadShapeOptions
@@ -83,7 +83,7 @@ class MainActivity : AppSystemActivity() {
     override fun registerPanels(): List<PanelRegistration> = listOf(
         ViewPanelRegistration(
             PANEL_WEB,
-            { _, ctx -> makeWeb(ctx) },
+            { _, ctx -> try { makeWeb(ctx) } catch (e: Throwable) { errorView(ctx, "Can't start the web view:\n$e") } },
             { UIPanelSettings(shape = QuadShapeOptions(width = 1.8f, height = 1.1f), display = DpPerMeterDisplayOptions(dpPerMeter = 650f)) },
         ),
         ViewPanelRegistration(
@@ -108,8 +108,8 @@ class MainActivity : AppSystemActivity() {
         super.onSceneReady()
         scene.setReferenceSpace(ReferenceSpace.LOCAL_FLOOR)
         applyPassthrough()
-        webEntity = Entity.create(Panel(PANEL_WEB), Transform(Pose(Vector3(0f, 1.35f, -1.4f), Quaternion())))
-        controlsEntity = Entity.create(Panel(PANEL_CONTROLS), Transform(Pose(Vector3(0f, 0.6f, -1.2f), Quaternion(-25f, 0f, 0f))), Visible(false))
+        webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(Pose(Vector3(0f, 1.35f, -1.4f), Quaternion())))
+        controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(Pose(Vector3(0f, 0.6f, -1.2f), Quaternion(-25f, 0f, 0f))), Visible(false))
     }
 
     override fun onDestroy() {
@@ -138,6 +138,9 @@ class MainActivity : AppSystemActivity() {
         w.loadUrl(BuildConfig.APP_URL)
         return w
     }
+
+    private fun errorView(ctx: android.content.Context, msg: String): View =
+        TextView(ctx).apply { text = msg; setTextColor(Color.WHITE); setBackgroundColor(Color.parseColor("#802020")); textSize = 24f; setPadding(32, 32, 32, 32) }
 
     /** What the page can call. Runs on a WebView thread: hop to the UI thread for anything that touches the player. */
     inner class Bridge {
@@ -174,7 +177,7 @@ class MainActivity : AppSystemActivity() {
     private fun showPlayer() {
         playback.clearSurface()
         videoEntity?.destroy()
-        videoEntity = Entity.create(Panel(PANEL_VIDEO), Transform(Pose(Vector3(0f, screenY, -distance), Quaternion())))
+        videoEntity = Entity.createPanelEntity(PANEL_VIDEO, Transform(Pose(Vector3(0f, screenY, -distance), Quaternion())))
         webEntity?.setComponent(Visible(false))
         controlsEntity?.setComponent(Visible(true))
         updateStatus()
