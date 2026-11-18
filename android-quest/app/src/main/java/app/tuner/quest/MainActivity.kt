@@ -54,6 +54,7 @@ class MainActivity : AppSystemActivity() {
         const val PANEL_WEB = 1
         const val PANEL_VIDEO = 2
         const val PANEL_CONTROLS = 3
+        const val VIEW_Z = 2f
         const val STEP_SEEK_MS = 10_000L
     }
 
@@ -112,6 +113,7 @@ class MainActivity : AppSystemActivity() {
         super.onSceneReady()
         DebugLog.log("onSceneReady")
         scene.setReferenceSpace(ReferenceSpace.LOCAL_FLOOR)
+        scene.setViewOrigin(0f, 0f, VIEW_Z, 180f)
         // The thumbstick would otherwise walk the viewer through the scene (panels seem to slide the wrong way).
         try { systemManager.findSystem<LocomotionSystem>().enableLocomotion(false); DebugLog.log("locomotion off") } catch (e: Throwable) { DebugLog.log("locomotion: $e") }
         applyPassthrough()
@@ -122,44 +124,22 @@ class MainActivity : AppSystemActivity() {
     }
 
 
-    // The scene's own axes are not the way you are facing, so everything is placed relative to where the headset is
-    // looking (re-done a moment after start, once tracking has settled, and by the Recenter button).
-    private var hx = 0f
-    private var hz = 0f
-    private var fx = 0f
-    private var fz = 1f
-    private var yaw = 0f
-    private var ticks = 0
-
-    private fun readView() {
-        try {
-            val v = scene.getViewerPose()
-            val f = v.q * Vector3(0f, 0f, 1f) // this SDK's viewer looks along +z when unrotated
-            val n = Math.hypot(f.x.toDouble(), f.z.toDouble()).toFloat()
-            if (n > 0.2f) { fx = f.x / n; fz = f.z / n }
-            hx = v.t.x; hz = v.t.z
-            // A panel's visible face points along -z when unrotated, so turn it to face back along -f (toward the viewer).
-            yaw = Math.toDegrees(Math.atan2(fx.toDouble(), fz.toDouble())).toFloat()
-            DebugLog.log("view: head=($hx, ${v.t.y}, $hz) facing=($fx, $fz) yaw=$yaw")
-        } catch (e: Throwable) {
-            DebugLog.log("viewer pose failed: $e")
-        }
-    }
-
-    /** A pose [dist] metres ahead of the viewer, [y] above the floor, turned to face them. */
+    // Same layout as Meta's sample apps: the viewer is moved to z = VIEW_Z and turned around, so everything in front of
+    // them sits at smaller z and an unrotated panel faces them.
     private fun inFront(dist: Float, y: Float, pitch: Float = 0f) =
-        Pose(Vector3(hx + fx * dist, y, hz + fz * dist), Quaternion(pitch, yaw, 0f))
+        Pose(Vector3(0f, y, VIEW_Z - dist), Quaternion(pitch, 0f, 0f))
 
-    private fun recenter() {
-        readView()
-        webEntity?.setComponent(Transform(inFront(1.4f, 1.35f)))
-        controlsEntity?.setComponent(Transform(inFront(1.2f, 0.6f, -25f)))
-        moveScreen()
-    }
+    private var ticks = 0
 
     override fun onSceneTick() {
         super.onSceneTick()
-        if (++ticks == 60) recenter()
+        if (++ticks == 90) { // diagnostics only
+            try {
+                val v = scene.getViewerPose()
+                val f = v.q * Vector3(0f, 0f, 1f)
+                DebugLog.log("viewer: pos=(${v.t.x}, ${v.t.y}, ${v.t.z}) looking=(${f.x}, ${f.y}, ${f.z})")
+            } catch (e: Throwable) { DebugLog.log("viewer pose failed: $e") }
+        }
     }
 
     override fun onDestroy() {
@@ -279,7 +259,6 @@ class MainActivity : AppSystemActivity() {
             addView(btn("10s ⏩") { playback.seekBy(STEP_SEEK_MS) })
             addView(btn("Stop") { stopPlayback() })
             addView(btn("Browse") { webEntity?.setComponent(Visible(true)) })
-            addView(btn("Recenter") { recenter() })
             addView(btn("Hide browser") { webEntity?.setComponent(Visible(false)) })
         }
         val modeBtn = btn("Mode: $stereoLabel") {}
