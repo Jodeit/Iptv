@@ -19,6 +19,11 @@ import android.widget.TextView
 import com.meta.spatial.core.Entity
 import com.meta.spatial.core.Pose
 import com.meta.spatial.core.Quaternion
+import com.meta.spatial.core.Vector2
+import com.meta.spatial.core.Vector4
+import com.meta.spatial.isdk.IsdkGrabConstraints
+import com.meta.spatial.isdk.IsdkPanelGrabHandle
+import com.meta.spatial.isdk.IsdkPanelResize
 import com.meta.spatial.core.SpatialFeature
 import com.meta.spatial.core.Vector3
 import com.meta.spatial.runtime.ReferenceSpace
@@ -118,8 +123,8 @@ class MainActivity : AppSystemActivity() {
         try { systemManager.findSystem<LocomotionSystem>().enableLocomotion(false); DebugLog.log("locomotion off") } catch (e: Throwable) { DebugLog.log("locomotion: $e") }
         applyPassthrough()
         DebugLog.log("scene configured, creating entities")
-        webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(inFront(1.4f, 1.35f)))
-        controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(inFront(1.2f, 0.6f, -25f)), Visible(false))
+        webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(inFront(1.4f, 1.35f)), noRotation())
+        controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(inFront(1.2f, 0.6f, -25f)), Visible(false), noRotation())
         DebugLog.log("entities created")
     }
 
@@ -128,6 +133,9 @@ class MainActivity : AppSystemActivity() {
     // them sits at smaller z and an unrotated panel faces them.
     private fun inFront(dist: Float, y: Float, pitch: Float = 0f, x: Float = 0f, yaw: Float = 180f) =
         Pose(Vector3(x, y, VIEW_Z - dist), Quaternion(pitch, yaw, 0f))
+
+    /** Panels can be moved and resized by hand, but not turned: that keeps the screen level and facing you. */
+    private fun noRotation() = IsdkGrabConstraints().apply { lockFlags = IsdkGrabConstraints.LockFlags.ROTATION }
 
     private var ticks = 0
 
@@ -223,7 +231,15 @@ class MainActivity : AppSystemActivity() {
     private fun showPlayer() {
         playback.clearSurface()
         videoEntity?.destroy()
-        videoEntity = Entity.createPanelEntity(PANEL_VIDEO, Transform(inFront(distance, screenY)))
+        videoEntity = Entity.createPanelEntity(
+            PANEL_VIDEO,
+            Transform(inFront(distance, screenY)),
+            noRotation(),
+            // Free-floating picture: the frame is drawn fully transparent (the edges still work as grab and resize handles),
+            // and the default 1.5 m resize limit is far too small for a screen.
+            IsdkPanelGrabHandle(color = Vector4(0f, 0f, 0f, 0f)),
+            IsdkPanelResize(minDimensions = Vector2(0.8f, 0.45f), maxDimensions = Vector2(14f, 8f), preserveAspectRatio = true),
+        )
         webEntity?.setComponent(Visible(false))
         controlsEntity?.setComponent(Visible(true))
         updateStatus()
