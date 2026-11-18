@@ -403,6 +403,13 @@ pop-out player are hidden there; setup and settings happen on the phone and sync
    - `adb connect <tv-ip>:5555 && adb install app-release.apk`, or
    - put the APK on a USB stick / host it and install with the **Downloader** app (allow "Install unknown apps" for it).
 
+### Meta Quest APK
+
+`tuner-quest.apk` (source in `android-quest/`) is a tiny launcher: its icon appears under **Unknown Sources** in the Quest library and opens Tuner in Quest Browser. It doesn't embed a WebView, because WebXR (XR3D, immersive VR) only exists in the browser.
+
+- Enable Developer Mode in the Meta Horizon phone app, then `adb install tuner-quest.apk` over USB (or SideQuest), or get it at `https://iptv.jodeit.workers.dev/tuner-quest.apk`.
+- Build: `cd android-quest && ANDROID_HOME=… gradle --no-daemon :app:assembleRelease [-PappUrl=https://…]`. Same signing key as the TV app.
+
 To build locally instead: `cd android-tv && gradle :app:assembleRelease [-PappUrl=https://…]` with the Android SDK installed.
 
 ## Live: game details, logos and home market
