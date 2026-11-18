@@ -3,6 +3,7 @@ package app.tuner.quest
 import android.annotation.SuppressLint
 import android.graphics.Color
 import android.graphics.Typeface
+import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -13,7 +14,6 @@ import android.webkit.WebChromeClient
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
-import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.meta.spatial.core.Entity
@@ -61,6 +61,10 @@ class MainActivity : AppSystemActivity() {
         const val PANEL_VIDEO = 2
         const val PANEL_CONTROLS = 3
         const val VIEW_Z = 2f
+        const val WEB_DIST = 1.5f
+        const val WEB_DY = -0.05f
+        const val BAR_DIST = 1.1f
+        const val BAR_DY = -0.5f
         const val STEP_SEEK_MS = 10_000L
     }
 
@@ -74,12 +78,12 @@ class MainActivity : AppSystemActivity() {
     private var passthrough = true
     private var stereo = StereoMode.None
     private var stereoLabel = "2D"
-    private var screenWidth = 3.2f     // metres
+    private var screenWidth = 2.6f     // metres
     private var distance = 3.0f        // metres in front of the viewer
-    private var screenY = 1.5f          // metres above the floor
+    private var screenDy = 0.1f         // metres above eye level
+    private var eye = 1.2f              // eye height above the floor, measured a moment after start
     private var title = ""
     private var statusView: TextView? = null
-    private var playPauseButton: Button? = null
 
     override fun registerFeatures(): List<SpatialFeature> = listOf(VRFeature(this))
 
@@ -100,7 +104,7 @@ class MainActivity : AppSystemActivity() {
         ViewPanelRegistration(
             PANEL_CONTROLS,
             { _, ctx -> makeControls(ctx) },
-            { UIPanelSettings(shape = QuadShapeOptions(width = 1.7f, height = 0.5f), display = DpPerMeterDisplayOptions(dpPerMeter = 600f)) },
+            { UIPanelSettings(shape = QuadShapeOptions(width = 1.6f, height = 0.34f), display = DpPerMeterDisplayOptions(dpPerMeter = 600f)) },
         ),
         VideoSurfacePanelRegistration(
             PANEL_VIDEO,
@@ -124,16 +128,17 @@ class MainActivity : AppSystemActivity() {
         try { systemManager.findSystem<LocomotionSystem>().enableLocomotion(false); DebugLog.log("locomotion off") } catch (e: Throwable) { DebugLog.log("locomotion: $e") }
         applyPassthrough()
         DebugLog.log("scene configured, creating entities")
-        webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(inFront(1.4f, 1.35f)), noRotation())
-        controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(inFront(1.0f, 0.85f)), Visible(false), noRotation())
+        webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(inFront(WEB_DIST, WEB_DY)), noRotation())
+        controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(inFront(BAR_DIST, BAR_DY)), Visible(false), noRotation())
         DebugLog.log("entities created")
     }
 
 
     // Same layout as Meta's sample apps: the viewer is moved to z = VIEW_Z and turned around, so everything in front of
     // them sits at smaller z and an unrotated panel faces them.
-    private fun inFront(dist: Float, y: Float, pitch: Float = 0f, x: Float = 0f, yaw: Float = 180f) =
-        Pose(Vector3(x, y, VIEW_Z - dist), Quaternion(pitch, yaw, 0f))
+    /** A pose [dist] metres ahead of the viewer and [dy] metres above (or below) eye level. */
+    private fun inFront(dist: Float, dy: Float, pitch: Float = 0f, x: Float = 0f, yaw: Float = 180f) =
+        Pose(Vector3(x, eye + dy, VIEW_Z - dist), Quaternion(pitch, yaw, 0f))
 
     /** Panels can be moved and resized by hand, but not turned: that keeps the screen level and facing you. */
     private fun noRotation() = IsdkGrabConstraints().apply { lockFlags = IsdkGrabConstraints.LockFlags.ROTATION }
@@ -163,6 +168,12 @@ class MainActivity : AppSystemActivity() {
                 val v = scene.getViewerPose()
                 val f = v.q * Vector3(0f, 0f, 1f)
                 DebugLog.log("viewer: pos=(${v.t.x}, ${v.t.y}, ${v.t.z}) looking=(${f.x}, ${f.y}, ${f.z})")
+                if (v.t.y in 0.5f..2.3f) {
+                    eye = v.t.y
+                    webEntity?.setComponent(Transform(inFront(WEB_DIST, WEB_DY)))
+                    controlsEntity?.setComponent(Transform(inFront(BAR_DIST, BAR_DY)))
+                    moveScreen()
+                }
             } catch (e: Throwable) { DebugLog.log("viewer pose failed: $e") }
         }
     }
@@ -210,7 +221,9 @@ class MainActivity : AppSystemActivity() {
             }
         }
         // `adb shell am start ... --es url https://...` loads another deployment (e.g. a branch preview) for testing.
-        val pageUrl = intent?.getStringExtra("url")?.takeIf { it.startsWith("https://") } ?: BuildConfig.APP_URL
+        val base = intent?.getStringExtra("url")?.takeIf { it.startsWith("https://") } ?: BuildConfig.APP_URL
+        // ui=tuner: the page's designed interface (the TV app's look, touch-friendly) instead of the phone layout.
+        val pageUrl = Uri.parse(base).buildUpon().apply { if (Uri.parse(base).getQueryParameter("ui") == null) appendQueryParameter("ui", "tuner") }.build().toString()
         w.loadUrl(pageUrl)
         DebugLog.log("web view created, loading $pageUrl")
         return w
@@ -259,7 +272,7 @@ class MainActivity : AppSystemActivity() {
         videoEntity?.destroy()
         videoEntity = Entity.createPanelEntity(
             PANEL_VIDEO,
-            Transform(inFront(distance, screenY)),
+            Transform(inFront(distance, screenDy)),
             noRotation(),
             // Free-floating picture: the frame is drawn fully transparent (the edges still work as grab and resize handles),
             // and the default 1.5 m resize limit is far too small for a screen.
@@ -283,62 +296,83 @@ class MainActivity : AppSystemActivity() {
     }
 
     private fun moveScreen() {
-        videoEntity?.setComponent(Transform(inFront(distance, screenY)))
+        videoEntity?.setComponent(Transform(inFront(distance, screenDy)))
     }
 
     // ---------- Controls ----------
 
+    // Brand colours from the app: deep navy, warm gold, soft cream.
+    private val NAVY = Color.parseColor("#0C111D")
+    private val GOLD = Color.parseColor("#D9B97B")
+    private val CREAM = Color.parseColor("#F3E7C6")
+
     private fun makeControls(ctx: android.content.Context): View {
-        fun btn(label: String, onClick: () -> Unit) = Button(ctx).apply {
-            text = label; textSize = 20f; isAllCaps = false; setOnClickListener { onClick() }
+        val d = ctx.resources.displayMetrics.density
+        fun dp(v: Int) = (v * d).toInt()
+        fun pill(fill: Int, stroke: Int = Color.TRANSPARENT) = android.graphics.drawable.GradientDrawable().apply {
+            shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+            cornerRadius = dp(40).toFloat(); setColor(fill); if (stroke != Color.TRANSPARENT) setStroke(dp(1), stroke)
         }
-        val status = TextView(ctx).apply { setTextColor(Color.WHITE); textSize = 22f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER; setPadding(16, 12, 16, 4) }
+        fun btn(label: String, accent: Boolean = false, onClick: (TextView) -> Unit) = TextView(ctx).apply {
+            text = label; textSize = 17f; gravity = Gravity.CENTER; isClickable = true; isFocusable = true
+            typeface = Typeface.DEFAULT_BOLD
+            setTextColor(if (accent) NAVY else CREAM)
+            background = pill(if (accent) GOLD else Color.argb(60, 243, 231, 198), if (accent) Color.TRANSPARENT else Color.argb(90, 243, 231, 198))
+            setPadding(dp(18), dp(10), dp(18), dp(10))
+            layoutParams = LinearLayout.LayoutParams(LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT).apply { setMargins(dp(5), 0, dp(5), 0) }
+            setOnClickListener { onClick(this) }
+        }
+        fun gap() = View(ctx).apply { layoutParams = LinearLayout.LayoutParams(dp(18), 1) }
+
+        val status = TextView(ctx).apply {
+            setTextColor(CREAM); textSize = 18f; typeface = Typeface.DEFAULT_BOLD; gravity = Gravity.CENTER_VERTICAL
+            maxLines = 1; ellipsize = android.text.TextUtils.TruncateAt.END
+        }
         statusView = status
-        val pp = btn("Pause") { playback.togglePause() }
-        playPauseButton = pp
-        val row1 = LinearLayout(ctx).apply {
-            gravity = Gravity.CENTER
-            addView(btn("⏪ 10s") { playback.seekBy(-STEP_SEEK_MS) })
-            addView(pp)
-            addView(btn("10s ⏩") { playback.seekBy(STEP_SEEK_MS) })
-            addView(btn("Stop") { stopPlayback() })
-            addView(btn("Browse") { webEntity?.setComponent(Visible(true)) })
-            addView(btn("Hide browser") { webEntity?.setComponent(Visible(false)) })
-        }
-        val modeBtn = btn("Mode: $stereoLabel") {}
+        val play = btn("Pause", accent = true) { playback.togglePause() }
+        playButton = play
+
+        val modeBtn = btn("2D") { }
         modeBtn.setOnClickListener {
             setStereo(when (stereo) { StereoMode.None -> StereoMode.LeftRight; StereoMode.LeftRight -> StereoMode.UpDown; else -> StereoMode.None })
-            modeBtn.text = "Mode: $stereoLabel"
+            modeBtn.text = stereoLabel
             if (videoEntity != null) showPlayer()
         }
-        val ptBtn = btn(if (passthrough) "Passthrough: on" else "Passthrough: off") {}
-        ptBtn.setOnClickListener {
-            passthrough = !passthrough
-            ptBtn.text = if (passthrough) "Passthrough: on" else "Passthrough: off"
-            applyPassthrough()
-        }
-        val row2 = LinearLayout(ctx).apply {
-            gravity = Gravity.CENTER
-            addView(ptBtn)
-            addView(modeBtn)
+        val room = btn(if (passthrough) "Room" else "Dark") { }
+        room.setOnClickListener { passthrough = !passthrough; room.text = if (passthrough) "Room" else "Dark"; applyPassthrough() }
+        var libraryShown = false
+        val library = btn("Library") { }
+        library.setOnClickListener { libraryShown = !libraryShown; webEntity?.setComponent(Visible(libraryShown)); library.text = if (libraryShown) "Hide library" else "Library" }
+
+        val transport = LinearLayout(ctx).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            addView(btn("−10 s") { playback.seekBy(-STEP_SEEK_MS) })
+            addView(play)
+            addView(btn("+10 s") { playback.seekBy(STEP_SEEK_MS) })
+            addView(btn("Stop") { stopPlayback() })
+            addView(gap())
+            addView(room); addView(modeBtn)
+            addView(gap())
             addView(btn("Smaller") { screenWidth = (screenWidth * 0.85f).coerceAtLeast(1f); if (videoEntity != null) showPlayer() })
             addView(btn("Larger") { screenWidth = (screenWidth * 1.18f).coerceAtMost(12f); if (videoEntity != null) showPlayer() })
-            addView(btn("Closer") { distance = (distance - 0.5f).coerceAtLeast(1f); moveScreen() })
-            addView(btn("Farther") { distance = (distance + 0.5f).coerceAtMost(15f); moveScreen() })
-            addView(btn("Up") { screenY += 0.2f; moveScreen() })
-            addView(btn("Down") { screenY = (screenY - 0.2f).coerceAtLeast(0.2f); moveScreen() })
+            addView(gap())
+            addView(library)
         }
         return LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
-            setBackgroundColor(Color.argb(230, 16, 16, 20))
-            addView(status); addView(row1); addView(row2)
+            background = pill(Color.argb(235, 12, 17, 29), Color.argb(70, 217, 185, 123)).also { it.cornerRadius = dp(34).toFloat() }
+            setPadding(dp(26), dp(14), dp(26), dp(16))
+            addView(status, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34)))
+            addView(transport)
         }
     }
+
+    private var playButton: TextView? = null
 
     private fun updateStatus() {
         ui.post {
             statusView?.text = playback.statusLine(title)
-            playPauseButton?.text = if (playback.isPlaying) "Pause" else "Play"
+            playButton?.text = if (playback.isPlaying) "Pause" else "Play"
         }
     }
 }
