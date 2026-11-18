@@ -1,0 +1,14 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="96dp" android:height="96dp" android:viewportWidth="32" android:viewportHeight="32">
+    <!-- Same fish as the web app's logo (index.html) -->
+    <path android:fillColor="#D9B97B"
+        android:pathData="M7,0H25A7,7 0 0 1 32,7V25A7,7 0 0 1 25,32H7A7,7 0 0 1 0,25V7A7,7 0 0 1 7,0Z" />
+    <path android:fillColor="#0C111D"
+        android:pathData="M3.3,16C5.8,12.4 9.4,10.6 12,10.4L14.2,6.1 17.1,10.2C18.3,10.1 19.5,9.7 20.7,9.2L20.3,11C22.5,11.3 24.2,12.4 25.3,14L29.5,9.6 28.1,16 29.5,22.4 25.3,18C24.4,19.1 22.8,20.1 20.3,21L20.7,22.8C19.2,22.3 18.1,21.8 17.1,21.8L14.1,25.9 12,21.6C8.7,21.4 5.7,19.5 3.3,16Z" />
+    <path android:fillColor="#895A31" android:fillAlpha="0.72"
+        android:pathData="M10.1,14.4C13.4,14.8 18.2,16.3 22.5,18.3 18.4,18 14.3,16.8 10.1,14.4Z" />
+    <path android:fillColor="#D9B97B"
+        android:pathData="M7.5,13.75a1.25,1.25 0 1,0 0,2.5a1.25,1.25 0 1,0 0,-2.5Z" />
+    <path android:fillColor="#0C111D"
+        android:pathData="M7.5,14.42a0.58,0.58 0 1,0 0,1.16a0.58,0.58 0 1,0 0,-1.16Z" />
+</vector>

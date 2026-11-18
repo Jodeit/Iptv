@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.INTERNET" />
+
+    <!-- A 2D launcher: it hands the page to Quest Browser, which has WebXR (XR3D, immersive VR). -->
+    <uses-feature android:name="android.hardware.vr.headtracking" android:required="false" />
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+
+    <!-- Lets the launcher see Quest Browser on Android 11+. -->
+    <queries>
+        <package android:name="com.oculus.browser" />
+        <intent><action android:name="android.intent.action.VIEW" /><data android:scheme="https" /></intent>
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@drawable/icon"
+        android:label="Tuner"
+        android:theme="@android:style/Theme.Translucent.NoTitleBar">
+
+        <activity
+            android:name=".LaunchActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
