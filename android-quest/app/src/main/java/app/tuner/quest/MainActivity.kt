@@ -29,8 +29,6 @@ import com.meta.spatial.toolkit.MediaPanelRenderOptions
 import com.meta.spatial.toolkit.MediaPanelSettings
 import com.meta.spatial.toolkit.createPanelEntity
 import com.meta.spatial.toolkit.PanelRegistration
-import com.meta.spatial.toolkit.PanelRenderMode
-import com.meta.spatial.toolkit.UIPanelRenderOptions
 import com.meta.spatial.toolkit.PixelDisplayOptions
 import com.meta.spatial.toolkit.QuadShapeOptions
 import com.meta.spatial.toolkit.Transform
@@ -38,6 +36,7 @@ import com.meta.spatial.toolkit.UIPanelSettings
 import com.meta.spatial.toolkit.ViewPanelRegistration
 import com.meta.spatial.toolkit.VideoSurfacePanelRegistration
 import com.meta.spatial.toolkit.Visible
+import com.meta.spatial.vr.LocomotionSystem
 import com.meta.spatial.vr.VRFeature
 import org.json.JSONObject
 
@@ -81,6 +80,8 @@ class MainActivity : AppSystemActivity() {
         DebugLog.init(this)
         playback = Playback(this, onState = { updateStatus() })
         super.onCreate(savedInstanceState)
+        // The right thumbstick would otherwise walk the viewer through the scene (panels seem to slide the wrong way).
+        try { systemManager.unregisterSystem<LocomotionSystem>(); DebugLog.log("locomotion off") } catch (e: Throwable) { DebugLog.log("locomotion: $e") }
         DebugLog.log("onCreate done")
     }
 
@@ -88,13 +89,13 @@ class MainActivity : AppSystemActivity() {
         ViewPanelRegistration(
             PANEL_WEB,
             { _, ctx -> try { makeWeb(ctx) } catch (e: Throwable) { DebugLog.log("web view failed: $e"); errorView(ctx, "Can't start the web view:\n$e") } },
-            { UIPanelSettings(shape = QuadShapeOptions(width = 1.8f, height = 1.1f), display = DpPerMeterDisplayOptions(dpPerMeter = 650f), rendering = UIPanelRenderOptions(renderMode = PanelRenderMode.Mesh())) },
+            { UIPanelSettings(shape = QuadShapeOptions(width = 1.8f, height = 1.1f), display = DpPerMeterDisplayOptions(dpPerMeter = 650f)) },
             { v, _, _ -> DebugLog.log("web panel ready: view ${v.width}x${v.height}, attached=${v.isAttachedToWindow}") },
         ),
         ViewPanelRegistration(
             PANEL_CONTROLS,
             { _, ctx -> makeControls(ctx) },
-            { UIPanelSettings(shape = QuadShapeOptions(width = 1.7f, height = 0.5f), display = DpPerMeterDisplayOptions(dpPerMeter = 600f), rendering = UIPanelRenderOptions(renderMode = PanelRenderMode.Mesh())) },
+            { UIPanelSettings(shape = QuadShapeOptions(width = 1.7f, height = 0.5f), display = DpPerMeterDisplayOptions(dpPerMeter = 600f)) },
         ),
         VideoSurfacePanelRegistration(
             PANEL_VIDEO,
@@ -182,6 +183,7 @@ class MainActivity : AppSystemActivity() {
         w.setBackgroundColor(Color.parseColor("#EBDFB8"))
         var events = 0
         w.setOnTouchListener { _, e -> if (events++ < 30 || e.actionMasked == android.view.MotionEvent.ACTION_DOWN) DebugLog.log("touch ${android.view.MotionEvent.actionToString(e.actionMasked)} at ${e.x.toInt()},${e.y.toInt()} (view ${w.width}x${w.height})"); false }
+        w.setOnGenericMotionListener { _, e -> if (e.actionMasked != android.view.MotionEvent.ACTION_HOVER_MOVE && e.actionMasked != android.view.MotionEvent.ACTION_SCROLL) DebugLog.log("motion ${android.view.MotionEvent.actionToString(e.actionMasked)}"); false }
         w.setOnHoverListener { _, e -> if (events++ < 30) DebugLog.log("hover ${android.view.MotionEvent.actionToString(e.actionMasked)} at ${e.x.toInt()},${e.y.toInt()}"); false }
         w.addJavascriptInterface(Bridge(), "TunerQuest")
         w.webViewClient = object : WebViewClient() {
