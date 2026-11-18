@@ -80,8 +80,6 @@ class MainActivity : AppSystemActivity() {
         DebugLog.init(this)
         playback = Playback(this, onState = { updateStatus() })
         super.onCreate(savedInstanceState)
-        // The right thumbstick would otherwise walk the viewer through the scene (panels seem to slide the wrong way).
-        try { systemManager.unregisterSystem<LocomotionSystem>(); DebugLog.log("locomotion off") } catch (e: Throwable) { DebugLog.log("locomotion: $e") }
         DebugLog.log("onCreate done")
     }
 
@@ -114,6 +112,8 @@ class MainActivity : AppSystemActivity() {
         super.onSceneReady()
         DebugLog.log("onSceneReady")
         scene.setReferenceSpace(ReferenceSpace.LOCAL_FLOOR)
+        // The thumbstick would otherwise walk the viewer through the scene (panels seem to slide the wrong way).
+        try { systemManager.findSystem<LocomotionSystem>().enableLocomotion(false); DebugLog.log("locomotion off") } catch (e: Throwable) { DebugLog.log("locomotion: $e") }
         applyPassthrough()
         DebugLog.log("scene configured, creating entities")
         webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(inFront(1.4f, 1.35f)))
