@@ -193,7 +193,12 @@ class MainActivity : AppSystemActivity() {
         w.setOnHoverListener { _, e -> if (events++ < 30) DebugLog.log("hover ${android.view.MotionEvent.actionToString(e.actionMasked)} at ${e.x.toInt()},${e.y.toInt()}"); false }
         w.addJavascriptInterface(Bridge(), "TunerQuest")
         w.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView, url: String) { DebugLog.log("page loaded: $url") }
+            override fun onPageFinished(view: WebView, url: String) {
+                DebugLog.log("page loaded: $url")
+                // The page only hands playback to this app if its own code has the playQuest hook.
+                view.evaluateJavascript("fetch('/js/main.js').then(r=>r.text()).then(t=>t.includes('playQuest'))") { }
+                view.evaluateJavascript("typeof window.TunerQuest") { DebugLog.log("bridge in page: $it") }
+            }
             override fun onReceivedError(view: WebView, request: android.webkit.WebResourceRequest, error: android.webkit.WebResourceError) {
                 if (request.isForMainFrame) DebugLog.log("page error: ${error.errorCode} ${error.description}")
             }
@@ -204,8 +209,10 @@ class MainActivity : AppSystemActivity() {
                 return true
             }
         }
-        w.loadUrl(BuildConfig.APP_URL)
-        DebugLog.log("web view created, loading ${BuildConfig.APP_URL}")
+        // `adb shell am start ... --es url https://...` loads another deployment (e.g. a branch preview) for testing.
+        val pageUrl = intent?.getStringExtra("url")?.takeIf { it.startsWith("https://") } ?: BuildConfig.APP_URL
+        w.loadUrl(pageUrl)
+        DebugLog.log("web view created, loading $pageUrl")
         return w
     }
 

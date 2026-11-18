@@ -11,7 +11,12 @@ adb devices | grep -w device >/dev/null || { echo "No headset found: plug it in 
 adb install -r tuner-quest.apk >/dev/null
 adb logcat -c
 adb shell am force-stop app.tuner.quest
-adb shell am start -n app.tuner.quest/.MainActivity >/dev/null
+# QUEST_URL=https://... loads another deployment of the web app (e.g. a branch preview) instead of the live site.
+if [ -n "${QUEST_URL:-}" ]; then
+  adb shell am start -n app.tuner.quest/.MainActivity --es url "$QUEST_URL" >/dev/null
+else
+  adb shell am start -n app.tuner.quest/.MainActivity >/dev/null
+fi
 echo "Launched. Use the app now; collecting the log in ${1:-15}s..."
 sleep "${1:-15}"
 
