@@ -22,6 +22,7 @@ import com.meta.spatial.core.Quaternion
 import com.meta.spatial.core.Vector2
 import com.meta.spatial.core.Vector4
 import com.meta.spatial.isdk.IsdkGrabConstraints
+import com.meta.spatial.isdk.IsdkPanelDimensions
 import com.meta.spatial.isdk.IsdkPanelGrabHandle
 import com.meta.spatial.isdk.IsdkPanelResize
 import com.meta.spatial.core.SpatialFeature
@@ -139,8 +140,24 @@ class MainActivity : AppSystemActivity() {
 
     private var ticks = 0
 
+    /** Puts a panel back to its fixed orientation if hand-grabbing turned it (the SDK's own rotation lock did not hold). */
+    private fun holdUpright(e: Entity?, pitch: Float = 0f) {
+        e ?: return
+        val t = e.tryGetComponent<Transform>() ?: return
+        val want = Quaternion(pitch, 180f, 0f)
+        val q = t.transform.q
+        val dot = Math.abs(q.w * want.w + q.x * want.x + q.y * want.y + q.z * want.z)
+        if (dot < 0.9999f) {
+            t.transform = Pose(t.transform.t, want)
+            e.setComponent(t)
+        }
+    }
+
     override fun onSceneTick() {
         super.onSceneTick()
+        holdUpright(webEntity)
+        holdUpright(controlsEntity, -25f)
+        holdUpright(videoEntity)
         if (++ticks == 90) { // diagnostics only
             try {
                 val v = scene.getViewerPose()
@@ -238,6 +255,8 @@ class MainActivity : AppSystemActivity() {
             // Free-floating picture: the frame is drawn fully transparent (the edges still work as grab and resize handles),
             // and the default 1.5 m resize limit is far too small for a screen.
             IsdkPanelGrabHandle(color = Vector4(0f, 0f, 0f, 0f)),
+            // The grab/resize box defaults to 0.75 x 1 m, far smaller than the picture; make it the size of the screen.
+            IsdkPanelDimensions(Vector2(screenWidth, screenWidth * 9f / 16f)),
             IsdkPanelResize(minDimensions = Vector2(0.8f, 0.45f), maxDimensions = Vector2(14f, 8f), preserveAspectRatio = true),
         )
         webEntity?.setComponent(Visible(false))
