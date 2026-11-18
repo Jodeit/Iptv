@@ -16,8 +16,6 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
-import android.net.Uri
-import com.meta.spatial.core.Color4
 import com.meta.spatial.core.Entity
 import com.meta.spatial.core.Pose
 import com.meta.spatial.core.Quaternion
@@ -27,9 +25,6 @@ import com.meta.spatial.runtime.ReferenceSpace
 import com.meta.spatial.runtime.StereoMode
 import com.meta.spatial.toolkit.AppSystemActivity
 import com.meta.spatial.toolkit.DpPerMeterDisplayOptions
-import com.meta.spatial.toolkit.Box
-import com.meta.spatial.toolkit.Material
-import com.meta.spatial.toolkit.Mesh
 import com.meta.spatial.toolkit.MediaPanelRenderOptions
 import com.meta.spatial.toolkit.MediaPanelSettings
 import com.meta.spatial.toolkit.createPanelEntity
@@ -117,15 +112,47 @@ class MainActivity : AppSystemActivity() {
         scene.setReferenceSpace(ReferenceSpace.LOCAL_FLOOR)
         applyPassthrough()
         DebugLog.log("scene configured, creating entities")
-        webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(Pose(Vector3(0f, 1.35f, -1.4f), Quaternion())))
-        // Diagnostic: a green cube. If it shows but no panels do, the scene works and the panels don't.
-        Entity.create(
-            Mesh(Uri.parse("mesh://box")),
-            Material().apply { baseColor = Color4(0.2f, 0.8f, 0.4f, 1f); unlit = true },
-            Box(Vector3(-0.1f), Vector3(0.1f)),
-            Transform(Pose(Vector3(-1.4f, 1.3f, -1.4f))),
-        )
-        controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(Pose(Vector3(0f, 0.6f, -1.2f), Quaternion(-25f, 0f, 0f))), Visible(false))
+        webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(inFront(1.4f, 1.35f)))
+        controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(inFront(1.2f, 0.6f, -25f)), Visible(false))
+    }
+
+    // The scene's own axes are not the way you are facing, so everything is placed relative to where the headset is
+    // looking (re-done a moment after start, once tracking has settled, and by the Recenter button).
+    private var hx = 0f
+    private var hz = 0f
+    private var fx = 0f
+    private var fz = -1f
+    private var yaw = 0f
+    private var ticks = 0
+
+    private fun readView() {
+        try {
+            val v = scene.getViewerPose()
+            val f = v.q * Vector3(0f, 0f, -1f)
+            val n = Math.hypot(f.x.toDouble(), f.z.toDouble()).toFloat()
+            if (n > 0.2f) { fx = f.x / n; fz = f.z / n }
+            hx = v.t.x; hz = v.t.z
+            yaw = Math.toDegrees(Math.atan2(-fx.toDouble(), -fz.toDouble())).toFloat()
+            DebugLog.log("view: head=($hx, ${v.t.y}, $hz) facing=($fx, $fz) yaw=$yaw")
+        } catch (e: Throwable) {
+            DebugLog.log("viewer pose failed: $e")
+        }
+    }
+
+    /** A pose [dist] metres ahead of the viewer, [y] above the floor, turned to face them. */
+    private fun inFront(dist: Float, y: Float, pitch: Float = 0f) =
+        Pose(Vector3(hx + fx * dist, y, hz + fz * dist), Quaternion(pitch, yaw, 0f))
+
+    private fun recenter() {
+        readView()
+        webEntity?.setComponent(Transform(inFront(1.4f, 1.35f)))
+        controlsEntity?.setComponent(Transform(inFront(1.2f, 0.6f, -25f)))
+        moveScreen()
+    }
+
+    override fun onSceneTick() {
+        super.onSceneTick()
+        if (++ticks == 60) recenter()
     }
 
     override fun onDestroy() {
@@ -205,7 +232,7 @@ class MainActivity : AppSystemActivity() {
     private fun showPlayer() {
         playback.clearSurface()
         videoEntity?.destroy()
-        videoEntity = Entity.createPanelEntity(PANEL_VIDEO, Transform(Pose(Vector3(0f, screenY, -distance), Quaternion())))
+        videoEntity = Entity.createPanelEntity(PANEL_VIDEO, Transform(inFront(distance, screenY)))
         webEntity?.setComponent(Visible(false))
         controlsEntity?.setComponent(Visible(true))
         updateStatus()
@@ -221,7 +248,7 @@ class MainActivity : AppSystemActivity() {
     }
 
     private fun moveScreen() {
-        videoEntity?.setComponent(Transform(Pose(Vector3(0f, screenY, -distance), Quaternion())))
+        videoEntity?.setComponent(Transform(inFront(distance, screenY)))
     }
 
     // ---------- Controls ----------
@@ -241,6 +268,7 @@ class MainActivity : AppSystemActivity() {
             addView(btn("10s ⏩") { playback.seekBy(STEP_SEEK_MS) })
             addView(btn("Stop") { stopPlayback() })
             addView(btn("Browse") { webEntity?.setComponent(Visible(true)) })
+            addView(btn("Recenter") { recenter() })
             addView(btn("Hide browser") { webEntity?.setComponent(Visible(false)) })
         }
         val modeBtn = btn("Mode: $stereoLabel") {}
