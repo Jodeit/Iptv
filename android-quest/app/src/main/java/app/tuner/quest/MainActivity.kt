@@ -29,8 +29,6 @@ import com.meta.spatial.toolkit.MediaPanelRenderOptions
 import com.meta.spatial.toolkit.MediaPanelSettings
 import com.meta.spatial.toolkit.createPanelEntity
 import com.meta.spatial.toolkit.PanelRegistration
-import com.meta.spatial.toolkit.PanelRenderMode
-import com.meta.spatial.toolkit.UIPanelRenderOptions
 import com.meta.spatial.toolkit.PixelDisplayOptions
 import com.meta.spatial.toolkit.QuadShapeOptions
 import com.meta.spatial.toolkit.Transform
@@ -57,10 +55,6 @@ class MainActivity : AppSystemActivity() {
         const val PANEL_VIDEO = 2
         const val PANEL_CONTROLS = 3
         const val VIEW_Z = 2f
-        const val PANEL_TEST_A = 11
-        const val PANEL_TEST_B = 12
-        const val PANEL_TEST_C = 13
-        const val PANEL_TEST_D = 14
         const val STEP_SEEK_MS = 10_000L
     }
 
@@ -90,30 +84,7 @@ class MainActivity : AppSystemActivity() {
         DebugLog.log("onCreate done")
     }
 
-    // Diagnostic: four labelled panels (layer/mesh x facing 0/180 degrees) to see which are visible and clickable.
-    private fun testPanel(id: Int, label: String, mesh: Boolean) = ViewPanelRegistration(
-        id,
-        { _, ctx ->
-            TextView(ctx).apply {
-                text = label; textSize = 36f; gravity = Gravity.CENTER; setTextColor(Color.BLACK)
-                setBackgroundColor(Color.parseColor(if (mesh) "#7FD1FF" else "#FFB347"))
-                setOnClickListener { text = "$label\nCLICKED"; DebugLog.log("test panel clicked: $label") }
-            }
-        },
-        {
-            UIPanelSettings(
-                shape = QuadShapeOptions(width = 0.9f, height = 0.4f),
-                display = DpPerMeterDisplayOptions(dpPerMeter = 650f),
-                rendering = if (mesh) UIPanelRenderOptions(renderMode = PanelRenderMode.Mesh()) else UIPanelRenderOptions(),
-            )
-        },
-    )
-
     override fun registerPanels(): List<PanelRegistration> = also { DebugLog.log("registerPanels") }.let { listOf(
-        testPanel(PANEL_TEST_A, "A: layer 0°", false),
-        testPanel(PANEL_TEST_B, "B: layer 180°", false),
-        testPanel(PANEL_TEST_C, "C: mesh 0°", true),
-        testPanel(PANEL_TEST_D, "D: mesh 180°", true),
         ViewPanelRegistration(
             PANEL_WEB,
             { _, ctx -> try { makeWeb(ctx) } catch (e: Throwable) { DebugLog.log("web view failed: $e"); errorView(ctx, "Can't start the web view:\n$e") } },
@@ -149,9 +120,6 @@ class MainActivity : AppSystemActivity() {
         DebugLog.log("scene configured, creating entities")
         webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(inFront(1.4f, 1.35f)))
         controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(inFront(1.2f, 0.6f, -25f)), Visible(false))
-        for ((id, x, yaw) in listOf(Triple(PANEL_TEST_A, -1.4f, 0f), Triple(PANEL_TEST_B, -0.45f, 180f), Triple(PANEL_TEST_C, 0.45f, 0f), Triple(PANEL_TEST_D, 1.4f, 180f))) {
-            Entity.createPanelEntity(id, Transform(inFront(1.0f, 1.9f, 0f, x, yaw)))
-        }
         DebugLog.log("entities created")
     }
 
