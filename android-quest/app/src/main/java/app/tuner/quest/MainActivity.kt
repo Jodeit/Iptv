@@ -55,7 +55,6 @@ class MainActivity : AppSystemActivity() {
         const val PANEL_WEB = 1
         const val PANEL_VIDEO = 2
         const val PANEL_CONTROLS = 3
-        const val PANEL_TEST = 4
         const val STEP_SEEK_MS = 10_000L
     }
 
@@ -92,13 +91,6 @@ class MainActivity : AppSystemActivity() {
             { UIPanelSettings(shape = QuadShapeOptions(width = 1.8f, height = 1.1f), display = DpPerMeterDisplayOptions(dpPerMeter = 650f), rendering = UIPanelRenderOptions(renderMode = PanelRenderMode.Mesh())) },
             { v, _, _ -> DebugLog.log("web panel ready: view ${v.width}x${v.height}, attached=${v.isAttachedToWindow}") },
         ),
-        // Diagnostic: a plain View panel. If it shows and the web panel doesn't, the WebView is what isn't drawing.
-        ViewPanelRegistration(
-            PANEL_TEST,
-            { _, ctx -> TextView(ctx).apply { text = "Tuner is running"; textSize = 40f; gravity = Gravity.CENTER; setTextColor(Color.BLACK); setBackgroundColor(Color.parseColor("#FFB347")) } },
-            { UIPanelSettings(shape = QuadShapeOptions(width = 1.2f, height = 0.3f), display = DpPerMeterDisplayOptions(dpPerMeter = 650f), rendering = UIPanelRenderOptions(renderMode = PanelRenderMode.Mesh())) },
-            { v, _, _ -> DebugLog.log("test panel ready: view ${v.width}x${v.height}") },
-        ),
         ViewPanelRegistration(
             PANEL_CONTROLS,
             { _, ctx -> makeControls(ctx) },
@@ -125,25 +117,23 @@ class MainActivity : AppSystemActivity() {
         DebugLog.log("scene configured, creating entities")
         webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(inFront(1.4f, 1.35f)))
         controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(inFront(1.2f, 0.6f, -25f)), Visible(false))
-        testEntity = Entity.createPanelEntity(PANEL_TEST, Transform(inFront(1.4f, 2.1f)))
         DebugLog.log("entities created")
     }
 
-    private var testEntity: Entity? = null
 
     // The scene's own axes are not the way you are facing, so everything is placed relative to where the headset is
     // looking (re-done a moment after start, once tracking has settled, and by the Recenter button).
     private var hx = 0f
     private var hz = 0f
     private var fx = 0f
-    private var fz = -1f
+    private var fz = 1f
     private var yaw = 0f
     private var ticks = 0
 
     private fun readView() {
         try {
             val v = scene.getViewerPose()
-            val f = v.q * Vector3(0f, 0f, -1f)
+            val f = v.q * Vector3(0f, 0f, 1f) // this SDK's viewer looks along +z when unrotated
             val n = Math.hypot(f.x.toDouble(), f.z.toDouble()).toFloat()
             if (n > 0.2f) { fx = f.x / n; fz = f.z / n }
             hx = v.t.x; hz = v.t.z
@@ -162,7 +152,6 @@ class MainActivity : AppSystemActivity() {
         readView()
         webEntity?.setComponent(Transform(inFront(1.4f, 1.35f)))
         controlsEntity?.setComponent(Transform(inFront(1.2f, 0.6f, -25f)))
-        testEntity?.setComponent(Transform(inFront(1.4f, 2.1f)))
         moveScreen()
     }
 
