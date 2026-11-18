@@ -29,6 +29,8 @@ import com.meta.spatial.toolkit.MediaPanelRenderOptions
 import com.meta.spatial.toolkit.MediaPanelSettings
 import com.meta.spatial.toolkit.createPanelEntity
 import com.meta.spatial.toolkit.PanelRegistration
+import com.meta.spatial.toolkit.PanelRenderMode
+import com.meta.spatial.toolkit.UIPanelRenderOptions
 import com.meta.spatial.toolkit.PixelDisplayOptions
 import com.meta.spatial.toolkit.QuadShapeOptions
 import com.meta.spatial.toolkit.Transform
@@ -53,6 +55,7 @@ class MainActivity : AppSystemActivity() {
         const val PANEL_WEB = 1
         const val PANEL_VIDEO = 2
         const val PANEL_CONTROLS = 3
+        const val PANEL_TEST = 4
         const val STEP_SEEK_MS = 10_000L
     }
 
@@ -86,12 +89,20 @@ class MainActivity : AppSystemActivity() {
         ViewPanelRegistration(
             PANEL_WEB,
             { _, ctx -> try { makeWeb(ctx) } catch (e: Throwable) { DebugLog.log("web view failed: $e"); errorView(ctx, "Can't start the web view:\n$e") } },
-            { UIPanelSettings(shape = QuadShapeOptions(width = 1.8f, height = 1.1f), display = DpPerMeterDisplayOptions(dpPerMeter = 650f)) },
+            { UIPanelSettings(shape = QuadShapeOptions(width = 1.8f, height = 1.1f), display = DpPerMeterDisplayOptions(dpPerMeter = 650f), rendering = UIPanelRenderOptions(renderMode = PanelRenderMode.Mesh())) },
+            { v, _, _ -> DebugLog.log("web panel ready: view ${v.width}x${v.height}, attached=${v.isAttachedToWindow}") },
+        ),
+        // Diagnostic: a plain View panel. If it shows and the web panel doesn't, the WebView is what isn't drawing.
+        ViewPanelRegistration(
+            PANEL_TEST,
+            { _, ctx -> TextView(ctx).apply { text = "Tuner is running"; textSize = 40f; gravity = Gravity.CENTER; setTextColor(Color.BLACK); setBackgroundColor(Color.parseColor("#FFB347")) } },
+            { UIPanelSettings(shape = QuadShapeOptions(width = 1.2f, height = 0.3f), display = DpPerMeterDisplayOptions(dpPerMeter = 650f), rendering = UIPanelRenderOptions(renderMode = PanelRenderMode.Mesh())) },
+            { v, _, _ -> DebugLog.log("test panel ready: view ${v.width}x${v.height}") },
         ),
         ViewPanelRegistration(
             PANEL_CONTROLS,
             { _, ctx -> makeControls(ctx) },
-            { UIPanelSettings(shape = QuadShapeOptions(width = 1.7f, height = 0.5f), display = DpPerMeterDisplayOptions(dpPerMeter = 600f)) },
+            { UIPanelSettings(shape = QuadShapeOptions(width = 1.7f, height = 0.5f), display = DpPerMeterDisplayOptions(dpPerMeter = 600f), rendering = UIPanelRenderOptions(renderMode = PanelRenderMode.Mesh())) },
         ),
         VideoSurfacePanelRegistration(
             PANEL_VIDEO,
@@ -114,7 +125,11 @@ class MainActivity : AppSystemActivity() {
         DebugLog.log("scene configured, creating entities")
         webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(inFront(1.4f, 1.35f)))
         controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(inFront(1.2f, 0.6f, -25f)), Visible(false))
+        testEntity = Entity.createPanelEntity(PANEL_TEST, Transform(inFront(1.4f, 2.1f)))
+        DebugLog.log("entities created")
     }
+
+    private var testEntity: Entity? = null
 
     // The scene's own axes are not the way you are facing, so everything is placed relative to where the headset is
     // looking (re-done a moment after start, once tracking has settled, and by the Recenter button).
@@ -147,6 +162,7 @@ class MainActivity : AppSystemActivity() {
         readView()
         webEntity?.setComponent(Transform(inFront(1.4f, 1.35f)))
         controlsEntity?.setComponent(Transform(inFront(1.2f, 0.6f, -25f)))
+        testEntity?.setComponent(Transform(inFront(1.4f, 2.1f)))
         moveScreen()
     }
 
