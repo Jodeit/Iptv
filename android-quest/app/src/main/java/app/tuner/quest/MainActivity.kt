@@ -16,6 +16,8 @@ import android.webkit.WebViewClient
 import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
+import android.net.Uri
+import com.meta.spatial.core.Color4
 import com.meta.spatial.core.Entity
 import com.meta.spatial.core.Pose
 import com.meta.spatial.core.Quaternion
@@ -25,6 +27,9 @@ import com.meta.spatial.runtime.ReferenceSpace
 import com.meta.spatial.runtime.StereoMode
 import com.meta.spatial.toolkit.AppSystemActivity
 import com.meta.spatial.toolkit.DpPerMeterDisplayOptions
+import com.meta.spatial.toolkit.Box
+import com.meta.spatial.toolkit.Material
+import com.meta.spatial.toolkit.Mesh
 import com.meta.spatial.toolkit.MediaPanelRenderOptions
 import com.meta.spatial.toolkit.MediaPanelSettings
 import com.meta.spatial.toolkit.createPanelEntity
@@ -76,14 +81,16 @@ class MainActivity : AppSystemActivity() {
     override fun registerFeatures(): List<SpatialFeature> = listOf(VRFeature(this))
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        DebugLog.init(this)
         playback = Playback(this, onState = { updateStatus() })
         super.onCreate(savedInstanceState)
+        DebugLog.log("onCreate done")
     }
 
-    override fun registerPanels(): List<PanelRegistration> = listOf(
+    override fun registerPanels(): List<PanelRegistration> = also { DebugLog.log("registerPanels") }.let { listOf(
         ViewPanelRegistration(
             PANEL_WEB,
-            { _, ctx -> try { makeWeb(ctx) } catch (e: Throwable) { errorView(ctx, "Can't start the web view:\n$e") } },
+            { _, ctx -> try { makeWeb(ctx) } catch (e: Throwable) { DebugLog.log("web view failed: $e"); errorView(ctx, "Can't start the web view:\n$e") } },
             { UIPanelSettings(shape = QuadShapeOptions(width = 1.8f, height = 1.1f), display = DpPerMeterDisplayOptions(dpPerMeter = 650f)) },
         ),
         ViewPanelRegistration(
@@ -102,13 +109,22 @@ class MainActivity : AppSystemActivity() {
                 )
             },
         ),
-    )
+    ) }
 
     override fun onSceneReady() {
         super.onSceneReady()
+        DebugLog.log("onSceneReady")
         scene.setReferenceSpace(ReferenceSpace.LOCAL_FLOOR)
         applyPassthrough()
+        DebugLog.log("scene configured, creating entities")
         webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(Pose(Vector3(0f, 1.35f, -1.4f), Quaternion())))
+        // Diagnostic: a green cube. If it shows but no panels do, the scene works and the panels don't.
+        Entity.create(
+            Mesh(Uri.parse("mesh://box")),
+            Material().apply { baseColor = Color4(0.2f, 0.8f, 0.4f, 1f); unlit = true },
+            Box(Vector3(-0.1f), Vector3(0.1f)),
+            Transform(Pose(Vector3(-1.4f, 1.3f, -1.4f))),
+        )
         controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(Pose(Vector3(0f, 0.6f, -1.2f), Quaternion(-25f, 0f, 0f))), Visible(false))
     }
 
@@ -133,9 +149,20 @@ class MainActivity : AppSystemActivity() {
         }
         w.setBackgroundColor(Color.parseColor("#EBDFB8"))
         w.addJavascriptInterface(Bridge(), "TunerQuest")
-        w.webViewClient = object : WebViewClient() {}
-        w.webChromeClient = WebChromeClient()
+        w.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView, url: String) { DebugLog.log("page loaded: $url") }
+            override fun onReceivedError(view: WebView, request: android.webkit.WebResourceRequest, error: android.webkit.WebResourceError) {
+                if (request.isForMainFrame) DebugLog.log("page error: ${error.errorCode} ${error.description}")
+            }
+        }
+        w.webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(m: android.webkit.ConsoleMessage): Boolean {
+                if (m.messageLevel() == android.webkit.ConsoleMessage.MessageLevel.ERROR) DebugLog.log("js error: ${m.message()} (${m.sourceId()}:${m.lineNumber()})")
+                return true
+            }
+        }
         w.loadUrl(BuildConfig.APP_URL)
+        DebugLog.log("web view created, loading ${BuildConfig.APP_URL}")
         return w
     }
 
@@ -148,6 +175,7 @@ class MainActivity : AppSystemActivity() {
         @JavascriptInterface
         fun play(json: String) {
             val o = JSONObject(json)
+            DebugLog.log("play: $json")
             val urls = o.getJSONArray("urls").let { a -> List(a.length()) { a.getString(it) } }
             ui.post {
                 title = o.optString("title")

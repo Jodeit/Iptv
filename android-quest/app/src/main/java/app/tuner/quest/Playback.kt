@@ -52,6 +52,7 @@ class Playback(private val ctx: Context, private val onState: () -> Unit) {
                 p.setVideoSurface(surface)
                 p.addListener(object : Player.Listener {
                     override fun onPlayerError(e: PlaybackException) {
+                        DebugLog.log("player error ${e.errorCodeName} on ${urls.getOrNull(index)?.substringBefore('?')}: ${e.cause}")
                         if (index + 1 < urls.size) { index++; start() } else { error = e.errorCodeName; onState() }
                     }
                     override fun onPlaybackStateChanged(state: Int) = onState()
