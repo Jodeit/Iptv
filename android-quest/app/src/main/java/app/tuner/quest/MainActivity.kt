@@ -196,7 +196,7 @@ class MainActivity : AppSystemActivity() {
             override fun onPageFinished(view: WebView, url: String) {
                 DebugLog.log("page loaded: $url")
                 // The page only hands playback to this app if its own code has the playQuest hook.
-                view.evaluateJavascript("fetch('/js/main.js').then(r=>r.text()).then(t=>t.includes('playQuest'))") { }
+                view.evaluateJavascript("fetch('/js/main.js').then(r=>r.text()).then(t=>TunerQuest.report('page has the playQuest hook: '+t.includes('playQuest')))", null)
                 view.evaluateJavascript("typeof window.TunerQuest") { DebugLog.log("bridge in page: $it") }
             }
             override fun onReceivedError(view: WebView, request: android.webkit.WebResourceRequest, error: android.webkit.WebResourceError) {
@@ -236,6 +236,8 @@ class MainActivity : AppSystemActivity() {
                 playback.play(urls, o.optBoolean("live"), (o.optDouble("startAt", 0.0) * 1000).toLong())
             }
         }
+
+        @JavascriptInterface fun report(msg: String) { DebugLog.log(msg) }
 
         @JavascriptInterface fun stop() { ui.post { stopPlayback() } }
     }

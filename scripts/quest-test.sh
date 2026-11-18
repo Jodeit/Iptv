@@ -5,7 +5,11 @@
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-git pull --ff-only -q
+# Update the repo, then restart from the updated copy: a script that pulls itself mid-run keeps executing its old text.
+if [ -z "${QUEST_PULLED:-}" ]; then
+  git pull --ff-only -q
+  QUEST_PULLED=1 exec bash "$0" "$@"
+fi
 adb devices | grep -w device >/dev/null || { echo "No headset found: plug it in and accept the debugging prompt."; exit 1; }
 
 adb install -r tuner-quest.apk >/dev/null
