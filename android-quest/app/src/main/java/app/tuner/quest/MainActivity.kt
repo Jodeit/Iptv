@@ -125,7 +125,7 @@ class MainActivity : AppSystemActivity() {
         applyPassthrough()
         DebugLog.log("scene configured, creating entities")
         webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(inFront(1.4f, 1.35f)), noRotation())
-        controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(inFront(1.2f, 0.6f, -25f)), Visible(false), noRotation())
+        controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(inFront(1.0f, 0.85f)), Visible(false), noRotation())
         DebugLog.log("entities created")
     }
 
@@ -156,7 +156,7 @@ class MainActivity : AppSystemActivity() {
     override fun onSceneTick() {
         super.onSceneTick()
         holdUpright(webEntity)
-        holdUpright(controlsEntity, -25f)
+        holdUpright(controlsEntity)
         holdUpright(videoEntity)
         if (++ticks == 90) { // diagnostics only
             try {
