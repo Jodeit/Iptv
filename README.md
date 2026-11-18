@@ -412,6 +412,7 @@ pop-out player are hidden there; setup and settings happen on the phone and sync
 - **Space:** passthrough (mixed reality) on/off, a screen you can make larger/smaller and move closer/farther/up/down, and 2D / SBS / TAB stereo from the control bar under the screen.
 - **Not yet:** XR3D (the 2D→3D shader runs in WebGL only, so it plays as 2D here; SBS/TAB channels do get real 3D), curved screen, custom environments, subtitles/audio-track picker, and resume points are not saved back to the page.
 - **Install:** enable Developer Mode in the Meta Horizon phone app, then `adb install tuner-quest.apk` over USB (or SideQuest). (Too big for the Worker's 25 MiB per-file limit, so it isn't served from the site: get it from the repo.)
+- **Test loop:** with the headset on USB debugging, `scripts/quest-test.sh` pulls the repo, installs `tuner-quest.apk`, launches it and prints the relevant logcat lines and the app's own log file.
 - **Build:** Android SDK 35, Java 17+, Gradle 8.7+: `cd android-quest && ANDROID_HOME=… gradle --no-daemon :app:assembleRelease [-PappUrl=https://…]`. Same signing key as the TV app. Written without a headset to test on, so expect rough edges.
 
 To build locally instead: `cd android-tv && gradle :app:assembleRelease [-PappUrl=https://…]` with the Android SDK installed.
