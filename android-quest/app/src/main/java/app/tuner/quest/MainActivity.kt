@@ -180,6 +180,9 @@ class MainActivity : AppSystemActivity() {
             userAgentString = "$userAgentString TunerQuest"
         }
         w.setBackgroundColor(Color.parseColor("#EBDFB8"))
+        var events = 0
+        w.setOnTouchListener { _, e -> if (events++ < 30 || e.actionMasked == android.view.MotionEvent.ACTION_DOWN) DebugLog.log("touch ${android.view.MotionEvent.actionToString(e.actionMasked)} at ${e.x.toInt()},${e.y.toInt()} (view ${w.width}x${w.height})"); false }
+        w.setOnHoverListener { _, e -> if (events++ < 30) DebugLog.log("hover ${android.view.MotionEvent.actionToString(e.actionMasked)} at ${e.x.toInt()},${e.y.toInt()}"); false }
         w.addJavascriptInterface(Bridge(), "TunerQuest")
         w.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) { DebugLog.log("page loaded: $url") }
