@@ -138,7 +138,8 @@ class MainActivity : AppSystemActivity() {
             val n = Math.hypot(f.x.toDouble(), f.z.toDouble()).toFloat()
             if (n > 0.2f) { fx = f.x / n; fz = f.z / n }
             hx = v.t.x; hz = v.t.z
-            yaw = Math.toDegrees(Math.atan2(-fx.toDouble(), -fz.toDouble())).toFloat()
+            // A panel's visible face points along -z when unrotated, so turn it to face back along -f (toward the viewer).
+            yaw = Math.toDegrees(Math.atan2(fx.toDouble(), fz.toDouble())).toFloat()
             DebugLog.log("view: head=($hx, ${v.t.y}, $hz) facing=($fx, $fz) yaw=$yaw")
         } catch (e: Throwable) {
             DebugLog.log("viewer pose failed: $e")
