@@ -407,7 +407,7 @@ function initTV() {
   function renderTabs() {
     tabsEl.innerHTML = '';
     const defs = [];
-    if (liveAll().length || T().hasKind('movie') || T().hasKind('series')) defs.push(['search', 'Search']);
+    const canSearch = liveAll().length || T().hasKind('movie') || T().hasKind('series');
     if (liveAll().length) defs.push(['live', 'Live']);
     if (T().hasKind('movie')) defs.push(['movie', 'Movies']);
     if (T().hasKind('series')) defs.push(['series', 'Shows']);
@@ -418,6 +418,7 @@ function initTV() {
     verEl = ver;
     paintVersion();
     let liveTabFocusedFromElsewhere = false;
+    if (WEB) tabsEl.append(profileChip()); // touch and headset: the profile you are on, first thing in the bar
     for (const [k, label] of defs) {
       const b = el('button', 'tvh-tab', esc(label));
       b.dataset.tab = k;
@@ -436,8 +437,52 @@ function initTV() {
       };
       tabsEl.append(b);
     }
+    // Search is an icon at the end of the strip, not a tab: it never takes the first place, so Live opens by default.
+    if (canSearch) {
+      const s = el('button', 'tvh-tab tvh-icon-tab', '<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.5 15.5 21 21"/></svg>');
+      s.dataset.tab = 'search';
+      s.title = 'Search';
+      s.setAttribute('aria-label', 'Search');
+      s.onclick = () => { goTab('search'); commitView(); focusFirstInBody(); }; // no focus-to-open: passing over it must not switch the view
+      tabsEl.append(s);
+    }
     tabsEl.append(ver);
     markTabs();
+  }
+
+  // ---------- Profile switcher (touch and headset) ----------
+  let profileMenu = null;
+  const closeProfileMenu = () => { profileMenu?.remove(); profileMenu = null; };
+  document.addEventListener('click', closeProfileMenu);
+  function profileChip() {
+    const a = P().active();
+    const b = el('button', 'tvh-pchip', `<span class="avatar${a ? '' : ' local'}">${a ? esc(a.name.trim().charAt(0).toUpperCase()) : '·'}</span><span class="tvh-pchip-name">${a ? esc(a.name) : 'This device'}</span><span class="tvh-pchip-caret" aria-hidden="true">▾</span>`);
+    b.setAttribute('aria-haspopup', 'menu');
+    b.title = 'Switch profile';
+    b.onclick = (e) => { e.stopPropagation(); if (profileMenu) closeProfileMenu(); else openProfileMenu(b); };
+    return b;
+  }
+  function openProfileMenu(anchor) {
+    const p = P(), a = p.active();
+    const menu = el('div', 'tvh-pmenu');
+    menu.setAttribute('role', 'menu');
+    menu.onclick = (e) => e.stopPropagation();
+    const add = (id, name, letter) => {
+      const on = (id ?? null) === (a?.id ?? null);
+      const it = el('button', `tvh-pitem${on ? ' on' : ''}`, `<span class="avatar${id ? '' : ' local'}">${letter}</span><span class="grow">${esc(name)}</span>${on ? '<span class="tvh-pcheck">✓</span>' : ''}`);
+      it.onclick = () => { closeProfileMenu(); if (on) return; p.switchTo(id); T().toast(`Switched to ${name}`); renderTabs(); };
+      menu.append(it);
+    };
+    for (const pr of p.list()) add(pr.id, pr.name, esc(pr.name.trim().charAt(0).toUpperCase()));
+    add(null, 'This device only', '·');
+    const manage = el('button', 'tvh-pitem manage', 'Manage profiles…');
+    manage.onclick = () => { closeProfileMenu(); goTab('phone'); commitView(); };
+    menu.append(manage);
+    document.body.append(menu);
+    const r = anchor.getBoundingClientRect();
+    menu.style.top = `${r.bottom + 8}px`;
+    menu.style.left = `${Math.max(8, Math.min(r.left, innerWidth - 300))}px`;
+    profileMenu = menu;
   }
   const markTabs = () => {
     for (const b of tabsEl.querySelectorAll('.tvh-tab')) {
@@ -1013,11 +1058,11 @@ function initTV() {
         while (shown <= i && shown < listCache.length) addRows();
         row = bodyEl.querySelector(`.tvh-row[data-i="${Math.max(0, Math.min(listCache.length - 1, i))}"]`) || row;
       }
-      (row || (tab === 'search' ? bodyEl.querySelector('.tvh-search-input') : bodyEl.querySelector('button')) || tabsEl.firstElementChild)?.focus();
+      (row || (tab === 'search' ? bodyEl.querySelector('.tvh-search-input') : bodyEl.querySelector('button')) || tabsEl.querySelector('.tvh-tab[data-tab="live"]') || tabsEl.querySelector('.tvh-tab'))?.focus();
       row?.scrollIntoView({ block: 'center' });
     });
   }
-  function closeHome() { home.classList.add('hidden'); document.documentElement.classList.remove('home-open'); guideSession = false; syncGuideMode();
+  function closeHome() { closeProfileMenu(); home.classList.add('hidden'); document.documentElement.classList.remove('home-open'); guideSession = false; syncGuideMode();
     if (savedNav) { ({ tab, view, group, genre } = savedNav); savedNav = null; } document.activeElement?.blur?.(); }
   // A playlist can finish loading (or change after a sync) while Home is already open: rebuild instead of
   // leaving the old list on screen.
