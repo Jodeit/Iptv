@@ -38,7 +38,9 @@ export class StreamPlayer {
   log(line) {
     const t = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
     this.report.push(`${t} ${line}`);
-    if (/^[✗⚠]/.test(line) || /^MKV: (video|jumped|skipped)/.test(line)) this.onProblem(line);
+    // Failures, warnings, reconnects and stalls of 2 s or more go to the problem log (and the server's /logs), so a
+    // picture that jumps or freezes on a headset can be traced afterwards.
+    if (/^[✗⚠↻]/.test(line) || /^MKV: (video|jumped|skipped)/.test(line) || /^⏸ buffering (?:[2-9]|\d{2,})/.test(line)) this.onProblem(line);
     if (this.report.length > 300) this.report.splice(0, this.report.length - 300);
     this.onLog(this.report);
   }
@@ -275,7 +277,18 @@ export class StreamPlayer {
             errorRetry: { maxNumRetry: 6, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
           },
         },
-        // Fail fast on the playlist: other sources are waiting their turn.
+        // A live stream re-reads its playlist every few seconds. Through the proxy one of those reads sometimes fails
+        // (a timeout, a refused connection, a 401 while the provider counts connections); two failures in a row used to
+        // be fatal and restart the channel. Keep trying for about half a minute instead, playing from the buffer.
+        playlistLoadPolicy: {
+          default: {
+            maxTimeToFirstByteMs: 10000,
+            maxLoadTimeMs: 20000,
+            timeoutRetry: { maxNumRetry: 4, retryDelayMs: 500, maxRetryDelayMs: 4000 },
+            errorRetry: { maxNumRetry: 6, retryDelayMs: 1000, maxRetryDelayMs: 8000 },
+          },
+        },
+        // Fail fast on the first playlist: other sources are waiting their turn.
         manifestLoadPolicy: {
           default: {
             maxTimeToFirstByteMs: 8000,
@@ -288,6 +301,7 @@ export class StreamPlayer {
       this.hls = hls;
       let ready = false;
       let bytes = 0;
+      let inPlace = []; // times of in-place network recoveries (see ERROR below)
       hls.on(Hls.Events.MANIFEST_LOADED, () => this.progress(token, 'Channel found, loading video'));
       hls.on(Hls.Events.FRAG_LOADED, (_, data) => {
         bytes += data.payload?.byteLength || 0;
@@ -304,8 +318,22 @@ export class StreamPlayer {
         }
         if (!ready) return reject(new Error(`${data.details}${data.response?.code ? ` (HTTP ${data.response.code})` : ''}`));
         if (token !== this.token) return;
-        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) hls.recoverMediaError();
-        else this.recover(token, data.details);
+        if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
+        // A network error that outlasted the retries above. Pick up again in place first: the buffer and the position
+        // stay, so the picture doesn't blank and jump back the way a full reconnect does. Three tries a minute, then
+        // the full reconnect.
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+          const now = Date.now();
+          inPlace = inPlace.filter((t) => now - t < 60000);
+          if (inPlace.length < 3) {
+            inPlace.push(now);
+            const wait = 1000 * 2 ** (inPlace.length - 1);
+            this.log(`↻ ${data.details}${data.response?.code ? ` (HTTP ${data.response.code})` : ''}: picking up again in place in ${wait / 1000}s (${this.bufferedAhead().toFixed(1)}s buffered)`);
+            setTimeout(() => { if (token === this.token && this.hls === hls) hls.startLoad(-1); }, wait);
+            return;
+          }
+        }
+        this.recover(token, data.details);
       });
       hls.loadSource(url);
       hls.attachMedia(this.video);

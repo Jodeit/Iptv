@@ -28,8 +28,9 @@ function initTV() {
   const esc = (t) => String(t ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
   const O = () => window.o3xr;
-  const P = () => O().profiles;
-  const T = () => O().tv;
+  // Safe before the app has started (window.o3xr is set a moment after this file runs): timers call these early.
+  const P = () => O()?.profiles;
+  const T = () => O()?.tv;
   const host = location.host;
   const fmtClock = (t) => new Date(t).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const fmtDur = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return `${h ? h + ':' : ''}${String(m).padStart(h ? 2 : 1, '0')}:${String(s % 60).padStart(2, '0')}`; };
