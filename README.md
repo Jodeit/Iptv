@@ -42,7 +42,8 @@ controller's ray is the pointer:
 Most providers are `http://`, which an `https://` page can only reach through the proxy, so every segment makes an
 extra trip. Quest Browser therefore defaults to the **Large** buffer (**Playback → Buffer**), and the
 [home proxy](#home-proxy-when-cloudflare-cant-reach-your-provider) shortens the trip. The native Quest app connects to
-the provider directly. The 3D theater and VR are still there under **Playback → Display → 3D theater**.
+the provider directly. The 3D theater and VR are still there under **Playback → Display → 3D theater**. Outside VR the theater's screen fills the
+window by default (**Screen → Fill the window**; turn it off to sit in the cinema).
 
 ## Phones and tablets
 

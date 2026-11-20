@@ -34,7 +34,7 @@ const store = {
 const DEFAULTS = {
   mode: 'xr3d', relief: 0.18, parallax: 0.8, convergence: 0.5, contrast: 1.4, smooth: 0.006,
   invert: false, showDepth: false, swap: false, view: 'mono',
-  size: 6, distance: 5, height: 1.8, curve: 0.15, bright: 1, env: 'cinema', ambient: true,
+  size: 6, distance: 5, height: 1.8, curve: 0.15, bright: 1, env: 'cinema', ambient: true, fitWindow: true,
   volume: 1, muted: false, proxy: 'auto', proxyUrl: '', vodPlayer: 'builtin', display: 'auto', hlsEngine: 'auto',
 };
 const settings = { ...DEFAULTS, ...store.get('settings', {}) };
@@ -1727,6 +1727,8 @@ function applyAll() {
   $('swapEyes').checked = settings.swap;
   $('ambient').checked = settings.ambient;
   theater.ambientOn = settings.ambient;
+  $('fitWindow').checked = settings.fitWindow;
+  theater.setFitWindow?.(settings.fitWindow);
   setView(settings.view);
   setEnv(settings.env);
   applyMode(state.current?.layout || settings.mode, false);
@@ -2217,6 +2219,7 @@ bindCheck('invertDepth', 'invert', (v) => theater.screen.set('uInvert', v ? 1 : 
 bindCheck('showDepth', 'showDepth', (v) => theater.screen.set('uShowDepth', v ? 1 : 0));
 bindCheck('swapEyes', 'swap', (v) => theater.screen.set('uSwap', v ? 1 : 0));
 bindCheck('ambient', 'ambient', (v) => { theater.ambientOn = v; });
+bindCheck('fitWindow', 'fitWindow', (v) => theater.setFitWindow?.(v));
 
 $('resetSettings').onclick = () => {
   Object.assign(settings, DEFAULTS);

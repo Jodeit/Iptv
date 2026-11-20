@@ -19,6 +19,10 @@ export class Theater {
     this.ambientOn = true;
     this.frameHooks = [];
     this.xrMode = null;
+    // Outside VR the screen fills the window by default: the camera moves to just the distance where the whole
+    // picture fits, with no room or black border around it. VR keeps the seat and the screen settings.
+    this.fitWindow = true;
+    this.curve = 0;
 
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
     renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
@@ -77,14 +81,13 @@ export class Theater {
 
     renderer.xr.addEventListener('sessionstart', () => {
       this.screen.setStereo(true);
+      this.placeCamera(); // the screen's curve comes back
       if (this.xrMode === 'immersive-ar') { this.scene.background = null; this.envRoot.visible = false; }
     });
     renderer.xr.addEventListener('sessionend', () => {
       this.xrMode = null;
       this.screen.setStereo(false);
-      this.camera.position.set(0, 1.6, 0.6);
-      this.camera.lookAt(0, this.screenHeight, -this.screenDistance);
-      this.resize();
+      this.resize(); // places the camera again
       this.setEnvironment(this.envName);
       this.onXREnd?.();
     });
@@ -225,12 +228,34 @@ export class Theater {
     if (width !== undefined) this.screenWidth = width;
     if (distance !== undefined) this.screenDistance = distance;
     if (height !== undefined) this.screenHeight = height;
-    if (curve !== undefined) this.screen.set('uCurve', curve);
+    if (curve !== undefined) this.curve = curve;
     this.screen.setSize(this.screenWidth, this.aspect);
     this.screenRig.position.set(0, this.screenHeight, -this.screenDistance);
     this.glow.scale.set(this.screenWidth * 1.7, (this.screenWidth / this.aspect) * 1.9, 1);
     this.screenLight.position.set(0, this.screenHeight, -this.screenDistance + 1.5);
-    this.camera.lookAt(0, this.screenHeight, -this.screenDistance);
+    this.placeCamera();
+  }
+
+  setFitWindow(on) {
+    this.fitWindow = !!on;
+    this.placeCamera();
+  }
+
+  // The 2D view's seat. Fill: as close as the whole picture still fits, with the screen flat (a curve seen from that
+  // close bulges past the window's edges). Otherwise the cinema seat. In VR the screen keeps its curve.
+  placeCamera() {
+    const fill = this.fitWindow && !this.renderer.xr.isPresenting;
+    this.screen.set('uCurve', fill ? 0 : this.curve);
+    if (this.renderer.xr.isPresenting || this.screenWidth === undefined) return;
+    const sy = this.screenHeight, sz = -this.screenDistance;
+    if (!fill) {
+      this.camera.position.set(0, 1.6, 0.6);
+    } else {
+      const t = Math.tan(THREE.MathUtils.degToRad(this.camera.fov / 2));
+      const w = this.screenWidth, h = w / this.aspect;
+      this.camera.position.set(0, sy, sz + Math.max(h / (2 * t), w / (2 * t * this.camera.aspect)));
+    }
+    this.camera.lookAt(0, sy, sz);
   }
 
   setAspect(aspect) {
@@ -310,6 +335,7 @@ export class Theater {
     this.renderer.setSize(w, h);
     this.camera.aspect = this.view === 'sbs' ? (w / 2) / h : w / h;
     this.camera.updateProjectionMatrix();
+    this.placeCamera();
     const pr = this.renderer.getPixelRatio();
     this.rtL.setSize(w * pr, h * pr);
     this.rtR.setSize(w * pr, h * pr);
