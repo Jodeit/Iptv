@@ -308,7 +308,7 @@ function initTV() {
     bar.classList.toggle('on', pct != null);
     if (pct != null) bar.firstElementChild.style.width = `${Math.min(100, Math.max(0, pct))}%`;
     osd.querySelector('.osd-hint').textContent = updateReady ? 'Update ready: installs when you pause or leave'
-      : QB ? (live ? 'Trigger: guide  ·  Stick ▲▼: channels' : 'Trigger: controls  ·  Stick ◀▶: skip 10 s')
+      : QB ? (live ? 'Trigger or stick: guide' : 'Trigger: controls  ·  Stick ◀▶: skip 10 s')
       : live ? '▲▼ browse     ◀ guide     OK controls' : '◀ ▶ skip     OK controls';
   }
   function showOsd(ms = 4500) {
@@ -996,7 +996,7 @@ function initTV() {
     const c = O().state.current;
     const nn = c && T().guide.nowNext(c);
     const p = nn?.now, pct = p ? Math.round(Math.min(100, Math.max(0, ((Date.now() - p.start) / ((p.stop - p.start) || 1)) * 100))) : 0;
-    cap.innerHTML = c ? `<b>${esc(c.clean || cleanName(c.name))}</b>${p ? `<div class="cap-now">${esc(p.title)} <small>until ${esc(fmtClock(p.stop))}</small></div><i class="prog on"><u style="width:${pct}%"></u></i>${p.desc && p.desc.length > 3 ? `<p class="cap-desc">${esc(p.desc)}</p>` : ''}${nn.next ? `<div class="cap-next"><b>Next</b> ${esc(nn.next.title)} <small>${esc(fmtClock(nn.next.start))}</small></div>` : ''}` : ''}<small class="dim">${QB ? 'Click the picture to go back to full screen' : 'Back returns to the picture'}</small>` : '';
+    cap.innerHTML = c ? `<b>${esc(c.clean || cleanName(c.name))}</b>${p ? `<div class="cap-now">${esc(p.title)} <small>until ${esc(fmtClock(p.stop))}</small></div><i class="prog on"><u style="width:${pct}%"></u></i>${p.desc && p.desc.length > 3 ? `<p class="cap-desc">${esc(p.desc)}</p>` : ''}${nn.next ? `<div class="cap-next"><b>Next</b> ${esc(nn.next.title)} <small>${esc(fmtClock(nn.next.start))}</small></div>` : ''}` : ''}<small class="dim">${QB ? 'Stick ▲▼ to move, trigger on a channel to watch it. Click the picture to go back.' : 'Back returns to the picture'}</small>` : '';
   }
   setInterval(() => { if (document.documentElement.classList.contains('guide-mode')) paintCap(); }, 2000); // guide data arrives late
   // The picture window belongs to Live. Movies, Shows and Settings are the full-width menu.
@@ -2181,19 +2181,35 @@ function initTV() {
     document.addEventListener('fullscreenchange', () => html.classList.toggle('qb-full', !!document.fullscreenElement));
     document.body.append(el('div', 'qb-full-hint', 'Pull the trigger anywhere for full screen'));
     for (const ev of ['pointerdown', 'pointerup', 'click']) addEventListener(ev, () => fullScreen(), true);
-    // Thumbstick on the picture: ▲▼ changes channel on live TV; on a film ◀▶ (or ▲▼) skips 10 s. In lists it scrolls.
+    // Thumbstick. It never changes the channel by itself:
+    //   picture, live TV  ▲▼ opens the guide on the playing channel's folder, one step from it (nothing is tuned yet)
+    //   picture, film     ◀▶ (or ▲▼) skips 10 s
+    //   guide / lists     ▲▼ moves the highlight one row at a time; the trigger on a channel watches it (the confirm)
     let stickAt = 0;
+    const stickReady = (ms) => { const now = Date.now(); if (now - stickAt < ms) return false; stickAt = now; return true; };
     addEventListener('wheel', (e) => {
-      if (screen() !== 'player' || !O().state.current) return;
+      const s = screen(), dx = e.deltaX, dy = e.deltaY;
+      const vertical = Math.abs(dy) >= Math.abs(dx);
+      if (s === 'player' && O().state.current) {
+        e.preventDefault();
+        if (Math.max(Math.abs(dx), Math.abs(dy)) < 4) return;
+        if (isVod()) { if (stickReady(300)) seekBy((vertical ? -dy : dx) > 0 ? 10 : -10); }
+        else if (vertical) { if (stickReady(500)) openHome({ browse: dy < 0 ? -1 : 1 }); }
+        else if (stickReady(500)) showOsd();
+        return;
+      }
+      if (s !== 'home' || !vertical || Math.abs(dy) < 4 || !e.target.closest?.('.tvh-body, #flatStage')) return;
+      const rows = bodyEl.querySelector('.tvh-row');
+      if (!rows) return; // nothing to highlight: let it scroll
       e.preventDefault();
-      const dx = e.deltaX, dy = e.deltaY;
-      if (Math.max(Math.abs(dx), Math.abs(dy)) < 4) return;
-      const now = Date.now();
-      if (now - stickAt < (isVod() ? 300 : 700)) return; // a held stick repeats, one step at a time
-      stickAt = now;
-      if (isVod()) seekBy((Math.abs(dx) > Math.abs(dy) ? dx : -dy) > 0 ? 10 : -10);
-      else if (Math.abs(dy) >= Math.abs(dx)) surf(dy < 0 ? 1 : -1);
-      else showOsd();
+      if (!stickReady(170)) return; // a held stick repeats, one row at a time
+      const t = document.activeElement;
+      if (t?.classList.contains('tvh-row') && bodyEl.contains(t)) move(bodyEl, 0, dy > 0 ? 1 : -1);
+      else {
+        const row = bodyEl.querySelector('.tvh-row.playing') || rows;
+        row.focus();
+        row.scrollIntoView({ block: 'center' });
+      }
     }, { passive: false });
     // Moving the ray over the picture brings up what's playing and the controller hints.
     let movedAt = 0;

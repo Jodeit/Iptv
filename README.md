@@ -34,7 +34,8 @@ controller's ray is the pointer:
 | | Live TV | Movies and episodes |
 |---|---|---|
 | **Trigger on the picture** | Guide: the list on the left, the picture in the corner. Click the picture to go back. | Playback controls |
-| **Thumbstick ▲▼** | Next / previous channel | Skip 10 s |
+| **Thumbstick ▲▼** | Opens the guide (nothing changes until you pick a channel) | Skip 10 s |
+| **In the guide** | Stick ▲▼ moves the highlight one channel at a time; the trigger on a channel watches it | |
 | **Thumbstick ◀▶** | Shows what's on | Skip 10 s |
 | **☰ Menu** (top left) | Movies, Shows, Search, Settings | |
 
