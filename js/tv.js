@@ -371,7 +371,7 @@ function initTV() {
   function paintVersion() {
     if (verEl) {
       verEl.classList.toggle('new', updateReady);
-      verEl.textContent = updateReady ? `Update ${latest && latest !== VERSION ? `to ${latest} ` : ''}ready: press OK` : `Tuner ${VERSION} ↻`;
+      verEl.textContent = updateReady ? `Update ${latest && latest !== VERSION ? `to ${latest} ` : ''}ready: press OK` : `Tuner ${VERSION}${window.__tunerHeadset ? ` · ${window.__tunerHeadset}` : ''} ↻`;
     }
     osd.classList.toggle('update', updateReady);
   }
