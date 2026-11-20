@@ -15,7 +15,11 @@
       if (q === 'tuner' || q === 'classic') localStorage.setItem('tuner.ui', q);
       const pref = localStorage.getItem('tuner.ui');
       const apple = /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-      if (!/TunerTV/.test(navigator.userAgent) && (pref === 'tuner' || (pref !== 'classic' && apple))) {
+      /* Headset profile: Quest Browser, or the native Quest app (which adds "TunerQuest" to the user agent). It gets the Tuner
+         view by default and larger, pointer-friendly targets (html.headset in css/style.css). */
+      const quest = /OculusBrowser|Quest|Pico|Wolvic/i.test(navigator.userAgent) || /TunerQuest/.test(navigator.userAgent);
+      if (quest) { window.__tunerHeadset = /TunerQuest/.test(navigator.userAgent) ? 'quest-app' : 'headset-browser'; document.documentElement.classList.add('headset'); }
+      if (!/TunerTV/.test(navigator.userAgent) && (pref === 'tuner' || (pref !== 'classic' && (apple || quest)))) {
         window.__tunerWeb = true;
         document.documentElement.classList.add('tv', 'tv-web', 'tv-booting');
         setTimeout(() => document.documentElement.classList.remove('tv-booting'), 12000);

@@ -1,10 +1,14 @@
 // In-headset channel browser and controls, drawn to a canvas texture and driven by
-// controller/hand ray pointing. Squeeze (grip) toggles the panel; thumbstick pages.
+// controller/hand ray pointing. The mapping depends on what the headset is using:
+//   Controllers  trigger clicks, grip or B/Y shows and hides the panel, A/X plays and pauses, the thumbstick seeks
+//                (left/right) and pages the list or sets the volume (up/down).
+//   Hands        pinch clicks; a left-hand pinch in empty air shows and hides the panel; the panel has its own
+//                seek and volume buttons, since there is no thumbstick.
 
 import * as THREE from 'three';
 import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
 
-const W = 768, H = 1024, ROWS = 9;
+const W = 768, H = 1024, ROWS = 8;
 const C = {
   bg: 'rgba(14,16,24,0.94)', line: 'rgba(255,255,255,0.10)', text: '#e8eaf2', muted: '#8a90a6',
   accent: '#d9b97b', accent2: '#7ea4d8', hover: 'rgba(255,255,255,0.10)', active: 'rgba(217,185,123,0.20)',
@@ -18,6 +22,7 @@ export class VRPanel {
     this.regions = [];
     this.hoverKey = null;
     this.stickCooldown = 0;
+    this.usingHands = false;
 
     this.canvas = document.createElement('canvas');
     this.canvas.width = W;
@@ -60,6 +65,7 @@ export class VRPanel {
       dot.visible = false;
       scene.add(dot);
       controller.userData = { ray, dot, region: null };
+      controller.addEventListener('connected', (e) => { controller.userData.source = e.data; });
       controller.addEventListener('selectstart', () => this.click(controller));
       controller.addEventListener('squeezestart', () => { this.mesh.visible = !this.mesh.visible; });
       scene.add(controller);
@@ -97,29 +103,44 @@ export class VRPanel {
     }
     if (hoverKey !== this.hoverKey) { this.hoverKey = hoverKey; this.draw(); }
 
-    // B/Y brings the panel back (it may have been hidden with the grip).
-    for (const src of frame.session.inputSources) {
-      const pressed = !!src.gamepad?.buttons?.[5]?.pressed;
-      const key = `by:${src.handedness}`;
-      if (pressed && !this[key]) { this.mesh.visible = true; this.draw(); }
-      this[key] = pressed;
+    // What is in use decides the mapping. Controllers have buttons and sticks; hands only have pinch.
+    const sources = [...frame.session.inputSources];
+    const pads = sources.filter((src) => !src.hand && src.gamepad);
+    const usingHands = sources.some((src) => src.hand) && !pads.length;
+    if (usingHands !== this.usingHands) { this.usingHands = usingHands; this.draw(); }
+
+    // Controllers: A/X plays and pauses, B/Y shows or hides the panel.
+    for (const src of pads) {
+      const b = src.gamepad.buttons;
+      const a = !!b?.[4]?.pressed, by = !!b?.[5]?.pressed;
+      const ka = `a:${src.handedness}`, kb = `by:${src.handedness}`;
+      if (a && !this[ka]) this.app.togglePlay();
+      if (by && !this[kb]) { this.mesh.visible = !this.mesh.visible; this.draw(); }
+      this[ka] = a;
+      this[kb] = by;
     }
 
-    // Thumbstick up/down pages through channels.
+    // Thumbstick: left/right seeks. Up/down pages the list while the panel is open, otherwise sets the volume.
     this.stickCooldown -= dt;
-    if (this.stickCooldown <= 0 && this.mesh.visible) {
-      for (const src of frame.session.inputSources) {
-        const y = src.gamepad?.axes?.[3] ?? 0;
-        if (Math.abs(y) > 0.7) { this.turnPage(y > 0 ? 1 : -1); this.stickCooldown = 0.35; break; }
+    if (this.stickCooldown <= 0) {
+      for (const src of pads) {
+        const x = src.gamepad.axes?.[2] ?? 0, y = src.gamepad.axes?.[3] ?? 0;
+        if (Math.abs(x) > 0.7 && Math.abs(x) >= Math.abs(y)) { this.app.seek(x > 0 ? 10 : -10); this.stickCooldown = 0.35; break; }
+        if (Math.abs(y) > 0.7) {
+          if (this.mesh.visible) { this.turnPage(y > 0 ? 1 : -1); this.stickCooldown = 0.35; }
+          else { this.app.volume(y < 0 ? 0.05 : -0.05); this.stickCooldown = 0.12; }
+          break;
+        }
       }
     }
   }
 
   click(controller) {
     const r = controller.userData.region;
-    if (!r) return;
-    r.action();
-    this.draw();
+    if (r) { r.action(); this.draw(); return; }
+    // Hands have no grip or B/Y: a left-hand pinch in empty air shows or hides the panel.
+    const src = controller.userData.source;
+    if (src?.hand && src.handedness === 'left') { this.mesh.visible = !this.mesh.visible; this.draw(); }
   }
 
   turnPage(dir) {
@@ -245,9 +266,14 @@ export class VRPanel {
     this.button(32 + (bw + 12), cy2, bw, 56, 'Depth +', 'rel+', () => app.adjust('relief', 0.03));
     this.button(32 + (bw + 12) * 2, cy2, bw, 56, 'Pop −', 'pop-', () => app.adjust('parallax', -0.1));
     this.button(32 + (bw + 12) * 3, cy2, bw, 56, 'Pop +', 'pop+', () => app.adjust('parallax', 0.1));
-    const cy3 = cy2 + 68, half = (W - 64 - 12) / 2;
-    this.button(32, cy3, half, 56, 'Hide panel (B/Y shows it)', 'hide', () => { this.mesh.visible = false; });
-    this.button(32 + half + 12, cy3, half, 56, 'Exit VR', 'exit', () => app.exitVR(), true);
+    const cy3 = cy2 + 68;
+    this.button(32, cy3, bw, 56, '−10 s', 'sk-', () => app.seek(-10));
+    this.button(32 + (bw + 12), cy3, bw, 56, '+10 s', 'sk+', () => app.seek(10));
+    this.button(32 + (bw + 12) * 2, cy3, bw, 56, 'Vol −', 'vol-', () => app.volume(-0.1));
+    this.button(32 + (bw + 12) * 3, cy3, bw, 56, 'Vol +', 'vol+', () => app.volume(0.1));
+    const cy4 = cy3 + 68, half = (W - 64 - 12) / 2;
+    this.button(32, cy4, half, 56, this.usingHands ? 'Hide (left pinch shows)' : 'Hide (B/Y shows it)', 'hide', () => { this.mesh.visible = false; });
+    this.button(32 + half + 12, cy4, half, 56, 'Exit VR', 'exit', () => app.exitVR(), true);
 
     this.texture.needsUpdate = true;
   }

@@ -1355,3 +1355,15 @@ html.tv.settings-open #panel .btn.ghost { color: var(--ink, #2d2a24); border-col
   html.tv.settings-open #panel .tab-body { padding: 14px 16px calc(22px + env(safe-area-inset-bottom, 0px)); }
   html.tv.settings-open #panel .row { flex-wrap: wrap; }
 }
+
+/* ---------- Headset profile (html.headset): pointing from a distance ----------
+   Quest Browser and the native Quest app. Bigger targets, stronger hover feedback (the ray is the hover), roomier rows. */
+html.headset.tv-web { font-size: 19px; }
+html.headset.tv-web .tvh-tab { font-size: 20px; padding: 14px 22px; min-height: 52px; }
+html.headset.tv-web .tvh-chip { font-size: 19px; padding: 14px 18px; min-height: 52px; }
+html.headset.tv-web .tvh-row { padding: 16px 20px; min-height: 64px; }
+html.headset.tv-web .btn, html.headset.tv-web .web-btn, html.headset.tv-web .tvh-x { min-height: 52px; font-size: 19px; padding: 12px 22px; }
+html.headset.tv-web .tvh-search-input { font-size: 20px; min-height: 52px; }
+html.headset.tv-web .tvh-tab:hover, html.headset.tv-web .tvh-chip:hover, html.headset.tv-web .tvh-row:hover,
+html.headset.tv-web .btn:hover, html.headset.tv-web .web-btn:hover { outline: 3px solid var(--accent); outline-offset: 2px; }
+html.headset.tv-web .tvh-body, html.headset.tv-web .tvh-chips { scrollbar-width: auto; }

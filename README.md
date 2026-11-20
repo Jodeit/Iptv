@@ -403,12 +403,18 @@ pop-out player are hidden there; setup and settings happen on the phone and sync
    - `adb connect <tv-ip>:5555 && adb install app-release.apk`, or
    - put the APK on a USB stick / host it and install with the **Downloader** app (allow "Install unknown apps" for it).
 
-### Meta Quest APK
+### Meta Quest app
 
-`tuner-quest.apk` (source in `android-quest/`) is a tiny launcher: its icon appears under **Unknown Sources** in the Quest library and opens Tuner in Quest Browser. It doesn't embed a WebView, because WebXR (XR3D, immersive VR) only exists in the browser.
+`tuner-quest.apk` (source in `android-quest/`) is a native Quest app built on the Meta Spatial SDK. It opens as its own app (library → Unknown Sources), not in the browser.
 
-- Enable Developer Mode in the Meta Horizon phone app, then `adb install tuner-quest.apk` over USB (or SideQuest), or get it at `https://iptv.jodeit.workers.dev/tuner-quest.apk`.
-- Build: `cd android-quest && ANDROID_HOME=… gradle --no-daemon :app:assembleRelease [-PappUrl=https://…]`. Same signing key as the TV app.
+- **Browse:** the hosted Tuner page in a panel in front of you. When it runs inside this app it hands playback to the headset instead of its own `<video>` (`playQuest` in `js/main.js`).
+- **Play:** Media3 ExoPlayer decodes straight to a video surface in the compositor, direct from the provider (no CORS proxy). HLS, MPEG-TS, MP4 and MKV, hardware HEVC/AV1/H.264, and the FFmpeg decoder for AC-3/E-AC-3/DTS/TrueHD audio. Several URLs per channel are tried in order.
+- **Space:** passthrough (mixed reality) on/off, a screen you can make larger/smaller and move closer/farther/up/down, and 2D / SBS / TAB stereo from the control bar under the screen.
+- **Not yet:** XR3D (the 2D→3D shader runs in WebGL only, so it plays as 2D here; SBS/TAB channels do get real 3D), curved screen, custom environments, subtitles/audio-track picker, and resume points are not saved back to the page.
+- **Install:** enable Developer Mode in the Meta Horizon phone app, then `adb install tuner-quest.apk` over USB (or SideQuest). (Too big for the Worker's 25 MiB per-file limit, so it isn't served from the site: get it from the repo.)
+- **Headset profile:** the page recognises Quest Browser and the Quest app (user agent `OculusBrowser`/`Quest`, or the app's `TunerQuest` token), adds `html.headset`, turns on the Tuner view by default, and enlarges targets for pointing (CSS at the end of `css/style.css`). Controls follow the input type. Controllers: trigger clicks, A/X plays and pauses, B/Y or grip shows and hides the panel, thumbstick left/right seeks, up/down pages the list or (panel hidden) sets the volume. Hands: pinch clicks, a left-hand pinch in empty air shows and hides the panel, and the panel has its own seek and volume buttons (`js/vr-panel.js`). In the native app, A plays and pauses, B shows and hides the library, X/Y seek (whether the system passes those buttons to the app is logged as `key …` lines).
+- **Test loop:** with the headset on USB debugging, `scripts/quest-test.sh` pulls the repo, installs `tuner-quest.apk`, launches it and prints the relevant logcat lines and the app's own log file.
+- **Build:** Android SDK 35, Java 17+, Gradle 8.7+: `cd android-quest && ANDROID_HOME=… gradle --no-daemon :app:assembleRelease [-PappUrl=https://…]`. Same signing key as the TV app. Written without a headset to test on, so expect rough edges.
 
 To build locally instead: `cd android-tv && gradle :app:assembleRelease [-PappUrl=https://…]` with the Android SDK installed.
 

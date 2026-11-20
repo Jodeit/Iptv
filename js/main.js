@@ -1450,6 +1450,7 @@ async function play(ch, { startAt = resumePoint(ch) } = {}) {
     return;
   }
   if (castCtl.connected) return castCurrent(ch, startAt);
+  if (window.TunerQuest) return playQuest(ch, startAt); // the Quest app plays it natively
   if (startAt) toast(`Resuming at ${fmtDuration(startAt)}`);
   // A TV that has shown it cannot decode some audio formats goes straight to the MKV engine (which converts them) for a
   // Matroska file that has one, rather than playing silent for a few seconds first.
@@ -1548,6 +1549,20 @@ function syncCast(s) {
   castWas = s;
 }
 let castTimer = 0;
+
+// In the native Quest app (android-quest/) the headset's own player (ExoPlayer) plays on a screen in the room, so the
+// page only picks what to play. Several URLs are passed so the app can fall back if the first fails.
+function playQuest(ch, startAt = 0) {
+  player.destroy?.();
+  video.pause();
+  const live = kindOf(ch) === 'live';
+  const urls = [...new Set(streamCandidates(ch).map((s) => s.hint || s.src))];
+  const hls = live && urls.find((u) => /\.m3u8(\?|$)/i.test(u));
+  if (hls) urls.unshift(urls.splice(urls.indexOf(hls), 1)[0]);
+  theater.setPlaceholder(ch.name, 'Playing in the headset');
+  setStatus('Playing in the headset');
+  window.TunerQuest.play(JSON.stringify({ urls, title: ch.name, live, startAt, mode: state.activeMode }));
+}
 
 async function castCurrent(ch, startAt = 0) {
   player.destroy?.();
@@ -2266,6 +2281,9 @@ if (!flat) vrPanel = new (await import('./vr-panel.js')).VRPanel(theater, {
   next: () => step(1),
   prev: () => step(-1),
   togglePlay,
+  // Seeking is for films and episodes; live TV has nothing to seek.
+  seek: (sec) => { if (state.current && kindOf(state.current) !== 'live' && Number.isFinite(video.duration)) video.currentTime = Math.min(video.duration, Math.max(0, video.currentTime + sec)); },
+  volume: (d) => { video.volume = Math.min(1, Math.max(0, video.volume + d)); video.muted = false; settings.volume = video.volume; settings.muted = false; saveSettings(); $('volume').value = video.volume; syncMute(); },
   playing: () => !video.paused,
   mode: () => state.activeMode,
   cycleMode,
