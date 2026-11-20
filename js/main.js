@@ -774,9 +774,6 @@ const hostOf = (u) => { try { return new URL(u, location.href).host; } catch { r
 const isCrossOrigin = (u) => { try { return new URL(u, location.href).origin !== location.origin; } catch { return false; } };
 const isMixed = (u) => location.protocol === 'https:' && /^http:/i.test(u);
 const isHls = (u) => /\.m3u8(\?|$)/i.test(u);
-const isTs = (u) => /\.ts(\?|$)/i.test(u);
-/* global mpegts */
-const canTs = () => !!window.mpegts?.getFeatureList?.().mseLivePlayback;
 // Absolute, because mpegts.js fetches from a Web Worker where relative URLs don't resolve.
 const proxied = (u) => new URL(`${proxy.base}?url=${encodeURIComponent(u)}`, location.href).href;
 
@@ -807,17 +804,10 @@ function streamCandidates(ch) {
     : xt && (kind === 'movie' || kind === 'episode') && !canRemux(ch.url) ? [ch.url.replace(/\.\w+$/, '.m3u8')].filter((u) => u !== ch.url) : []);
   // Copies of the same station that were merged into this one (other folders, other qualities): last resorts.
   const dupeUrls = (ch.dupes || []).map((d) => d.url).filter((u) => u !== ch.url);
-  // Quest Browser, live, through the proxy: the single MPEG-TS connection first. HLS re-reads the playlist every few
-  // seconds, and through Cloudflare each read can leave from a different address; Xtream panels then start a new
-  // session (replaying segments already seen) or refuse with 401 for too many connections. One long TS connection is
-  // one session. HLS stays as the fallback. (The Quest app connects directly, so it keeps HLS.)
-  const plan = proxyPlan(ch.url);
-  const tsFirst = device.headsetBrowser && kind === 'live' && plan === 'proxy-first' && canTs();
-  const rank = (u) => (tsFirst ? +isTs(u) : +isHls(u));
-  const urls = [...[ch.url, ...own].sort((a, b) => rank(b) - rank(a)), ...dupeUrls];
+  const urls = [...[ch.url, ...own].sort((a, b) => isHls(b) - isHls(a)), ...dupeUrls];
   const direct = urls.filter((u) => !isMixed(u)).map((u) => ({ src: u, hint: u }));
   const via = urls.map((u) => ({ src: proxied(u), hint: u, label: 'proxy' }));
-  switch (plan) {
+  switch (proxyPlan(ch.url)) {
     case 'proxy-first': return via;
     case 'proxy-fallback': return [...direct, ...via];
     default: return direct;
