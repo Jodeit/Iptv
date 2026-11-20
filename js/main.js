@@ -833,6 +833,7 @@ function renderProxyStatus() {
 // ---------- Playlists ----------
 // Expiry, status and device limit from the Xtream panel; hidden for other sources.
 let accountSeq = 0;
+const accountCache = new Map(); // playlist url → { at, p } for the Tuner view's playlist list
 async function showAccount(source = state.source, { quiet = false } = {}) {
   const el = $('accountInfo');
   const xt = source?.url && parseXtream(source.url);
@@ -2445,6 +2446,19 @@ window.o3xr = {
       const i = +key.slice(1);
       if (key[0] === 'h' && hls) { hls.subtitleDisplay = true; hls.subtitleTrack = i; }
       else if (video.textTracks[i]) video.textTracks[i].mode = 'showing';
+    },
+    // An Xtream playlist's account: { status, expires, active, max } (streams in use and the limit). Reading it doesn't
+    // count as a stream. null for playlists that aren't Xtream accounts; throws if the panel has no account API. Kept 15 s
+    // so opening the list repeatedly doesn't hammer the panels.
+    account: async (url) => {
+      const xt = url && parseXtream(url);
+      if (!xt) return null;
+      const hit = accountCache.get(url);
+      if (hit && Date.now() - hit.at < 15000) return hit.p;
+      const p = xtreamAccount(xt, proxyPlan(xt.server) === 'direct' ? undefined : proxied);
+      accountCache.set(url, { at: Date.now(), p });
+      p.catch(() => accountCache.delete(url));
+      return p;
     },
     // Rotten Tomatoes score and poster for a film title (undefined while it is being looked up)
     rating: (title) => ratings.get({ name: title, kind: 'movie' }),

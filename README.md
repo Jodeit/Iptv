@@ -24,6 +24,13 @@ Browsers only allow WebXR on **HTTPS or localhost**, so for a headset:
 
 The proxy forwards to any URL it's given, so keep the server on your own network.
 
+## Stream limits per playlist
+
+Each Xtream playlist is its own account with its own stream limit. **Settings** in the Tuner view lists your
+playlists with each account's streams in use, its limit and its expiry ("1 of 2 streams in use · expires in 40 d"),
+flagging accounts that are full (a channel would be refused) or expired. **Check stream limits** reads them again.
+Reading an account's status uses the panel's API and doesn't count as a stream.
+
 ## Quest Browser
 
 In Quest Browser the page opens in the Tuner view with the flat player: the video fills the window (no 3D room behind

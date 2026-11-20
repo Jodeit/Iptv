@@ -949,9 +949,32 @@ function initTV() {
         else if (isOpen.home() && tab === 'phone') renderPhone();
       };
       lists.append(b);
+      paintAccount(b, l.url);
+    }
+    if (n) {
+      mk('Check stream limits', () => { for (const [i, l] of p.doc.playlists.entries()) paintAccount(lists.children[i], l.url, true); }, 'btn ghost');
     }
     if (!n) lists.innerHTML = `<p class="tvh-note dim">None yet. ${WEB ? 'Add one in Settings & playlists.' : 'Add one on your phone.'}</p>`;
     paintSync();
+  }
+
+  // Each playlist's account, under its name: streams in use of the limit, and when it expires. Full accounts (a channel
+  // would be refused) and expired or disabled ones are flagged. Reading it doesn't use a stream.
+  async function paintAccount(row, url, fresh = false) {
+    if (!row || !T()?.account) return;
+    let line = row.querySelector('.pl-acct');
+    const set = (text, cls = '') => { if (!line) { line = el('small', 'pl-acct'); row.append(line); } line.className = `pl-acct ${cls}`; line.textContent = text; };
+    if (fresh) set('Checking…');
+    let a;
+    try { a = await T().account(url); } catch { set('Stream limit unknown (the provider doesn’t say)', 'dim'); return; }
+    if (!a) return; // not an Xtream account
+    const days = a.expires ? Math.ceil((a.expires - Date.now()) / 864e5) : null;
+    const active = !/^active$/i.test(a.status) ? a.status : '';
+    const full = a.max != null && a.active != null && a.active >= a.max;
+    const streams = a.max != null ? `${a.active ?? '?'} of ${a.max} stream${a.max === 1 ? '' : 's'} in use` : `${a.active ?? '?'} stream${a.active === 1 ? '' : 's'} in use`;
+    const exp = a.expires ? (days <= 0 ? 'expired' : `expires in ${days} d`) : '';
+    set([active && `Account ${active}`, streams + (full ? ' (full)' : ''), exp].filter(Boolean).join(' · '),
+      active || full || (days != null && days <= 0) ? 'bad' : days != null && days <= 7 ? 'warn' : 'ok');
   }
 
   function openSettings() {

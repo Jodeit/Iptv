@@ -1400,3 +1400,10 @@ html.headset .tvh-icon-tab svg { width: 26px; height: 26px; }
 .tvh-pchip .avatar, .tvh-pitem .avatar { display: inline-grid; place-items: center; border-radius: 50%; background: var(--accent, #d9b97b); color: #2d2a24; font-weight: 800; line-height: 1; }
 .tvh-pchip .avatar.local, .tvh-pitem .avatar.local { background: rgba(60,50,30,.16); color: #6b5f4a; }
 .tvh-pchip { background: linear-gradient(160deg, rgba(232,205,150,.62), rgba(217,185,123,.42)); }
+
+/* Each playlist's account under its name (Tuner view → Settings): streams in use of the limit, expiry */
+.tvh-lists .pl-row { flex-wrap: wrap; row-gap: 2px; }
+.tvh-lists .pl-row .pl-acct { flex-basis: 100%; order: 3; font-size: .78em; opacity: .85; }
+.tvh-lists .pl-row .pl-acct.ok { color: #2f6b3a; }
+.tvh-lists .pl-row .pl-acct.warn { color: #8a5a00; }
+.tvh-lists .pl-row .pl-acct.bad { color: #a2322a; opacity: 1; font-weight: 600; }
