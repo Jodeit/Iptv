@@ -35,6 +35,8 @@ function initTV() {
   const fmtDur = (s) => { s = Math.max(0, Math.round(s)); const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60); return `${h ? h + ':' : ''}${String(m).padStart(h ? 2 : 1, '0')}:${String(s % 60).padStart(2, '0')}`; };
   const html = document.documentElement;
   const WEB = !!window.__tunerWeb; // Tuner view in a browser (iPhone, iPad): touch instead of a remote
+  // Quest Browser: a pointer (the controller's ray) instead of touch. The trigger clicks, the thumbstick scrolls.
+  const QB = WEB && window.__tunerHeadset === 'headset-browser';
   let nativeAppleControls = false;
   html.classList.add('tv');
   // index.html already set tv + tv-booting before first paint (a splash, so the phone UI never flashes). Lift
@@ -305,7 +307,9 @@ function initTV() {
     const bar = osd.querySelector('.osd-bar');
     bar.classList.toggle('on', pct != null);
     if (pct != null) bar.firstElementChild.style.width = `${Math.min(100, Math.max(0, pct))}%`;
-    osd.querySelector('.osd-hint').textContent = updateReady ? 'Update ready: installs when you pause or leave' : live ? '▲▼ browse     ◀ guide     OK controls' : '◀ ▶ skip     OK controls';
+    osd.querySelector('.osd-hint').textContent = updateReady ? 'Update ready: installs when you pause or leave'
+      : QB ? (live ? 'Trigger: guide  ·  Stick ▲▼: channels' : 'Trigger: controls  ·  Stick ◀▶: skip 10 s')
+      : live ? '▲▼ browse     ◀ guide     OK controls' : '◀ ▶ skip     OK controls';
   }
   function showOsd(ms = 4500) {
     if (!O()?.state.current || screen() !== 'player') return;
@@ -947,7 +951,7 @@ function initTV() {
     const c = O().state.current;
     const nn = c && T().guide.nowNext(c);
     const p = nn?.now, pct = p ? Math.round(Math.min(100, Math.max(0, ((Date.now() - p.start) / ((p.stop - p.start) || 1)) * 100))) : 0;
-    cap.innerHTML = c ? `<b>${esc(c.clean || cleanName(c.name))}</b>${p ? `<div class="cap-now">${esc(p.title)} <small>until ${esc(fmtClock(p.stop))}</small></div><i class="prog on"><u style="width:${pct}%"></u></i>${p.desc && p.desc.length > 3 ? `<p class="cap-desc">${esc(p.desc)}</p>` : ''}${nn.next ? `<div class="cap-next"><b>Next</b> ${esc(nn.next.title)} <small>${esc(fmtClock(nn.next.start))}</small></div>` : ''}` : ''}<small class="dim">Back returns to the picture</small>` : '';
+    cap.innerHTML = c ? `<b>${esc(c.clean || cleanName(c.name))}</b>${p ? `<div class="cap-now">${esc(p.title)} <small>until ${esc(fmtClock(p.stop))}</small></div><i class="prog on"><u style="width:${pct}%"></u></i>${p.desc && p.desc.length > 3 ? `<p class="cap-desc">${esc(p.desc)}</p>` : ''}${nn.next ? `<div class="cap-next"><b>Next</b> ${esc(nn.next.title)} <small>${esc(fmtClock(nn.next.start))}</small></div>` : ''}` : ''}<small class="dim">${QB ? 'Click the picture to go back to full screen' : 'Back returns to the picture'}</small>` : '';
   }
   setInterval(() => { if (document.documentElement.classList.contains('guide-mode')) paintCap(); }, 2000); // guide data arrives late
   // The picture window belongs to Live. Movies, Shows and Settings are the full-width menu.
@@ -981,7 +985,7 @@ function initTV() {
   function openHome(opts = {}) {
     if (screen() === 'setup') return;
     hideOsd();
-    guideSession = !WEB && !opts.menu && document.documentElement.classList.contains('tv-picture') && !!O().state.current; // the picture window is for the guide, not the main menu
+    guideSession = (!WEB || QB) && !opts.menu && document.documentElement.classList.contains('tv-picture') && !!O().state.current; // the picture window is for the guide, not the main menu
     // From the picture you get the live guide; coming back from a title's page you stay where you were (Movies / Shows)
     if (guideSession && !opts.keepTab && tab !== 'live' && liveAll().length) { tab = 'live'; group = ''; genre = ''; }
     // ▲▼ from the picture: the playing channel's folder, as a plain channel list (put back as it was when Home closes)
@@ -2104,13 +2108,63 @@ function initTV() {
     mkBtn('web-back', '‹ Back', () => goBack());
     const x = el('button', 'tvh-x', '✕ Picture'); x.onclick = () => goBack(); tabsEl.append(x);
     new MutationObserver(() => { if (!tabsEl.contains(x)) tabsEl.append(x); }).observe(tabsEl, { childList: true });
-    // Tap the picture for the controls (pause, seek, audio, captions, episodes, guide)
+    // Tap the picture for the controls (pause, seek, audio, captions, episodes, guide). In Quest Browser the trigger on
+    // live TV opens the guide instead (the picture shrinks into its corner), and on a film the controls.
     $('flatStage')?.addEventListener('click', () => {
       if (screen() === 'home' && guideSession && tab === 'live') closeHome();
+      else if (QB && screen() === 'player' && O().state.current && !isVod()) openHome();
       else if (!nativeAppleControls && screen() === 'player' && O().state.current) openControls();
     });
     controls.addEventListener('click', (e) => { if (e.target === controls) goBack(); }); // tap outside the bar
     detail.addEventListener('click', (e) => { if (e.target === detail) goBack(); });
+  }
+
+  // ---------- Quest Browser (pointer + thumbstick) ----------
+  // The page fills the browser window, and goes full screen with the first click: the window grows and the browser's
+  // own bars go away. If you leave full screen yourself, it stays that way until you press ⛶.
+  let leftFullScreen = false, wasFull = false;
+  let fullScreenPending = false;
+  function fullScreen(force = false) {
+    if (!QB || fullScreenPending || document.fullscreenElement || (leftFullScreen && !force) || !document.documentElement.requestFullscreen) return;
+    if (force) leftFullScreen = false;
+    fullScreenPending = true;
+    document.documentElement.requestFullscreen({ navigationUI: 'hide' })
+      .catch(() => {}) // refused (not a user gesture, or the browser said no): the ⛶ button stays
+      .finally(() => { fullScreenPending = false; });
+  }
+  if (QB) {
+    html.classList.add('qb');
+    document.addEventListener('fullscreenchange', () => {
+      html.classList.toggle('qb-full', !!document.fullscreenElement);
+      if (!document.fullscreenElement && wasFull) leftFullScreen = true; // left by hand (the browser's own control)
+      wasFull = !!document.fullscreenElement;
+    });
+    const fs = el('button', 'web-btn web-full', '⛶ Full screen');
+    fs.onclick = () => fullScreen(true);
+    document.body.append(fs);
+    // Any click on a row or tile is a user gesture: the moment to go full screen.
+    addEventListener('click', () => fullScreen(), true);
+    // Thumbstick on the picture: ▲▼ changes channel on live TV; on a film ◀▶ (or ▲▼) skips 10 s. In lists it scrolls.
+    let stickAt = 0;
+    addEventListener('wheel', (e) => {
+      if (screen() !== 'player' || !O().state.current) return;
+      e.preventDefault();
+      const dx = e.deltaX, dy = e.deltaY;
+      if (Math.max(Math.abs(dx), Math.abs(dy)) < 4) return;
+      const now = Date.now();
+      if (now - stickAt < (isVod() ? 300 : 700)) return; // a held stick repeats, one step at a time
+      stickAt = now;
+      if (isVod()) seekBy((Math.abs(dx) > Math.abs(dy) ? dx : -dy) > 0 ? 10 : -10);
+      else if (Math.abs(dy) >= Math.abs(dx)) surf(dy < 0 ? 1 : -1);
+      else showOsd();
+    }, { passive: false });
+    // Moving the ray over the picture brings up what's playing and the controller hints.
+    let movedAt = 0;
+    addEventListener('pointermove', (e) => {
+      if (screen() !== 'player' || e.target.closest?.('.web-btn') || Date.now() - movedAt < 1500) return;
+      movedAt = Date.now();
+      if (osd.classList.contains('hidden')) showOsd(3500);
+    }, { passive: true });
   }
 
   // ---------- Boot ----------

@@ -24,6 +24,24 @@ Browsers only allow WebXR on **HTTPS or localhost**, so for a headset:
 
 The proxy forwards to any URL it's given, so keep the server on your own network.
 
+## Quest Browser
+
+In Quest Browser the page opens in the Tuner view with the flat player: the video fills the window (no 3D room to
+drag or tilt), and the first click makes it full screen (**⛶ Full screen** brings it back if you leave). The
+controller's ray is the pointer:
+
+| | Live TV | Movies and episodes |
+|---|---|---|
+| **Trigger on the picture** | Guide: the list on the left, the picture in the corner. Click the picture to go back. | Playback controls |
+| **Thumbstick ▲▼** | Next / previous channel | Skip 10 s |
+| **Thumbstick ◀▶** | Shows what's on | Skip 10 s |
+| **☰ Menu** (top left) | Movies, Shows, Search, Settings | |
+
+Most providers are `http://`, which an `https://` page can only reach through the proxy, so every segment makes an
+extra trip. Quest Browser therefore defaults to the **Large** buffer (**Playback → Buffer**), and the
+[home proxy](#home-proxy-when-cloudflare-cant-reach-your-provider) shortens the trip. The native Quest app connects to
+the provider directly. The 3D theater and VR are still there under **Playback → Display → 3D theater**.
+
 ## Phones and tablets
 
 On iPhone, iPad and Android phones and tablets without WebXR, the app uses a **flat player**: the video itself with

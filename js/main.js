@@ -86,7 +86,10 @@ let libraryRevision = 0;
 let vrPanel = null;
 let logTimer = 0;
 setHlsPreference(settings.hlsEngine);
-setBufferLevel(settings.buffer);
+// Quest Browser reaches most providers only through the proxy (an https page can't fetch http:// streams), so every
+// segment takes the long way round. A deeper cushion by default; the native Quest app connects directly.
+const defaultBuffer = device.headsetBrowser ? 'large' : 'normal';
+setBufferLevel(settings.buffer || defaultBuffer);
 
 // ---------- Guide (EPG) ----------
 // Guide requests go direct when the server allows it, otherwise through the proxy.
@@ -550,7 +553,9 @@ new ResizeObserver(([e]) => {
   document.documentElement.style.setProperty('--bar-h', `${Math.round(e.borderBoxSize?.[0]?.blockSize ?? e.target.offsetHeight)}px`);
 }).observe($('bar'));
 const TheaterModule = flat ? null : await import('./theater.js');
-const theater = flat ? new FlatStage(video, { nativeControls: device.ios }) : new TheaterModule.Theater($('stage'), video);
+// nativeControls: no control bar of the flat player's own. iOS uses Apple's; Quest Browser's Tuner view draws its own
+// (js/tv.js), and a second bar there would catch the click meant for the picture.
+const theater = flat ? new FlatStage(video, { nativeControls: device.ios || device.headsetBrowser }) : new TheaterModule.Theater($('stage'), video);
 const LAYOUT = { mono: 0, sbs: 1, tab: 2 }; // must match xr3d.js
 const playWarnings = []; // what the player said about the stream being played (e.g. "the audio can't play in a browser")
 const player = new StreamPlayer(video, {
@@ -2136,7 +2141,7 @@ for (const b of $('hlsSeg').children) {
   };
 }
 for (const b of $('bufferSeg').children) {
-  b.classList.toggle('active', b.dataset.buffer === (settings.buffer || 'normal'));
+  b.classList.toggle('active', b.dataset.buffer === (settings.buffer || defaultBuffer));
   b.onclick = () => {
     settings.buffer = b.dataset.buffer;
     saveSettings();
