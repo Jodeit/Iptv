@@ -2188,6 +2188,19 @@ function initTV() {
     //   guide / lists     ▲▼ moves the highlight one row at a time; the trigger on a channel watches it (the confirm)
     let stickAt = 0;
     const stickReady = (ms) => { const now = Date.now(); if (now - stickAt < ms) return false; stickAt = now; return true; };
+    // In lists the stick works like a remote's arrow: one row per push, and only after holding it half a second
+    // does it repeat (four rows a second). The browser keeps sending scroll events while the stick is held and for a
+    // moment after it's let go; a 250 ms gap in them counts as letting go.
+    let pushAt = 0, lastWheel = 0, steppedAt = 0;
+    const stickStep = () => {
+      const now = Date.now();
+      const fresh = now - lastWheel > 250;
+      lastWheel = now;
+      if (fresh) { pushAt = now; steppedAt = now; return true; }
+      if (now - pushAt < 500 || now - steppedAt < 250) return false;
+      steppedAt = now;
+      return true;
+    };
     addEventListener('wheel', (e) => {
       const s = screen(), dx = e.deltaX, dy = e.deltaY;
       const vertical = Math.abs(dy) >= Math.abs(dx);
@@ -2203,7 +2216,7 @@ function initTV() {
       const rows = bodyEl.querySelector('.tvh-row');
       if (!rows) return; // nothing to highlight: let it scroll
       e.preventDefault();
-      if (!stickReady(170)) return; // a held stick repeats, one row at a time
+      if (!stickStep()) return;
       const t = document.activeElement;
       if (t?.classList.contains('tvh-row') && bodyEl.contains(t)) move(bodyEl, 0, dy > 0 ? 1 : -1);
       else {

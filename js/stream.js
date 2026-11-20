@@ -322,18 +322,20 @@ export class StreamPlayer {
         // A network error that outlasted the retries above. Pick up again in place first: the buffer and the position
         // stay, so the picture doesn't blank and jump back the way a full reconnect does. Three tries a minute, then
         // the full reconnect.
-        if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        // internalException is fatal when a segment download fails with an exception rather than an HTTP error (a
+        // dropped connection through the proxy): the same remedy.
+        if (data.type === Hls.ErrorTypes.NETWORK_ERROR || data.details === Hls.ErrorDetails.INTERNAL_EXCEPTION) {
           const now = Date.now();
           inPlace = inPlace.filter((t) => now - t < 60000);
           if (inPlace.length < 3) {
             inPlace.push(now);
             const wait = 1000 * 2 ** (inPlace.length - 1);
-            this.log(`↻ ${data.details}${data.response?.code ? ` (HTTP ${data.response.code})` : ''}: picking up again in place in ${wait / 1000}s (${this.bufferedAhead().toFixed(1)}s buffered)`);
+            this.log(`↻ ${data.details}${data.response?.code ? ` (HTTP ${data.response.code})` : ''}${data.error?.message ? ` (${data.error.message.slice(0, 80)})` : ''}: picking up again in place in ${wait / 1000}s (${this.bufferedAhead().toFixed(1)}s buffered)`);
             setTimeout(() => { if (token === this.token && this.hls === hls) hls.startLoad(-1); }, wait);
             return;
           }
         }
-        this.recover(token, data.details);
+        this.recover(token, `${data.details}${data.error?.message ? ` (${data.error.message.slice(0, 80)})` : ''}`);
       });
       hls.loadSource(url);
       hls.attachMedia(this.video);
