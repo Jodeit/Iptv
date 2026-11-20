@@ -26,8 +26,8 @@ The proxy forwards to any URL it's given, so keep the server on your own network
 
 ## Quest Browser
 
-In Quest Browser the page opens in the Tuner view with the flat player: the video fills the window (no 3D room to
-drag or tilt), and the first click makes it full screen (**⛶ Full screen** brings it back if you leave). The
+In Quest Browser the page opens in the Tuner view with the flat player: the video fills the window (no 3D room behind
+it), and the first click makes it full screen (**⛶ Full screen** brings it back if you leave). The
 controller's ray is the pointer:
 
 | | Live TV | Movies and episodes |
@@ -330,7 +330,6 @@ Tuning (XR3D tab):
 | H | Hide / show panel |
 | F | Fullscreen |
 | V | Enter VR |
-| Drag / scroll | Orbit / zoom around the screen |
 
 | In VR | Action |
 |---|---|

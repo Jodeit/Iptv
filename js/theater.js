@@ -2,7 +2,6 @@
 // (anaglyph / side-by-side) and WebXR session handling.
 
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { XR3DScreen } from './xr3d.js';
 
 const DUBOIS_LEFT = new THREE.Matrix3().fromArray([
@@ -38,11 +37,8 @@ export class Theater {
     this.camera = new THREE.PerspectiveCamera(70, innerWidth / innerHeight, 0.05, 200);
     this.camera.position.set(0, 1.6, 0.6);
 
-    this.controls = new OrbitControls(this.camera, renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.enablePan = false;
-    this.controls.minDistance = 0.5;
-    this.controls.maxDistance = 20;
+    // The seat is fixed, facing the screen: no dragging, tilting or zooming the view. Size, distance and height
+    // are settings (Playback → Screen).
 
     // Desktop stereo rig: same layer convention as WebXR (left=1, right=2).
     this.stereo = new THREE.StereoCamera();
@@ -87,6 +83,7 @@ export class Theater {
       this.xrMode = null;
       this.screen.setStereo(false);
       this.camera.position.set(0, 1.6, 0.6);
+      this.camera.lookAt(0, this.screenHeight, -this.screenDistance);
       this.resize();
       this.setEnvironment(this.envName);
       this.onXREnd?.();
@@ -233,8 +230,7 @@ export class Theater {
     this.screenRig.position.set(0, this.screenHeight, -this.screenDistance);
     this.glow.scale.set(this.screenWidth * 1.7, (this.screenWidth / this.aspect) * 1.9, 1);
     this.screenLight.position.set(0, this.screenHeight, -this.screenDistance + 1.5);
-    this.controls.target.set(0, this.screenHeight, -this.screenDistance);
-    this.controls.update();
+    this.camera.lookAt(0, this.screenHeight, -this.screenDistance);
   }
 
   setAspect(aspect) {
@@ -362,7 +358,6 @@ export class Theater {
     if (this.renderer.xr.isPresenting) {
       this.renderer.render(this.scene, this.camera);
     } else {
-      this.controls.update();
       this.renderDesktop();
     }
   }
