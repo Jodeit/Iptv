@@ -281,7 +281,7 @@ class MainActivity : AppSystemActivity() {
             IsdkPanelDimensions(Vector2(screenWidth, screenWidth * 9f / 16f)),
             IsdkPanelResize(minDimensions = Vector2(0.8f, 0.45f), maxDimensions = Vector2(14f, 8f), preserveAspectRatio = true),
         )
-        webEntity?.setComponent(Visible(false))
+        setLibrary(false)
         controlsEntity?.setComponent(Visible(true))
         updateStatus()
     }
@@ -291,7 +291,7 @@ class MainActivity : AppSystemActivity() {
         videoEntity?.destroy()
         videoEntity = null
         controlsEntity?.setComponent(Visible(false))
-        webEntity?.setComponent(Visible(true))
+        setLibrary(true)
         web?.evaluateJavascript("document.dispatchEvent(new Event('questStopped'))", null)
     }
 
@@ -340,9 +340,9 @@ class MainActivity : AppSystemActivity() {
         }
         val room = btn(if (passthrough) "Room" else "Dark") { }
         room.setOnClickListener { passthrough = !passthrough; room.text = if (passthrough) "Room" else "Dark"; applyPassthrough() }
-        var libraryShown = false
-        val library = btn("Library") { }
-        library.setOnClickListener { libraryShown = !libraryShown; webEntity?.setComponent(Visible(libraryShown)); library.text = if (libraryShown) "Hide library" else "Library" }
+        val library = btn(if (libraryShown) "Hide library" else "Library") { }
+        libraryButton = library
+        library.setOnClickListener { setLibrary(!libraryShown) }
 
         val transport = LinearLayout(ctx).apply {
             gravity = Gravity.CENTER_VERTICAL
@@ -368,6 +368,45 @@ class MainActivity : AppSystemActivity() {
     }
 
     private var playButton: TextView? = null
+    private var libraryButton: TextView? = null
+    private var libraryShown = true // the library is up at launch
+
+    private fun setLibrary(show: Boolean) {
+        libraryShown = show
+        webEntity?.setComponent(Visible(show))
+        libraryButton?.text = if (show) "Hide library" else "Library"
+    }
+
+    // ---- Controller buttons (if the system passes them to the app; every key and stick event is logged to find out) ----
+    //   A: play / pause    B: show / hide the library    X: back 10 s    Y: forward 10 s    stick left/right: seek
+    private var lastStick = 0L
+
+    override fun dispatchKeyEvent(e: android.view.KeyEvent): Boolean {
+        if (e.action == android.view.KeyEvent.ACTION_DOWN && e.repeatCount == 0) {
+            DebugLog.log("key ${android.view.KeyEvent.keyCodeToString(e.keyCode)}")
+            when (e.keyCode) {
+                android.view.KeyEvent.KEYCODE_BUTTON_A -> { playback.togglePause(); return true }
+                android.view.KeyEvent.KEYCODE_BUTTON_B -> { setLibrary(!libraryShown); return true }
+                android.view.KeyEvent.KEYCODE_BUTTON_X -> { playback.seekBy(-STEP_SEEK_MS); return true }
+                android.view.KeyEvent.KEYCODE_BUTTON_Y -> { playback.seekBy(STEP_SEEK_MS); return true }
+            }
+        }
+        return super.dispatchKeyEvent(e)
+    }
+
+    override fun dispatchGenericMotionEvent(e: android.view.MotionEvent): Boolean {
+        if (e.source and android.view.InputDevice.SOURCE_JOYSTICK != 0 && e.actionMasked == android.view.MotionEvent.ACTION_MOVE) {
+            val x = e.getAxisValue(android.view.MotionEvent.AXIS_X)
+            val now = android.os.SystemClock.uptimeMillis()
+            if (Math.abs(x) > 0.7f && now - lastStick > 350) {
+                lastStick = now
+                DebugLog.log("stick x=$x")
+                playback.seekBy(if (x > 0) STEP_SEEK_MS else -STEP_SEEK_MS)
+                return true
+            }
+        }
+        return super.dispatchGenericMotionEvent(e)
+    }
 
     private fun updateStatus() {
         ui.post {

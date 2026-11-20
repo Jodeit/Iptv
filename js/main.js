@@ -2281,6 +2281,9 @@ if (!flat) vrPanel = new (await import('./vr-panel.js')).VRPanel(theater, {
   next: () => step(1),
   prev: () => step(-1),
   togglePlay,
+  // Seeking is for films and episodes; live TV has nothing to seek.
+  seek: (sec) => { if (state.current && kindOf(state.current) !== 'live' && Number.isFinite(video.duration)) video.currentTime = Math.min(video.duration, Math.max(0, video.currentTime + sec)); },
+  volume: (d) => { video.volume = Math.min(1, Math.max(0, video.volume + d)); video.muted = false; settings.volume = video.volume; settings.muted = false; saveSettings(); $('volume').value = video.volume; syncMute(); },
   playing: () => !video.paused,
   mode: () => state.activeMode,
   cycleMode,
