@@ -737,6 +737,14 @@ async function explainRefusal(report, info) {
           + 'Close other players or wait a minute for the last stream to be released, then retry.';
       } else {
         msg = `The provider refused this stream (${code}) although the account is active (${acct.active ?? '?'} of ${acct.max ?? '?'} connections in use).${said} ${others}`;
+        // Through the hosted proxy the provider sees Cloudflare's servers, not your home. Many providers answer account
+        // checks from anywhere but only stream to home connections (or lock an account to one internet provider).
+        if (!info?.othersWorked && report.some((l) => /\(proxy\)/.test(l)) && !settings.proxyUrl && location.protocol === 'https:') {
+          msg = `The provider refused this stream (${code}) even though the account has a free connection (${acct.active ?? '?'} of ${acct.max ?? '?'} in use).${said} `
+            + 'It most likely won’t stream to Cloudflare’s servers, which this page has to go through. '
+            + (device.headset ? 'Watch in the Tuner app on the Quest (it connects from your home), or ' : '')
+            + 'run the home proxy on a computer at home (README: “Home proxy”) and enter it under Sources → Proxy URL.';
+        }
       }
     } catch (err) {
       report.push(`ℹ account check failed: ${err.message}`);
