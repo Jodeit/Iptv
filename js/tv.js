@@ -2165,30 +2165,22 @@ function initTV() {
   }
 
   // ---------- Quest Browser (pointer + thumbstick) ----------
-  // The page fills the browser window, and goes full screen with the first click: the window grows and the browser's
-  // own bars go away. If you leave full screen yourself, it stays that way until you press ⛶.
-  let leftFullScreen = false, wasFull = false;
+  // Always full screen. A page can only ask for it on a click, so the first trigger press anywhere does it, and any
+  // later press does it again if the browser dropped out (the Meta button, a system dialog, the browser's own control).
+  // Until then a hint says so. The press still does what it was aimed at.
   let fullScreenPending = false;
-  function fullScreen(force = false) {
-    if (!QB || fullScreenPending || document.fullscreenElement || (leftFullScreen && !force) || !document.documentElement.requestFullscreen) return;
-    if (force) leftFullScreen = false;
+  function fullScreen() {
+    if (!QB || fullScreenPending || document.fullscreenElement || !document.documentElement.requestFullscreen) return;
     fullScreenPending = true;
     document.documentElement.requestFullscreen({ navigationUI: 'hide' })
-      .catch(() => {}) // refused (not a user gesture, or the browser said no): the ⛶ button stays
+      .catch(() => {}) // refused: the next press tries again
       .finally(() => { fullScreenPending = false; });
   }
   if (QB) {
     html.classList.add('qb');
-    document.addEventListener('fullscreenchange', () => {
-      html.classList.toggle('qb-full', !!document.fullscreenElement);
-      if (!document.fullscreenElement && wasFull) leftFullScreen = true; // left by hand (the browser's own control)
-      wasFull = !!document.fullscreenElement;
-    });
-    const fs = el('button', 'web-btn web-full', '⛶ Full screen');
-    fs.onclick = () => fullScreen(true);
-    document.body.append(fs);
-    // Any click on a row or tile is a user gesture: the moment to go full screen.
-    addEventListener('click', () => fullScreen(), true);
+    document.addEventListener('fullscreenchange', () => html.classList.toggle('qb-full', !!document.fullscreenElement));
+    document.body.append(el('div', 'qb-full-hint', 'Pull the trigger anywhere for full screen'));
+    for (const ev of ['pointerdown', 'pointerup', 'click']) addEventListener(ev, () => fullScreen(), true);
     // Thumbstick on the picture: ▲▼ changes channel on live TV; on a film ◀▶ (or ▲▼) skips 10 s. In lists it scrolls.
     let stickAt = 0;
     addEventListener('wheel', (e) => {

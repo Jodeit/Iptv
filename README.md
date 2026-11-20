@@ -27,7 +27,8 @@ The proxy forwards to any URL it's given, so keep the server on your own network
 ## Quest Browser
 
 In Quest Browser the page opens in the Tuner view with the flat player: the video fills the window (no 3D room behind
-it), and the first click makes it full screen (**⛶ Full screen** brings it back if you leave). The
+it), and the first trigger press anywhere makes it full screen (a browser only allows full screen after a click; a hint
+says so until then, and any later press goes back to full screen if the browser dropped out). The
 controller's ray is the pointer:
 
 | | Live TV | Movies and episodes |

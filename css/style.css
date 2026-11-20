@@ -1370,8 +1370,10 @@ html.headset.tv-web .tvh-body, html.headset.tv-web .tvh-chips { scrollbar-width:
 
 /* ---------- Quest Browser (html.qb): the picture fills the window; the controller's ray is the pointer ----------
    Trigger on the picture opens the guide (live) or the controls (films); the thumbstick changes channel or skips. */
-html.qb.tv-web .web-full { left: auto; right: calc(env(safe-area-inset-right, 0px) + 14px); }
-html.qb.tv-web.tv-picture:not(.qb-full):not(.home-open):not(.detail-open):not(.setup-open):not(.settings-open) .web-full { display: block; }
+.qb-full-hint { display: none; }
+html.qb:not(.qb-full) .qb-full-hint { display: block; position: fixed; z-index: 500; right: 18px; bottom: 18px; pointer-events: none;
+  padding: 12px 22px; border-radius: 999px; font-size: 20px; font-weight: 700; white-space: nowrap; color: #fff;
+  background: rgba(20,18,14,.72); border: 1px solid rgba(255,255,255,.3); box-shadow: 0 6px 20px rgba(0,0,0,.3); }
 html.qb #flatStage { cursor: pointer; }
 html.qb .tv-osd .osd-hint { font-size: 17px; letter-spacing: .01em; }
 
