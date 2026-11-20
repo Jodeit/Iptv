@@ -2296,7 +2296,7 @@ applyAll();
 renderSaved();
 await detectProxy();
 renderProfiles();
-$('appVersion').textContent = VERSION;
+$('appVersion').textContent = VERSION + (window.__tunerHeadset ? ` · ${window.__tunerHeadset}` : '');
 checkSyncAvailable().then((ok) => { if (ok && profiles.store) $('appVersion').textContent = `${VERSION} · sync storage: ${profiles.store === 'durable' ? 'durable object' : 'KV (fallback)'}`; syncOk = ok; if (ok) { profiles.pull(); refreshTvs(); } });
 // server.js and the Cloudflare deployment include a demo Xtream panel (proxy/xtream-demo.js).
 if (proxy.available && !settings.proxyUrl) {
