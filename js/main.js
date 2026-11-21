@@ -894,6 +894,32 @@ function setChannels(channels, label, source = null) {
     if (guide.available()) togglePanel(false); else setTab('channels');
   }
   if (guide.available() && document.querySelector('.tab.active')?.dataset.tab === 'channels') setTab('sources');
+  resumeAfterReload();
+}
+
+// ---------- Back on the same channel after a refresh ----------
+// What is playing is kept in sessionStorage (this tab only), and when the page is reloaded the first playlist that
+// loads starts it again: a film or an episode from where it got to, a channel live. A new tab starts on the list as usual.
+const NOW_PLAYING = 'tuner.nowPlaying';
+let reloadResume = (() => {
+  try {
+    if (performance.getEntriesByType('navigation')[0]?.type !== 'reload') return null;
+    return JSON.parse(sessionStorage.getItem(NOW_PLAYING) || 'null');
+  } catch { return null; }
+})();
+function rememberNowPlaying(ch) {
+  try { sessionStorage.setItem(NOW_PLAYING, JSON.stringify({ source: state.source?.url || null, ch })); } catch { /* full or blocked */ }
+}
+function resumeAfterReload() {
+  if (!state.channels.length || state.current) return;
+  const saved = reloadResume;
+  if (!saved?.ch) return;
+  reloadResume = null; // once, with the first playlist that loads
+  if ((state.source?.url || null) !== saved.source) return; // another playlist: that channel isn't in it
+  // The playlist's own copy when it has the channel (so the list and the guide mark it as playing), else the saved one:
+  // films, episodes and Xtream channels in categories not loaded yet aren't in the list
+  const ch = state.channels.find((c) => c.id === saved.ch.id) || saved.ch;
+  setTimeout(() => { if (!state.current) play(ch); }, 0); // after the playlist's own start-up messages
 }
 
 const ago = (t) => {
@@ -1437,6 +1463,7 @@ async function play(ch, { startAt = resumePoint(ch) } = {}) {
   $('extSheet').classList.add('hidden');
   saveProgress(true); // where the previous film got to
   state.current = ch;
+  rememberNowPlaying(ch);
   $('npName').textContent = ch.name;
   updateNowPlayingEpg();
   const logo = $('npLogo');
