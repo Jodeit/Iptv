@@ -1,0 +1,45 @@
+name: Quest APK
+# Only a change to the Quest wrapper needs a new APK: the app loads the live web page, so web changes (js/, css/)
+# reach it through the Cloudflare deploy alone (or a dev server on the headset: see pageUrl in PanelActivity.kt).
+
+on:
+  push:
+    paths: ['android-quest/**', '.github/workflows/android-quest.yml']
+  workflow_dispatch:
+    inputs:
+      app_url:
+        description: Page the app loads
+        default: https://iptv.jodeit.workers.dev
+
+permissions:
+  contents: write
+
+concurrency:
+  group: quest-apk
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '17' }
+      - uses: gradle/actions/setup-gradle@v4
+        with: { gradle-version: '8.11.1' }
+      - name: Build
+        working-directory: android-quest
+        run: gradle --no-daemon :app:assembleRelease -PappUrl="${{ inputs.app_url || 'https://iptv.jodeit.workers.dev' }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tuner-quest-apk
+          path: android-quest/app/build/outputs/apk/release/app-release.apk
+      # One rolling prerelease with the newest APK: `gh release download quest-latest -p tuner-quest.apk` on the headset.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android-quest/app/build/outputs/apk/release/app-release.apk tuner-quest.apk
+          gh release delete quest-latest --cleanup-tag --yes --repo "$GITHUB_REPOSITORY" || true
+          gh release create quest-latest tuner-quest.apk --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --prerelease --title "Tuner Quest (latest build)" --notes "APK for sideloading on Meta Quest. Built from $GITHUB_SHA."

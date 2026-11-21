@@ -20,7 +20,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
  * for one channel are tried in order when one fails. Extension audio decoders (FFmpeg) are preferred only when the
  * device has no decoder for the format, so normal AAC stays on the hardware path.
  */
-class Playback(private val ctx: Context, private val onState: () -> Unit) {
+class Playback(private val ctx: Context, private val onState: () -> Unit, private val onVideoSize: (Int, Int) -> Unit = { _, _ -> }) {
     private val main = Handler(Looper.getMainLooper())
     private var player: ExoPlayer? = null
     private var surface: Surface? = null
@@ -31,6 +31,7 @@ class Playback(private val ctx: Context, private val onState: () -> Unit) {
     private var error: String? = null
 
     val isPlaying get() = player?.playWhenReady == true
+    val positionMs get() = player?.currentPosition ?: 0L
 
     private fun ensure(): ExoPlayer = player ?: run {
         val http = DefaultHttpDataSource.Factory()
@@ -57,6 +58,9 @@ class Playback(private val ctx: Context, private val onState: () -> Unit) {
                     }
                     override fun onPlaybackStateChanged(state: Int) = onState()
                     override fun onIsPlayingChanged(isPlaying: Boolean) = onState()
+                    override fun onVideoSizeChanged(size: androidx.media3.common.VideoSize) {
+                        if (size.width > 0 && size.height > 0) onVideoSize((size.width * size.pixelWidthHeightRatio).toInt(), size.height)
+                    }
                 })
                 player = p
                 tick()

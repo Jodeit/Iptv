@@ -27,14 +27,31 @@
         <meta-data android:name="com.oculus.vr.focusaware" android:value="true" />
         <uses-native-library android:name="libossdk.oculus.so" android:required="true" />
 
+        <!-- The app icon opens Tuner in a window (a 2D panel next to other apps). -->
+        <activity
+            android:name=".PanelActivity"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="landscape"
+            android:configChanges="screenSize|smallestScreenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode|density">
+            <layout android:defaultWidth="1600dp" android:defaultHeight="1000dp" android:minWidth="800dp" android:minHeight="500dp" />
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="com.oculus.intent.category.2D" />
+            </intent-filter>
+        </activity>
+
+        <!-- The VR theater (Spatial SDK): only opened from the window's VR button. -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
+            android:screenOrientation="landscape"
             android:configChanges="screenSize|screenLayout|orientation|keyboardHidden|keyboard|navigation|uiMode">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
-                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="com.oculus.intent.category.VR" />
             </intent-filter>
         </activity>

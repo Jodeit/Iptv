@@ -131,6 +131,8 @@ class MainActivity : AppSystemActivity() {
         webEntity = Entity.createPanelEntity(PANEL_WEB, Transform(inFront(WEB_DIST, WEB_DY)), noRotation())
         controlsEntity = Entity.createPanelEntity(PANEL_CONTROLS, Transform(inFront(BAR_DIST, BAR_DY)), Visible(false), noRotation())
         DebugLog.log("entities created")
+        // Opened from the window with something playing: carry on with it here.
+        intent?.getStringExtra("play")?.let { json -> ui.postDelayed({ Bridge().play(json) }, 500) }
     }
 
 
@@ -221,9 +223,8 @@ class MainActivity : AppSystemActivity() {
             }
         }
         // `adb shell am start ... --es url https://...` loads another deployment (e.g. a branch preview) for testing.
-        val base = intent?.getStringExtra("url")?.takeIf { it.startsWith("https://") } ?: BuildConfig.APP_URL
-        // ui=tuner: the page's designed interface (the TV app's look, touch-friendly) instead of the phone layout.
-        val pageUrl = Uri.parse(base).buildUpon().apply { if (Uri.parse(base).getQueryParameter("ui") == null) appendQueryParameter("ui", "tuner") }.build().toString()
+        // (or a dev server on the headset: see pageUrl in PanelActivity.kt)
+        val pageUrl = pageUrl(intent)
         w.loadUrl(pageUrl)
         DebugLog.log("web view created, loading $pageUrl")
         return w
@@ -357,6 +358,7 @@ class MainActivity : AppSystemActivity() {
             addView(btn("Larger") { screenWidth = (screenWidth * 1.18f).coerceAtMost(12f); if (videoEntity != null) showPlayer() })
             addView(gap())
             addView(library)
+            addView(btn("Window") { openWindow() })
         }
         return LinearLayout(ctx).apply {
             orientation = LinearLayout.VERTICAL
@@ -365,6 +367,24 @@ class MainActivity : AppSystemActivity() {
             addView(status, LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34)))
             addView(transport)
         }
+    }
+
+    /** Back to Tuner in a window (exclusive mode: Home opens the panel activity, and this immersive one closes). */
+    private fun openWindow() {
+        val panel = android.content.Intent(applicationContext, PanelActivity::class.java).apply {
+            action = android.content.Intent.ACTION_MAIN
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            intent?.getStringExtra("url")?.let { putExtra("url", it) }
+        }
+        val pending = android.app.PendingIntent.getActivity(applicationContext, 0, panel,
+            android.app.PendingIntent.FLAG_UPDATE_CURRENT or android.app.PendingIntent.FLAG_IMMUTABLE)
+        DebugLog.log("opening the window")
+        playback.stop()
+        startActivity(android.content.Intent(android.content.Intent.ACTION_MAIN)
+            .addCategory(android.content.Intent.CATEGORY_HOME)
+            .addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+            .putExtra("extra_launch_in_home_pending_intent", pending))
+        finishAndRemoveTask()
     }
 
     private var playButton: TextView? = null
