@@ -22,7 +22,16 @@ jobs:
         with: { distribution: temurin, java-version: '17' }
       - uses: gradle/actions/setup-gradle@v4
         with: { gradle-version: '8.7' }
+      - name: Signing key
+        env:
+          TUNER_KEYSTORE_B64: ${{ secrets.TUNER_KEYSTORE_B64 }}
+        run: |
+          [ -n "$TUNER_KEYSTORE_B64" ] || { echo "::error::TUNER_KEYSTORE_B64 secret is not set"; exit 1; }
+          echo "$TUNER_KEYSTORE_B64" | base64 -d > "$RUNNER_TEMP/tuner.keystore"
+          echo "TUNER_KEYSTORE=$RUNNER_TEMP/tuner.keystore" >> "$GITHUB_ENV"
       - name: Build
+        env:
+          TUNER_KEY_PASSWORD: ${{ secrets.TUNER_KEY_PASSWORD }}
         working-directory: android-tv
         run: gradle --no-daemon :app:assembleRelease -PappUrl="${{ inputs.app_url || 'https://iptv.jodeit.workers.dev' }}"
       - uses: actions/upload-artifact@v4

@@ -28,22 +28,30 @@ android {
     }
     sourceSets.getByName("main").assets.srcDir(files(bundled).builtBy(copyDecoder))
 
-    // One fixed key for every build (here, on a laptop, or on CI), so a new APK installs over the old one on the TV
-    // without uninstalling first. This is a sideloaded personal app, not a published one, so the key lives in the repo
-    // (a private one): do not reuse it for anything else.
+    // Release builds are signed with a key that lives outside the repo, so a new APK installs over the old one.
+    // CI decodes it from the TUNER_KEYSTORE_B64 secret; locally it defaults to ~/.tuner-signing/tuner.keystore.
+    // Set TUNER_KEYSTORE / TUNER_KEY_PASSWORD (env or -P) to point elsewhere. Without the key, release builds fall
+    // back to the debug key, which won't install over a build signed with the real key.
+    val keystore = file((project.findProperty("TUNER_KEYSTORE") ?: System.getenv("TUNER_KEYSTORE")
+        ?: "${System.getProperty("user.home")}/.tuner-signing/tuner.keystore") as String)
+    val tunerPassword = (project.findProperty("TUNER_KEY_PASSWORD") ?: System.getenv("TUNER_KEY_PASSWORD")
+        ?: keystore.resolveSibling("password.txt").takeIf { it.exists() }?.readText()?.trim()) as String?
+    val signed = keystore.exists() && tunerPassword != null
     signingConfigs {
         create("tuner") {
-            storeFile = file("../tuner.keystore")
-            storePassword = "JgwFIl83JRMwUMXGvvAD"
-            keyAlias = "tuner"
-            keyPassword = "JgwFIl83JRMwUMXGvvAD"
+            if (signed) {
+                storeFile = keystore
+                storePassword = tunerPassword
+                keyAlias = "tuner"
+                keyPassword = tunerPassword
+            }
         }
     }
 
     buildTypes {
         release {
             isMinifyEnabled = false
-            signingConfig = signingConfigs.getByName("tuner")
+            signingConfig = signingConfigs.getByName(if (signed) "tuner" else "debug")
         }
     }
     compileOptions {

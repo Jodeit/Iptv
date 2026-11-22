@@ -6,3 +6,7 @@ data/
 build/
 .gradle/
 .kotlin/
+
+# Signing keys live outside the repo (~/.tuner-signing locally, Actions secrets on CI)
+*.keystore
+*.jks
