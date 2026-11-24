@@ -624,7 +624,14 @@ body.mini-on #video {
 .stage-pip:hover { opacity: 1; }
 body.mini-on .stage-pip { display: none; }
 .guide-open { position: fixed; top: calc(var(--content-top) + 10px); right: calc(var(--edge-r) + 50px); z-index: 31; background: rgba(0,0,0,.6); backdrop-filter: blur(8px); }
-#castBtn.on { color: var(--accent); border-color: var(--accent); }
+/* Cast icon: outline when idle, filled while casting, pulsing while connecting */
+.cast-icon { display: inline-flex; align-items: center; justify-content: center; }
+.cast-icon.hidden { display: none; }
+.cast-icon .cast-on { opacity: 0; }
+.cast-icon.casting { color: var(--accent); }
+.cast-icon.casting .cast-on { opacity: 1; }
+.cast-icon.busy svg { animation: castpulse 1s ease-in-out infinite; }
+@keyframes castpulse { 50% { opacity: .35; } }
 
 /* ---------- Linking a TV ---------- */
 .tv-banner {

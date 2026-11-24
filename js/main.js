@@ -1578,10 +1578,19 @@ const castProxied = (u) => (location.protocol === 'https:' && proxy.available ? 
 
 const castCtl = new Cast({ onChange: (s) => syncCast(s) });
 let castWas = 'unavailable';
+const castListeners = new Set();
+// The cast icon (classic top bar, and the Tuner view's tab bar through o3xr.tv.cast): shown whenever a Chromecast
+// is on the network, so you can connect before picking anything; what plays next goes to the TV.
+function paintCastIcon(b, s) {
+  b.classList.toggle('hidden', s === 'unavailable');
+  b.classList.toggle('casting', s === 'connected');
+  b.classList.toggle('busy', s === 'connecting');
+  const t = s === 'connected' ? `Casting to ${castCtl.deviceName}. Tap to stop` : s === 'connecting' ? 'Connecting…' : 'Cast to a Chromecast';
+  b.title = t; b.setAttribute('aria-label', t);
+}
 function syncCast(s) {
-  $('castBtn').classList.toggle('hidden', s === 'unavailable');
-  $('castBtn').classList.toggle('on', s === 'connected');
-  $('castBtn').textContent = s === 'connected' ? `Casting · ${castCtl.deviceName}` : s === 'connecting' ? 'Connecting…' : 'Cast';
+  paintCastIcon($('castTop'), s);
+  for (const f of castListeners) f(s);
   if (s === 'connected' && castWas !== 'connected' && state.current) castCurrent(state.current, kindOf(state.current) === 'live' ? 0 : Math.floor(video.currentTime));
   // Back from the TV: carry on here from where it got to.
   if (castWas === 'connected' && s !== 'connected' && state.current) {
@@ -1625,7 +1634,10 @@ async function castCurrent(ch, startAt = 0) {
     toast(`The Chromecast couldn’t play this: ${err.message || err}`, true);
   }
 }
-$('castBtn').onclick = () => (castCtl.connected ? (castCtl.lastPosition = castCtl.position(), castCtl.stop()) : castCtl.pick().catch(() => {}));
+function toggleCast() {
+  if (castCtl.connected) { castCtl.lastPosition = castCtl.position(); castCtl.stop(); } else castCtl.pick().catch(() => {});
+}
+$('castTop').onclick = toggleCast;
 
 function playDirect(url) {
   if (!url) return;
@@ -1649,6 +1661,7 @@ function step(dir) {
 
 function togglePlay() {
   if (!state.current) { if (state.filtered[0]) play(state.filtered[0]); return; }
+  if (castCtl.connected) { castCtl.playOrPause(); return; } // this page is the TV's remote
   if (video.paused) video.play().catch(() => {}); else video.pause();
 }
 
@@ -2392,6 +2405,14 @@ window.o3xr = {
     galleryOpen: () => gallery.isOpen(),
     source: () => state.source,
     forgetPlaylist: (url) => forgetPlaylist(url),
+    cast: {
+      state: () => castCtl.state,
+      device: () => castCtl.deviceName,
+      toggle: toggleCast,
+      seekBy: (s) => castCtl.seekBy(s),
+      paint: paintCastIcon,
+      onChange: (f) => castListeners.add(f),
+    },
     // The TV's Movies and Shows grids
     vod: {
       categories: (kind) => gallery.app.categories(kind),

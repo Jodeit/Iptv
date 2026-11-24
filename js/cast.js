@@ -26,6 +26,9 @@ export class Cast {
       autoJoinPolicy: chrome.cast.AutoJoinPolicy.ORIGIN_SCOPED,
     });
     this.ctx = ctx;
+    // The TV's player, for play/pause and seeking from this page while casting
+    this.remote = new cast.framework.RemotePlayer();
+    this.remoteCtl = new cast.framework.RemotePlayerController(this.remote);
     const map = { NO_DEVICES_AVAILABLE: 'unavailable', NOT_CONNECTED: 'idle', CONNECTING: 'connecting', CONNECTED: 'connected' };
     const update = () => { this.state = map[ctx.getCastState()] || 'idle'; this.onChange(this.state); };
     ctx.addEventListener(cast.framework.CastContextEventType.CAST_STATE_CHANGED, update);
@@ -44,6 +47,17 @@ export class Cast {
   position() {
     const m = this.ctx?.getCurrentSession()?.getMediaSession();
     return m ? m.getEstimatedTime() : 0;
+  }
+
+  get paused() { return !!this.remote?.isPaused; }
+  playOrPause() { if (this.remote?.isMediaLoaded) this.remoteCtl.playOrPause(); }
+  // Seconds forward (or back, if negative), kept inside the item
+  seekBy(seconds) {
+    const r = this.remote;
+    if (!r?.isMediaLoaded || !r.canSeek) return;
+    const end = r.duration > 0 ? r.duration : Infinity;
+    r.currentTime = Math.max(0, Math.min(end, r.currentTime + seconds));
+    this.remoteCtl.seek();
   }
 
   // url: an https address the Chromecast can fetch. live: true for channels.

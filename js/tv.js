@@ -375,6 +375,7 @@ function initTV() {
   const WATCH = ['index.html', 'css/style.css', 'js/main.js', 'js/tv.js', 'js/profiles.js', 'js/version.js', 'js/filter.js'];
   const TUNE = window.__TV_TEST || {}; // tests shorten these
   const POLL_MS = TUNE.pollMs || 60 * 1000, IDLE_MS = TUNE.idleMs || 60 * 1000;
+  let castIcon = null, castHooked = false;
   let verEl = null, latest = null, baseline = null, updateReady = false, lastKey = Date.now();
   const stamp = async (f) => {
     try {
@@ -434,6 +435,17 @@ function initTV() {
     paintVersion();
     let liveTabFocusedFromElsewhere = false;
     if (WEB) tabsEl.append(profileChip()); // touch and headset: the profile you are on, first thing in the bar
+    // Chromecast: an icon whenever one is on the network (Chrome on Android and computers; Safari has no Cast)
+    const cast = T().cast;
+    if (cast) {
+      const c = el('button', 'tvh-tab tvh-icon-tab cast-icon', $('castTop').innerHTML);
+      c.dataset.tab = 'cast';
+      c.onclick = () => cast.toggle();
+      cast.paint(c, cast.state());
+      castIcon = c;
+      if (!castHooked) { castHooked = true; cast.onChange((st) => { if (castIcon) cast.paint(castIcon, st); }); }
+      tabsEl.append(c); // next to the profile, so it never scrolls out of sight on a phone
+    }
     for (const [k, label] of defs) {
       const b = el('button', 'tvh-tab', esc(label));
       b.dataset.tab = k;
@@ -1613,6 +1625,7 @@ function initTV() {
   let epsData = null, epsSeason = 0, epsFocusNow = false; // the episode chooser
   const seekRange = () => { const v = T().video; return v.seekable?.length ? [v.seekable.start(0), v.seekable.end(v.seekable.length - 1)] : null; };
   function seekBy(seconds) {
+    if (T().cast?.state() === 'connected') { T().cast.seekBy(seconds); return; } // steering the TV
     const v = T().video;
     const current = O().state.current;
     const live = !!current && kindOf(current) === 'live';
