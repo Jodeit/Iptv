@@ -890,11 +890,12 @@ function setChannels(channels, label, source = null) {
   if (!tunerUI) toast(`${label}: ${state.library.length.toLocaleString()} channels${state.library.length < channels.length ? ' after filter' : ''}`); // the TV has its own status line
   // Jump to the list after loading from Sources, but not when a profile switch or sync
   // reloads the playlist while you're on another tab.
-  if (document.querySelector('.tab.active')?.dataset.tab === 'sources') {
+  if (!tunerUI && document.querySelector('.tab.active')?.dataset.tab === 'sources') {
     if (guide.available()) togglePanel(false); else setTab('channels');
   }
-  if (guide.available() && document.querySelector('.tab.active')?.dataset.tab === 'channels') setTab('sources');
+  if (!tunerUI && guide.available() && document.querySelector('.tab.active')?.dataset.tab === 'channels') setTab('sources');
   resumeAfterReload();
+  dispatchEvent(new CustomEvent('tuner-playlist-loaded', { detail: { name: label, url: source?.url || '' } })); // the Tuner view's Settings follows it
 }
 
 // ---------- Back on the same channel after a refresh ----------
@@ -1206,6 +1207,18 @@ function rememberPlaylist(name, url, touch = true) {
   renderSaved();
 }
 
+// Off this profile (and every device it syncs to), with its cached copy.
+function forgetPlaylist(url) {
+  const key = playlistKey(url);
+  profiles.update((d) => {
+    d.playlists = d.playlists.filter((x) => x.key !== key);
+    d.playlistsRemoved[key] = Date.now();
+    if (d.last?.url && playlistKey(d.last.url) === key) d.last = null;
+  });
+  cacheDelete(key);
+  renderSaved();
+}
+
 function renderSaved() {
   const ul = $('savedList');
   ul.innerHTML = '';
@@ -1221,16 +1234,7 @@ function renderSaved() {
     del.className = 'icon-btn';
     del.textContent = '✕';
     del.title = 'Forget';
-    del.onclick = () => {
-      const key = playlistKey(p.url);
-      profiles.update((d) => {
-        d.playlists = d.playlists.filter((x) => x.key !== key);
-        d.playlistsRemoved[key] = Date.now();
-        if (d.last?.url && playlistKey(d.last.url) === key) d.last = null;
-      });
-      cacheDelete(key);
-      renderSaved();
-    };
+    del.onclick = () => forgetPlaylist(p.url);
     li.append(span, del);
     ul.append(li);
   }
@@ -2387,6 +2391,7 @@ window.o3xr = {
     openGallery(kind) { state.kind = kind; rebuildGroups(); guideView.close(); gallery.open(kind); },
     galleryOpen: () => gallery.isOpen(),
     source: () => state.source,
+    forgetPlaylist: (url) => forgetPlaylist(url),
     // The TV's Movies and Shows grids
     vod: {
       categories: (kind) => gallery.app.categories(kind),

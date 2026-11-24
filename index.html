@@ -64,7 +64,7 @@
     <button id="tvBannerX" class="icon-btn" title="Not now">✕</button>
   </div>
 
-  <!-- Classic settings drawer; Tuner view presents these controls as a dedicated settings page. -->
+  <!-- Classic settings drawer. The Tuner view (js/tv.js) moves each .set-group into its own Settings tab instead. -->
   <aside id="panel" class="panel collapsed">
     <header class="panel-head">
       <h2 class="drawer-title">Settings</h2>
@@ -100,9 +100,12 @@
 
     <!-- Sources -->
     <section class="tab-body" data-tab="sources">
+      <div class="set-group" id="sgSaved">
       <h3>Your playlists</h3>
       <ul id="savedList" class="saved-list"></ul>
-    <h3>Add a playlist link</h3>
+      </div>
+    <div class="set-group" id="sgAdd">
+      <h3>Add a playlist link</h3>
       <div class="row">
         <input id="m3uUrl" type="text" inputmode="url" placeholder="http://server/get.php?username=…&amp;password=…&amp;type=m3u_plus">
         <button id="loadUrl" class="btn">Load</button>
@@ -118,9 +121,11 @@
         <button id="xtLoad" class="btn">Connect</button>
       </div>
 
+      <div class="set-group" id="sgFile">
       <h3>Local file</h3>
       <div class="row">
         <input id="m3uFile" type="file" accept=".m3u,.m3u8,.txt,audio/x-mpegurl,application/vnd.apple.mpegurl">
+      </div>
       </div>
 
       <h3>Single stream</h3>
@@ -139,7 +144,9 @@
         <button id="loadFoundSource" class="btn" disabled>Load</button>
       </div>
       <p id="sourceFinderStatus" class="muted small" aria-live="polite"></p>
+      </div>
 
+      <div class="set-group" id="sgFilter">
       <h3>Content filter</h3>
       <label class="check"><input id="cfOn" type="checkbox"> Only show these regions and languages</label>
       <label class="field">Live channel groups
@@ -161,11 +168,13 @@
         <input id="cfVodPrimary" type="text" placeholder="VOD | EN*, VOD | IMDB TOP 500" autocomplete="off" spellcheck="false"></label>
       <p class="muted small">The TV shows one list of every title in these folders instead of the provider’s folder tree. A * at the end matches anything after (“VOD | EN*” takes “VOD | EN Action”, “VOD | EN Comedy”…). The rest of each folder name becomes a genre filter, and a folder like “IMDB TOP 500” becomes a collection. Leave empty to use every folder.</p>
       <p class="muted small">Providers list the local station of every city under one folder (hundreds under “ABC”). With your city here, only yours are kept. Stations that name no city are kept. Channels are tidied once when a playlist loads.</p>
+      </div>
 
           </section>
 
     <!-- Playback -->
     <section class="tab-body" data-tab="playback">
+      <div class="set-group" id="sgPlayback">
       <h3>Display</h3>
       <div class="seg" id="displaySeg">
         <button data-display="auto">Auto</button>
@@ -192,7 +201,9 @@
         <button data-buffer="large">Large</button>
         <button data-buffer="max">Max</button>
       </div>
+      </div>
 
+      <div class="set-group" id="sgProxy">
       <h3>Proxy</h3>
       <div class="seg" id="proxySeg">
         <button data-proxy="auto">Auto</button>
@@ -210,7 +221,9 @@
         <pre id="playbackLog" class="log"></pre>
         <button id="copyLog" class="btn ghost">Copy log</button>
       </div>
+      </div>
 
+      <div class="set-group" id="sgRatings">
       <h3>Ratings</h3>
       <p class="muted small">Rotten Tomatoes, IMDb and Metacritic scores in the gallery come from OMDb. Get a free key at
         <a href="https://www.omdbapi.com/apikey.aspx" target="_blank" rel="noopener">omdbapi.com</a> (1,000 lookups a day); it syncs with your profile.</p>
@@ -226,7 +239,9 @@
         <button id="tmdbSave" class="btn ghost">Save</button>
       </div>
       <p id="tmdbStatus" class="muted small"></p>
+      </div>
 
+      <div class="set-group" id="sgWall">
       <h3>TV background</h3>
       <p class="muted small">Match the TV's backdrop to your wall. The screen shows colours cooler than they look to the eye, so pick warmer than the wall seems. It reaches the TV within a minute.</p>
       <div class="row swatches" id="tvWallSwatches"></div>
@@ -234,11 +249,13 @@
         <input id="tvWall" type="color" value="#ebdfb8" aria-label="TV background colour">
         <button id="tvWallReset" class="btn ghost">Default</button>
       </div>
+      </div>
 
           </section>
 
     <!-- XR3D -->
     <section class="tab-body" data-tab="xr3d">
+      <div class="set-group" id="sgXr3d">
       <h3>3D mode</h3>
       <div class="seg" id="modeSeg">
         <button data-mode="2d">2D</button>
@@ -272,10 +289,12 @@
       </div>
       <p class="muted small">Anaglyph needs red/cyan glasses. Side-by-side output works with 3D TVs and phone
         viewers. Headsets get true per-eye 3D through Enter VR.</p>
+      </div>
     </section>
 
     <!-- Theater -->
     <section class="tab-body" data-tab="theater">
+      <div class="set-group" id="sgTheater">
       <h3>Screen</h3>
       <label class="check"><input id="fitWindow" type="checkbox" checked> Fill the window (outside VR)</label>
       <p class="muted small">The screen fills the page with no room around it. Turn off to sit in the cinema; in VR the
@@ -299,9 +318,11 @@
       </div>
       <label class="check"><input id="ambient" type="checkbox" checked> Ambient light from video</label>
       <button id="resetSettings" class="btn ghost">Reset settings</button>
+      </div>
     </section>
     <!-- Profile -->
     <section class="tab-body" data-tab="profile">
+      <div class="set-group" id="sgProfile">
       <div class="profile-card">
         <span class="avatar big" id="pfAvatar">·</span>
         <div class="profile-meta">
@@ -360,6 +381,7 @@
           <button id="pfSignOut" class="btn ghost">Remove from this device</button>
           <button id="pfDelete" class="btn ghost danger">Delete everywhere</button>
         </div>
+      </div>
       </div>
     </section>
   </aside>

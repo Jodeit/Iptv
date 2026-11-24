@@ -4,7 +4,8 @@
 //
 //   Player   the video, full screen, nothing on top. Up opens playback controls.
 //   Home     one screen on the left, video still playing on the right: tabs Live | Movies | Shows |
-//            Settings; Live toggles between On Now and the provider's channel list.
+//            Settings; Live toggles between On Now and the provider's channel list. Settings is one page of
+//            sections (Playlists, Playback, Profiles…), listed where Live lists its categories.
 //   Setup    shown when no profile/playlist: a phone on the same Wi-Fi sends its profile (js/profiles.js).
 //
 // Remote:  Player: Up opens controls (then Guide on live TV), OK toggles playback, ◀▶ skip 10 s on VOD.
@@ -60,10 +61,19 @@ function initTV() {
   const controls = el('div', 'tv-controls hidden');
   controls.id = 'tvControls';
   document.body.append(osd, home, setup, detail, controls);
+  // Settings: the classic drawer's controls (index.html, wired up by js/main.js) are moved, group by group, into the
+  // Settings tab, so there is one settings page instead of a menu that opened another one. A group waits here,
+  // hidden but still in the document (main.js looks its controls up by id), while its section isn't showing.
+  const setPark = el('div', 'set-park');
+  setPark.hidden = true;
+  document.body.append(setPark);
+  for (const g of document.querySelectorAll('#panel .set-group')) setPark.append(g);
+  if (!WEB) $('sgFile').hidden = true; // no file picker on a TV
   const tabsEl = home.querySelector('.tvh-tabs'), chipsEl = home.querySelector('.tvh-chips'), bodyEl = home.querySelector('.tvh-body'), infoEl = home.querySelector('.tvh-info');
 
   // ---------- State ----------
-  let tab = 'live';            // 'live' | 'phone' | 'vod' (Movies and Shows)
+  let tab = 'live';            // 'live' | 'phone' (Settings) | 'vod' (Movies and Shows) | 'search'
+  let setSec = 'playlists';    // the Settings section showing
   let group = '';              // '' = all, FAV = favorites, else a group name
   const FAV = '\u0000fav';
   let searchQuery = '', searchSubmitted = false, searchPending = [], searchErrors = [], searchProgress = '';
@@ -147,8 +157,8 @@ function initTV() {
   const autoView = () => { if (!viewChosen) view = T().guide.available() ? 'now' : 'channels'; };
   let genre = '';              // '' = everything on now
   let dismissed = false, running = false, abort = null, liveCode = null;
-  const isOpen = { home: () => !home.classList.contains('hidden'), setup: () => !setup.classList.contains('hidden'), settings: () => html.classList.contains('settings-open'), gallery: () => !!O()?.tv.galleryOpen(), detail: () => !detail.classList.contains('hidden'), controls: () => !controls.classList.contains('hidden') };
-  const screen = () => (isOpen.setup() ? 'setup' : isOpen.settings() ? 'settings' : isOpen.detail() ? 'detail' : isOpen.controls() ? 'controls' : isOpen.gallery() ? 'gallery' : isOpen.home() ? 'home' : 'player');
+  const isOpen = { home: () => !home.classList.contains('hidden'), setup: () => !setup.classList.contains('hidden'), gallery: () => !!O()?.tv.galleryOpen(), detail: () => !detail.classList.contains('hidden'), controls: () => !controls.classList.contains('hidden') };
+  const screen = () => (isOpen.setup() ? 'setup' : isOpen.detail() ? 'detail' : isOpen.controls() ? 'controls' : isOpen.gallery() ? 'gallery' : isOpen.home() ? 'home' : 'player');
   const isVod = () => { const c = O()?.state.current; return !!c && kindOf(c) !== 'live'; };
 
   // ---------- Channel list helpers ----------
@@ -481,7 +491,7 @@ function initTV() {
     for (const pr of p.list()) add(pr.id, pr.name, esc(pr.name.trim().charAt(0).toUpperCase()));
     add(null, 'This device only', '·');
     const manage = el('button', 'tvh-pitem manage', 'Manage profiles…');
-    manage.onclick = () => { closeProfileMenu(); goTab('phone'); commitView(); };
+    manage.onclick = () => { closeProfileMenu(); openSettingsSection('profiles'); };
     menu.append(manage);
     document.body.append(menu);
     const r = anchor.getBoundingClientRect();
@@ -544,13 +554,15 @@ function initTV() {
   function focusFirstInBody() {
     if (tab === 'search') { bodyEl.querySelector('.tvh-search-input')?.focus(); return; }
     if (tab === 'vod') { chipsEl.querySelector('.tvh-chip')?.focus(); return; }
+    if (tab === 'phone') { [...bodyEl.querySelectorAll(FOCUSABLE)].find(visible)?.focus(); return; }
     (bodyEl.querySelector('.tvh-row.playing') || bodyEl.querySelector('button'))?.focus();
   }
 
   function renderChips() {
     chipsEl.innerHTML = '';
-    chipsEl.classList.toggle('hidden', tab !== 'live' && tab !== 'vod');
+    chipsEl.classList.toggle('hidden', tab !== 'live' && tab !== 'vod' && tab !== 'phone');
     if (tab === 'vod') { renderVodChips(); return; }
+    if (tab === 'phone') { renderSettingsChips(); return; }
     if (tab !== 'live') return;
     const add = (k, label, n, current, set) => {
       const b = el('button', `tvh-chip${k === current ? ' on' : ''}`, `<span class="nm">${esc(label)}</span><span class="n">${n}</span>`);
@@ -828,10 +840,11 @@ function initTV() {
     clearTimeout(searchInputTimer);
     if (withChips) renderChips();
     searchRowsEl = null;
+    parkSettings();
     bodyEl.innerHTML = '';
     bodyEl.className = `tvh-body ${tab}${tab === 'live' && scoreView() ? ' grid' : tab === 'live' && posterView() ? ' grid posters' : ''}`; // games and films are tiles
     infoEl.classList.add('hidden');
-    if (tab === 'phone') return renderPhone();
+    if (tab === 'phone') return renderSettings();
     if (tab === 'search') return renderSearch();
     if (tab === 'vod') return renderVod();
     listCache = visibleList();
@@ -883,21 +896,75 @@ function initTV() {
     paintWallPicker();
   }
 
-  function renderPhone() {
-    const p = P(), a = p.active(), src = T().source();
-    const n = p.doc.playlists.length;
+  // ---------- Settings ----------
+  // One page: the sections down the left (across the top on a phone), the selected one on the right. With a remote,
+  // the page follows focus as you move down the sections, like Live's categories; ▶ steps into it.
+  const SET_SECTIONS = [
+    { k: 'playlists', label: 'Playlists' },
+    { k: 'add', label: 'Add a playlist', groups: ['sgAdd'] },
+    { k: 'filters', label: 'Channel filters', groups: ['sgFilter'] },
+    { k: 'playback', label: 'Playback', groups: ['sgPlayback', 'sgProxy'] },
+    { k: 'ratings', label: 'Ratings', groups: ['sgRatings'] },
+    { k: 'look', label: 'Background' },
+    // The 3D theater's controls only mean something when the theater is the player (Playback → Display)
+    { k: '3d', label: '3D & theater', groups: ['sgXr3d', 'sgTheater'], when: () => !document.body.classList.contains('flat') },
+    { k: 'profiles', label: 'Profiles & sync', groups: ['sgProfile'] },
+  ];
+  const setSections = () => SET_SECTIONS.filter((x) => !x.when || x.when());
+  function parkSettings() {
+    for (const g of bodyEl.querySelectorAll(':scope > .set-group')) setPark.append(g);
+  }
+  function openSettingsSection(k) {
+    setSec = k;
+    if (!isOpen.home()) openHome();
+    if (tab === 'phone') { renderChips(); renderBody(false); } else goTab('phone');
+    chipsEl.querySelector('.tvh-chip.on')?.focus();
+  }
+  function renderSettingsChips() {
+    for (const { k, label } of setSections()) {
+      const b = el('button', `tvh-chip set-chip${k === setSec ? ' on' : ''}`, `<span class="nm">${esc(label)}</span>`);
+      b.dataset.key = k;
+      const pick = () => {
+        if (setSec === k) return;
+        setSec = k;
+        for (const c of chipsEl.children) c.classList.toggle('on', c === b);
+        renderBody(false);
+        bodyEl.scrollTop = 0;
+      };
+      b.onclick = pick;
+      b.onfocus = pick;
+      chipsEl.append(b);
+    }
+  }
+
+  function renderSettings() {
+    if (!setSections().some((x) => x.k === setSec)) setSec = 'playlists';
+    bodyEl.classList.add('settings');
+    bodyEl.dataset.sec = setSec;
+    if (setSec === 'playlists') return renderPlaylists();
+    if (setSec === 'look') return renderLook();
+    if (setSec === 'add' && !WEB) bodyEl.append(el('p', 'tvh-note', `Typing a link is quicker on your phone: open <b>${esc(host)}</b>, then Settings → Add a playlist. It shows up here within a minute.`));
+    for (const id of SET_SECTIONS.find((x) => x.k === setSec).groups) bodyEl.append($(id));
+    if (setSec === 'profiles') {
+      const p = P(), a = p.active();
+      const extra = el('div', 'tvh-actions set-extra');
+      const mk = (label, fn, cls = 'btn ghost') => { const b = el('button', cls, esc(label)); b.onclick = fn; extra.append(b); };
+      if (!WEB && a) mk('Unlink this TV', async () => { await T().forgetCopies(); P().signOut(a.id); dismissed = false; closeHome(); runSetup(); });
+      if (!WEB && !a) mk('Link a phone', () => { dismissed = false; closeHome(); runSetup(); }, 'btn');
+      if (WEB) mk('Switch to the classic view', () => { try { localStorage.setItem('tuner.ui', 'classic'); } catch { /* fine */ } location.reload(); });
+      if (extra.children.length) bodyEl.append(extra);
+    }
+  }
+
+  function renderLook() {
     bodyEl.innerHTML = `
-      <div class="tvh-profile"><span class="avatar">${a ? esc(a.name.trim().charAt(0).toUpperCase()) : '·'}</span>
-        <div class="grow"><div class="tvh-pname">${a ? esc(a.name) : 'Not linked to a phone'}</div><div class="tvh-sync"></div></div></div>
-      <div class="tvh-syncbar"><u></u></div>
-      <p class="tvh-note">${WEB ? 'Manage playlists, playback, filters and account settings here. Changes sync to your other devices.' : `Change playlists on your phone at <b>${esc(host)}</b>. The TV background can be changed here and syncs to your profile.`}</p>
-      <div class="tvh-actions"></div>
       <div class="tvh-wall-setting">
-        <h3>TV background</h3>
+        <h3>Background</h3>
+        <p class="tvh-note">Match the backdrop to your wall. Screens show colours cooler than they look, so pick a little warmer than the wall seems. It syncs to your profile, so the TV follows within a minute.</p>
         <div class="tvh-wall-swatches swatches row"></div>
         <div class="tvh-wall-picker">
           <label for="tvWallTV">Custom colour</label>
-          <input id="tvWallTV" type="color" aria-label="Custom TV background colour">
+          <input id="tvWallTV" type="color" aria-label="Custom background colour">
           <button type="button" class="btn ghost tvh-wall-reset">Default</button>
         </div>
         <div class="tvh-wall-adjust">
@@ -905,11 +972,7 @@ function initTV() {
           <label class="tvh-wall-axis"><span>Saturation <output id="tvWallSaturationValue"></output></span><input id="tvWallSaturation" type="range" min="0" max="100" step="1"></label>
           <label class="tvh-wall-axis"><span>Lightness <output id="tvWallLightnessValue"></output></span><input id="tvWallLightness" type="range" min="0" max="100" step="1"></label>
         </div>
-      </div>
-      <p class="tvh-note dim tvh-showing"></p>
-      <h3>Playlists on your profile${a ? ` (${n})` : ''}</h3><div class="tvh-lists"></div>`;
-    const actions = bodyEl.querySelector('.tvh-actions');
-    const mk = (label, fn, cls = 'btn') => { const b = el('button', cls, esc(label)); b.onclick = fn; actions.append(b); return b; };
+      </div>`;
     const wallSwatches = bodyEl.querySelector('.tvh-wall-swatches');
     for (const [name, hex] of TV_WALLS) {
       const b = el('button', 'swatch');
@@ -917,7 +980,7 @@ function initTV() {
       b.dataset.hex = hex;
       b.title = name;
       b.style.background = hex;
-      b.setAttribute('aria-label', `${name} TV background`);
+      b.setAttribute('aria-label', `${name} background`);
       b.onclick = () => chooseWall(hex);
       wallSwatches.append(b);
     }
@@ -927,36 +990,76 @@ function initTV() {
     }
     bodyEl.querySelector('.tvh-wall-reset').onclick = () => chooseWall(TV_WALL_DEFAULT);
     paintWallPicker();
-    if (WEB) mk('Settings & playlists', openSettings);
-    else mk('Advanced settings', openSettings, 'btn ghost');
-    if (a) {
-      mk('Sync now', () => { P().sync(); paintSync(); });
-      if (src?.url) mk('Reload channels', () => { O().loadPlaylist(src.url, src.name, { fresh: true }); closeHome(); }, 'btn ghost');
-      if (!WEB) mk('Unlink', async () => { await T().forgetCopies(); P().signOut(a.id); dismissed = false; closeHome(); runSetup(); }, 'btn ghost');
-    } else if (!WEB) {
-      mk('Link a phone', () => { dismissed = false; closeHome(); runSetup(); });
-    }
+  }
+
+  function renderPlaylists() {
+    const p = P(), a = p.active(), src = T().source();
+    const n = p.doc.playlists.length;
+    bodyEl.innerHTML = `
+      <div class="tvh-profile"><span class="avatar">${a ? esc(a.name.trim().charAt(0).toUpperCase()) : '·'}</span>
+        <div class="grow"><div class="tvh-pname">${a ? esc(a.name) : WEB ? 'This device only' : 'Not linked to a phone'}</div><div class="tvh-sync"></div></div></div>
+      <div class="tvh-syncbar"><u></u></div>
+      <p class="tvh-note dim tvh-showing"></p>
+      <div class="tvh-lists"></div>
+      <div class="tvh-actions"></div>`;
+    const actions = bodyEl.querySelector('.tvh-actions');
+    const mk = (label, fn, cls = 'btn ghost') => { const b = el('button', cls, esc(label)); b.onclick = fn; actions.append(b); return b; };
     const lists = bodyEl.querySelector('.tvh-lists');
     for (const l of p.doc.playlists) {
-      const b = el('button', `btn ghost pl-row${src?.url === l.url ? ' cur' : ''}`, `<span>${esc(l.name)}</span>${src?.url === l.url ? '<small>Showing now</small>' : ''}`);
+      const cur = src?.url === l.url;
+      const item = el('div', 'pl-item');
+      const b = el('button', `btn ghost pl-row${cur ? ' cur' : ''}`, `<span>${esc(l.name)}</span>${cur ? '<small>Showing now</small>' : ''}`);
       b.onclick = async () => {
         // Stay on the menu: show that it is loading, then confirm and land on the new channel list
         if (b.disabled) return;
         b.disabled = true; b.querySelector('small')?.remove(); b.append(el('small', '', 'Loading…'));
         await O().loadPlaylist(l.url, l.name, { fresh: true });
         const n = liveAll().length;
-        if (n) { tab = 'live'; group = ''; genre = ''; autoView(); T().toast(`Loaded “${l.name}” · ${n.toLocaleString()} channel${n === 1 ? '' : 's'}`); renderTabs(); renderBody(); (bodyEl.querySelector('.tvh-row') || tabsEl.firstElementChild)?.focus(); }
-        else if (isOpen.home() && tab === 'phone') renderPhone();
+        if (n) showLoaded(l.name);
+        else if (isOpen.home() && tab === 'phone' && setSec === 'playlists') renderBody(false);
       };
-      lists.append(b);
+      // Forget asks first: one press arms it, a second one (within a few seconds) removes the playlist.
+      const x = el('button', 'btn ghost pl-x', '✕');
+      x.title = 'Remove from this profile';
+      x.setAttribute('aria-label', `Remove ${l.name}`);
+      let armed = 0;
+      x.onclick = () => {
+        if (!armed) {
+          x.textContent = 'Remove?'; x.classList.add('armed');
+          armed = setTimeout(() => { armed = 0; x.textContent = '✕'; x.classList.remove('armed'); }, 4000);
+          return;
+        }
+        clearTimeout(armed);
+        T().forgetPlaylist(l.url);
+        T().toast(`Removed “${l.name}”`);
+        renderBody(false);
+        ([...bodyEl.querySelectorAll('.pl-row')].pop() || chipsEl.querySelector('.tvh-chip.on'))?.focus();
+      };
+      item.append(b, x);
+      lists.append(item);
       paintAccount(b, l.url);
     }
-    if (n) {
-      mk('Check stream limits', () => { for (const [i, l] of p.doc.playlists.entries()) paintAccount(lists.children[i], l.url, true); }, 'btn ghost');
-    }
-    if (!n) lists.innerHTML = `<p class="tvh-note dim">None yet. ${WEB ? 'Add one in Settings & playlists.' : 'Add one on your phone.'}</p>`;
+    if (!n) lists.innerHTML = `<p class="tvh-note dim">No playlists yet.</p>`;
+    mk(n ? 'Add a playlist' : 'Add your first playlist', () => openSettingsSection('add'), n ? 'btn ghost' : 'btn');
+    if (src?.url) mk('Reload channels', () => { O().loadPlaylist(src.url, src.name, { fresh: true }); closeHome(); });
+    if (n) mk('Check stream limits', () => { for (const [i, l] of p.doc.playlists.entries()) paintAccount(lists.children[i]?.querySelector('.pl-row'), l.url, true); });
+    if (a) mk('Sync now', () => { P().sync(); paintSync(); });
+    else if (!WEB) mk('Link a phone', () => { dismissed = false; closeHome(); runSetup(); }, 'btn');
     paintSync();
   }
+
+  // A playlist finished loading from Settings: say so and land on its channels.
+  function showLoaded(name) {
+    const n = liveAll().length;
+    tab = 'live'; group = ''; genre = ''; autoView();
+    T().toast(`Loaded “${name}” · ${n.toLocaleString()} channel${n === 1 ? '' : 's'}`);
+    renderTabs(); renderBody();
+    (bodyEl.querySelector('.tvh-row') || tabsEl.querySelector('.tvh-tab.on'))?.focus();
+  }
+  // Loaded from Add a playlist (a link, Xtream login, file, quick source): the same landing.
+  addEventListener('tuner-playlist-loaded', (e) => {
+    if (isOpen.home() && tab === 'phone' && setSec === 'add' && liveAll().length) showLoaded(e.detail?.name || 'playlist');
+  });
 
   // Each playlist's account, under its name: streams in use of the limit, and when it expires. Full accounts (a channel
   // would be refused) and expired or disabled ones are flagged. Reading it doesn't use a stream.
@@ -977,19 +1080,6 @@ function initTV() {
       active || full || (days != null && days <= 0) ? 'bad' : days != null && days <= 7 ? 'warn' : 'ok');
   }
 
-  function openSettings() {
-    document.querySelector('.tab[data-tab="sources"]')?.click();
-    $('panel').classList.remove('collapsed');
-    html.classList.add('settings-open');
-    requestAnimationFrame(() => $('panel').querySelector('.tab.active')?.focus());
-  }
-
-  function closeSettings() {
-    $('panel').classList.add('collapsed');
-    html.classList.remove('settings-open');
-    if (isOpen.home()) tabsEl.querySelector('.tvh-tab.on')?.focus();
-  }
-  $('panelToggle').addEventListener('click', () => { if (isOpen.settings()) closeSettings(); });
   // Live sync line: what it's doing now, or when it last finished and what it found.
   function paintSync() {
     const line = bodyEl.querySelector('.tvh-sync'), bar = bodyEl.querySelector('.tvh-syncbar');
@@ -997,7 +1087,7 @@ function initTV() {
     const src = T().source();
     bodyEl.querySelector('.tvh-showing').textContent = src ? `Showing “${src.name}”${src.savedAt ? `, downloaded ${ageText(src.savedAt)}` : ''}` : 'No channel list loaded';
     const p = P(), a = p.active(), st = p.status;
-    if (!a) { line.textContent = 'Link a phone to get your playlists'; bar.classList.remove('on'); return; }
+    if (!a) { line.textContent = WEB ? 'Not synced. Make a profile under Profiles & sync to share playlists with your other devices.' : 'Link a phone to get your playlists'; bar.classList.remove('on'); return; }
     const busy = st.state === 'syncing' || st.state === 'pending';
     const detail = `${p.doc.playlists.length} playlist${p.doc.playlists.length === 1 ? '' : 's'} · #${a.id.slice(0, 4)} v${a.version}${p.store ? ` · ${p.store === 'durable' ? 'durable' : 'kv'}` : ''}`;
     line.className = `tvh-sync ${st.state === 'offline' || st.state === 'error' ? 'bad' : ''}`;
@@ -1343,7 +1433,7 @@ function initTV() {
     mode('age', 'Age', vodF.age ? `Up to ${ages[ai]?.[1] || ''}` : 'Any', () => {
       vodF.age = ai + 1 < ages.length ? ages[ai + 1][0] : 0;
       if (vodF.age === 0 && ai === -1) vodF.age = ages[0][0];
-      if (vodF.age && !T().vod.hasMeta()) { T().toast('Age ratings need a TMDB key: add one on your phone (Settings → Sync)'); }
+      if (vodF.age && !T().vod.hasMeta()) { T().toast('Age ratings need a TMDB key: add one in Settings → Ratings'); }
       if (vodF.age) fetchAges();
     });
     if (vodF.age) chipsEl.append(el('div', 'tvh-gstatus vod-age', ''));
@@ -1863,8 +1953,8 @@ function initTV() {
   function move(root, dx, dy) {
     const cur = document.activeElement && root.contains(document.activeElement) ? document.activeElement : null;
     const items = [...root.querySelectorAll(FOCUSABLE)].filter(visible);
-    if (!items.length) return;
-    if (!cur) { items[0].focus(); return; }
+    if (!items.length) return false;
+    if (!cur) { items[0].focus(); return true; }
     const a = cur.getBoundingClientRect(), ax = a.left + a.width / 2, ay = a.top + a.height / 2;
     let best = null, bestScore = Infinity;
     for (const e of items) {
@@ -1882,6 +1972,7 @@ function initTV() {
       if (best.classList.contains('tvh-row') && !best.nextElementSibling && shown < listCache.length) addRows();
       else if (best.classList.contains('tvh-row') && shown < listCache.length && !best.nextElementSibling?.nextElementSibling) addRows();
     }
+    return !!best;
   }
 
   const DIR = { ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1] };
@@ -1914,7 +2005,8 @@ function initTV() {
       else if (key === 'ArrowDown') {
         if (t.dataset.tab === 'movie' || t.dataset.tab === 'series') goTab(t.dataset.tab);
         commitView();
-        focusFirstInBody();
+        if (t.dataset.tab === 'phone' && tab === 'phone') chipsEl.querySelector('.tvh-chip.on')?.focus(); // Settings: the sections first
+        else focusFirstInBody();
       }
       return true; // ▲ stays on the tab bar
     }
@@ -1957,8 +2049,19 @@ function initTV() {
       }
       return false;
     }
-    // Phone tab: ▲ from the first control goes up to the tabs
-    if (bodyEl.contains(t) && key === 'ArrowUp' && bodyEl.querySelector('button') === t) { toTabs(); return true; }
+    // Settings: arrows move between the section's controls; past its left edge is the section list, past its top the tabs.
+    if (tab === 'phone' && bodyEl.contains(t)) {
+      const [dx, dy] = DIR[key];
+      if (key === 'ArrowLeft' || key === 'ArrowUp') {
+        if (!move(bodyEl, dx, dy)) {
+          const chip = key === 'ArrowLeft' && chipsEl.querySelector('.tvh-chip.on');
+          if (chip) chip.focus(); else toTabs();
+        }
+        return true;
+      }
+      moveRepeated(bodyEl, key, e);
+      return true;
+    }
     return false;
   }
   let synthetic = false, heldDirection = '', heldDirectionAt = 0;
@@ -1974,7 +2077,6 @@ function initTV() {
   function goBack() {
     const s = screen();
     if (s === 'setup') { $('tvsSkip').click(); return true; }
-    if (s === 'settings') { closeSettings(); return true; }
     if (s === 'gallery') {
       synthetic = true;
       (document.activeElement || document.body).dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
@@ -2010,7 +2112,7 @@ function initTV() {
       return;
     }
     if (s !== 'player') {
-      const root = s === 'setup' ? setup : s === 'gallery' ? $('gallery') : s === 'detail' ? detail : s === 'settings' ? $('panel') : s === 'controls' ? controls : home;
+      const root = s === 'setup' ? setup : s === 'gallery' ? $('gallery') : s === 'detail' ? detail : s === 'controls' ? controls : home;
       if (typing && (!DIR[e.key] || e.key === 'ArrowLeft' || e.key === 'ArrowRight')) return; // let the keyboard type
       if (s === 'controls' && e.key === 'ArrowUp' && !isVod() && !controlsMenu) {
         e.preventDefault(); e.stopImmediatePropagation();
@@ -2139,12 +2241,13 @@ function initTV() {
     const before = new Set(JSON.parse(seen));
     seen = now;
     const added = P().doc.playlists.filter((l) => !before.has(l.key));
-    if (isOpen.home() && tab === 'phone') renderPhone();
+    if (isOpen.home() && tab === 'phone' && setSec === 'playlists') renderBody(false);
     if (!added.length) return;
     const o = O();
     // Nothing on screen yet: just start the new playlist. Otherwise leave the picture alone and say it's there.
+    if (added.some((l) => l.url === T().source()?.url)) return; // added here, and already showing
     if (!o.state.current && !o.state.channels.length) o.loadPlaylist(added[0].url, added[0].name, { fresh: false });
-    else T().toast(`New from your phone: ${added[0].name}. Home → Settings to switch.`);
+    else T().toast(`New from ${WEB ? 'another device' : 'your phone'}: ${added[0].name}. Settings → Playlists to switch.`);
   }
   // ---------- Touch (Tuner view in a browser) ----------
   if (WEB) {
