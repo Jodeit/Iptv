@@ -19,6 +19,9 @@
          view by default and larger, pointer-friendly targets (html.headset in css/style.css). */
       const quest = /OculusBrowser|Quest|Pico|Wolvic/i.test(navigator.userAgent) || /TunerQuest/.test(navigator.userAgent);
       if (quest) { window.__tunerHeadset = /TunerQuest/.test(navigator.userAgent) ? 'quest-app' : 'headset-browser'; document.documentElement.classList.add('headset'); }
+      /* The Quest app draws the page on a see-through surface: the menus float over your room instead of a painted wall.
+         Settings → Background turns it off (tuner.seeThrough = '0') if the headset shows black behind them instead. */
+      if (/TunerQuest/.test(navigator.userAgent) && localStorage.getItem('tuner.seeThrough') !== '0') document.documentElement.classList.add('see-through');
       if (!/TunerTV/.test(navigator.userAgent) && (pref === 'tuner' || (pref !== 'classic' && (apple || quest)))) {
         window.__tunerWeb = true;
         document.documentElement.classList.add('tv', 'tv-web', 'tv-booting');

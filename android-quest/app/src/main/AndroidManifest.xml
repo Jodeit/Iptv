@@ -30,6 +30,7 @@
         <!-- The app icon opens Tuner in a window (a 2D panel next to other apps). -->
         <activity
             android:name=".PanelActivity"
+            android:theme="@style/Tuner.Window"
             android:exported="true"
             android:launchMode="singleTask"
             android:screenOrientation="landscape"

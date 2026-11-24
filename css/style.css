@@ -1400,3 +1400,21 @@ html.headset .tvh-icon-tab svg { width: 26px; height: 26px; }
 .tvh-lists .pl-row .pl-acct.ok { color: #2f6b3a; }
 .tvh-lists .pl-row .pl-acct.warn { color: #8a5a00; }
 .tvh-lists .pl-row .pl-acct.bad { color: #a2322a; opacity: 1; font-weight: 600; }
+
+/* ---------- See-through (html.see-through): the Quest app, over passthrough ----------
+   The app's window and VR panel are transparent, so nothing paints a wall: the glass cards float in the room. The room
+   behind is real and can be anything, so the glass is nearly opaque (a backdrop blur can't reach the camera image). */
+html.see-through, html.see-through body, html.see-through #video, html.see-through #flatStage,
+html.see-through .tv-home, html.see-through.tv-picture .tv-home, html.see-through.tv.guide-mode.tv-picture .tv-home,
+html.see-through .tv-setup { background: transparent; }
+html.see-through .tv-home::after, html.see-through .tv-setup::after { display: none; }
+html.see-through .tv-home, html.see-through .tv-setup, html.see-through .tv-detail, html.see-through .tv-controls {
+  --glass: linear-gradient(180deg, rgba(var(--glass-rgb), .96), rgba(var(--glass-rgb), .9));
+  --lift: 0 18px 40px -12px rgba(0,0,0,.45), inset 0 2px 0 rgba(255,255,255,.9);
+}
+/* A title's page: one floating card instead of a full-screen wall */
+html.see-through .tv-detail { inset: 24px; border-radius: 28px; background: linear-gradient(180deg, rgba(var(--glass-rgb), .97), rgba(var(--glass-rgb), .93));
+  border: 1px solid rgba(255,255,255,.88); box-shadow: 0 18px 40px -12px rgba(0,0,0,.45); }
+html.see-through.tv-booting body::before { background: url("../img/tuna.svg") center / min(34vw, 320px) auto no-repeat; }
+.set-seethrough { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; max-width: 760px; }
+.tvh-wall-setting[hidden] { display: none; }

@@ -905,7 +905,7 @@ function initTV() {
     { k: 'filters', label: 'Channel filters', groups: ['sgFilter'] },
     { k: 'playback', label: 'Playback', groups: ['sgPlayback', 'sgProxy'] },
     { k: 'ratings', label: 'Ratings', groups: ['sgRatings'] },
-    { k: 'look', label: 'Background' },
+    { k: 'look', label: 'Background' }, // on the Quest app: your room or a wall colour
     // The 3D theater's controls only mean something when the theater is the player (Playback → Display)
     { k: '3d', label: '3D & theater', groups: ['sgXr3d', 'sgTheater'], when: () => !document.body.classList.contains('flat') },
     { k: 'profiles', label: 'Profiles & sync', groups: ['sgProfile'] },
@@ -957,8 +957,16 @@ function initTV() {
   }
 
   function renderLook() {
-    bodyEl.innerHTML = `
-      <div class="tvh-wall-setting">
+    // The Quest app can show your room behind the menus (index.html); the wall colour applies when that's off.
+    const quest = window.__tunerHeadset === 'quest-app';
+    const clear = html.classList.contains('see-through');
+    bodyEl.innerHTML = `${quest ? `
+      <div class="set-seethrough">
+        <h3>Behind the menus</h3>
+        <div class="seg" id="seeThroughSeg"><button data-v="1" class="${clear ? 'active' : ''}">Your room</button><button data-v="0" class="${clear ? '' : 'active'}">Wall colour</button></div>
+        <p class="tvh-note">Your room shows through around the menus. If you see black there instead, pick Wall colour.</p>
+      </div>` : ''}
+      <div class="tvh-wall-setting"${quest && clear ? ' hidden' : ''}>
         <h3>Background</h3>
         <p class="tvh-note">Match the backdrop to your wall. Screens show colours cooler than they look, so pick a little warmer than the wall seems. It syncs to your profile, so the TV follows within a minute.</p>
         <div class="tvh-wall-swatches swatches row"></div>
@@ -973,6 +981,15 @@ function initTV() {
           <label class="tvh-wall-axis"><span>Lightness <output id="tvWallLightnessValue"></output></span><input id="tvWallLightness" type="range" min="0" max="100" step="1"></label>
         </div>
       </div>`;
+    for (const b of bodyEl.querySelectorAll('#seeThroughSeg button')) {
+      b.onclick = () => {
+        const on = b.dataset.v === '1';
+        try { localStorage.setItem('tuner.seeThrough', on ? '1' : '0'); } catch { /* this visit only */ }
+        html.classList.toggle('see-through', on);
+        renderBody(false);
+        bodyEl.querySelector(`#seeThroughSeg button[data-v="${b.dataset.v}"]`)?.focus();
+      };
+    }
     const wallSwatches = bodyEl.querySelector('.tvh-wall-swatches');
     for (const [name, hex] of TV_WALLS) {
       const b = el('button', 'swatch');

@@ -27,6 +27,8 @@ import com.meta.spatial.isdk.IsdkPanelGrabHandle
 import com.meta.spatial.isdk.IsdkPanelResize
 import com.meta.spatial.core.SpatialFeature
 import com.meta.spatial.core.Vector3
+import com.meta.spatial.runtime.PanelConfigOptions
+import com.meta.spatial.runtime.PanelShapeLayerBlendType
 import com.meta.spatial.runtime.ReferenceSpace
 import com.meta.spatial.runtime.StereoMode
 import com.meta.spatial.toolkit.AppSystemActivity
@@ -35,6 +37,9 @@ import com.meta.spatial.toolkit.MediaPanelRenderOptions
 import com.meta.spatial.toolkit.MediaPanelSettings
 import com.meta.spatial.toolkit.createPanelEntity
 import com.meta.spatial.toolkit.PanelRegistration
+import com.meta.spatial.toolkit.PanelRenderMode
+import com.meta.spatial.toolkit.PanelSettings
+import com.meta.spatial.toolkit.UIPanelRenderOptions
 import com.meta.spatial.toolkit.PixelDisplayOptions
 import com.meta.spatial.toolkit.QuadShapeOptions
 import com.meta.spatial.toolkit.Transform
@@ -98,13 +103,13 @@ class MainActivity : AppSystemActivity() {
         ViewPanelRegistration(
             PANEL_WEB,
             { _, ctx -> try { makeWeb(ctx) } catch (e: Throwable) { DebugLog.log("web view failed: $e"); errorView(ctx, "Can't start the web view:\n$e") } },
-            { UIPanelSettings(shape = QuadShapeOptions(width = 1.8f, height = 1.1f), display = DpPerMeterDisplayOptions(dpPerMeter = 650f)) },
+            { seeThrough(UIPanelSettings(shape = QuadShapeOptions(width = 1.8f, height = 1.1f), display = DpPerMeterDisplayOptions(dpPerMeter = 650f), rendering = blended())) },
             { v, _, _ -> DebugLog.log("web panel ready: view ${v.width}x${v.height}, attached=${v.isAttachedToWindow}") },
         ),
         ViewPanelRegistration(
             PANEL_CONTROLS,
             { _, ctx -> makeControls(ctx) },
-            { UIPanelSettings(shape = QuadShapeOptions(width = 1.6f, height = 0.34f), display = DpPerMeterDisplayOptions(dpPerMeter = 600f)) },
+            { seeThrough(UIPanelSettings(shape = QuadShapeOptions(width = 1.6f, height = 0.34f), display = DpPerMeterDisplayOptions(dpPerMeter = 600f), rendering = blended())) },
         ),
         VideoSurfacePanelRegistration(
             PANEL_VIDEO,
@@ -118,6 +123,14 @@ class MainActivity : AppSystemActivity() {
             },
         ),
     ) }
+
+    // See-through panels: what the view leaves transparent shows the room (passthrough) or the dark around it, so the
+    // page's glass cards and the control bar's pill float on their own. The default layer is masked (cut-out edges
+    // only); alpha blending keeps soft shadows and rounded corners.
+    private fun blended() = UIPanelRenderOptions(PanelRenderMode.Layer(layerBlendType = PanelShapeLayerBlendType.ALPHA_BLEND))
+    private fun seeThrough(settings: UIPanelSettings) = object : PanelSettings {
+        override fun toPanelConfigOptions(): PanelConfigOptions = settings.toPanelConfigOptions().apply { enableTransparent = true }
+    }
 
     override fun onSceneReady() {
         super.onSceneReady()
@@ -199,7 +212,7 @@ class MainActivity : AppSystemActivity() {
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             userAgentString = "$userAgentString TunerQuest"
         }
-        w.setBackgroundColor(Color.parseColor("#EBDFB8"))
+        w.setBackgroundColor(Color.TRANSPARENT) // the page paints its own cards (html.see-through) or wall
         var events = 0
         w.setOnTouchListener { _, e -> if (events++ < 30 || e.actionMasked == android.view.MotionEvent.ACTION_DOWN) DebugLog.log("touch ${android.view.MotionEvent.actionToString(e.actionMasked)} at ${e.x.toInt()},${e.y.toInt()} (view ${w.width}x${w.height})"); false }
         w.setOnGenericMotionListener { _, e -> if (e.actionMasked != android.view.MotionEvent.ACTION_HOVER_MOVE && e.actionMasked != android.view.MotionEvent.ACTION_SCROLL) DebugLog.log("motion ${android.view.MotionEvent.actionToString(e.actionMasked)}"); false }

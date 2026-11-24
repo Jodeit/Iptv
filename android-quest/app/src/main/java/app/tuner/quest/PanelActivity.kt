@@ -60,7 +60,9 @@ class PanelActivity : Activity() {
         DebugLog.log("panel: onCreate")
         playback = Playback(this, onState = { ui.post { updateStatus() } }, onVideoSize = { w, h -> ui.post { videoW = w; videoH = h; fitVideo() } })
 
-        val root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        // Transparent window (themes.xml): around the menus and the letterboxed picture you see the room, if Horizon OS
+        // composites the window that way. If it shows black instead, the page has a Wall colour option.
+        val root = FrameLayout(this).apply { setBackgroundColor(Color.TRANSPARENT) }
         video = SurfaceView(this).apply {
             holder.addCallback(object : SurfaceHolder.Callback {
                 override fun surfaceCreated(h: SurfaceHolder) = playback.setSurface(h.surface)
@@ -112,7 +114,7 @@ class PanelActivity : Activity() {
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             userAgentString = "$userAgentString TunerQuest"
         }
-        w.setBackgroundColor(Color.parseColor("#EBDFB8"))
+        w.setBackgroundColor(Color.TRANSPARENT) // the page paints its own cards (html.see-through) or wall
         w.addJavascriptInterface(Bridge(), "TunerQuest")
         w.webViewClient = object : WebViewClient() {
             override fun onPageFinished(view: WebView, url: String) { DebugLog.log("panel: page loaded $url") }

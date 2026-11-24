@@ -12,8 +12,8 @@ android {
         applicationId = "app.tuner.quest"
         minSdk = 34
         targetSdk = 34
-        versionCode = 3
-        versionName = "0.3.0"
+        versionCode = 4
+        versionName = "0.4.0"
         val url = (project.findProperty("appUrl") as String? ?: "https://iptv.jodeit.workers.dev").trimEnd('/') + "/"
         buildConfigField("String", "APP_URL", "\"$url\"")
         ndk { abiFilters += "arm64-v8a" }
